@@ -69,11 +69,27 @@ type TaskConfig struct {
 	TimeoutSeconds int         `json:"timeout_seconds,omitempty"`
 	CLI            string      `json:"cli,omitempty"`
 	AIModel        string      `json:"ai_model,omitempty"`
-	AIApiKey       string      `json:"-"` // NEVER in responses
+	AIApiKey       string      `json:"-"` // NEVER in responses (custom UnmarshalJSON accepts it)
 	MaxTurns       int         `json:"max_turns,omitempty"`
 	TargetBranch   string      `json:"target_branch,omitempty"`
 	MaxBudgetUSD   float64     `json:"max_budget_usd,omitempty"`
 	MCPServers     []MCPServer `json:"mcp_servers,omitempty"`
+}
+
+// UnmarshalJSON accepts ai_api_key from JSON input while json:"-" keeps it hidden in output.
+func (c *TaskConfig) UnmarshalJSON(data []byte) error {
+	type Alias TaskConfig
+	aux := &struct {
+		AIApiKey string `json:"ai_api_key,omitempty"`
+		*Alias
+	}{
+		Alias: (*Alias)(c),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	c.AIApiKey = aux.AIApiKey
+	return nil
 }
 
 // MCPServer defines an MCP server configuration.

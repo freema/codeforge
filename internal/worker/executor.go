@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -286,6 +289,16 @@ func (e *Executor) cloneStep(ctx context.Context, t *task.Task, workDir string, 
 		"work_dir": workDir,
 	})
 
+	// If running as root, chown workspace to "codeforge" user so the CLI
+	// (which drops privileges) can write to it.
+	if os.Getuid() == 0 {
+		if u, uErr := user.Lookup("codeforge"); uErr == nil {
+			uid, _ := strconv.Atoi(u.Uid)
+			gid, _ := strconv.Atoi(u.Gid)
+			_ = chownRecursive(workDir, uid, gid)
+		}
+	}
+
 	log.Info("repository cloned", "work_dir", workDir)
 	return nil
 }
@@ -477,4 +490,14 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// chownRecursive changes ownership of a directory tree.
+func chownRecursive(root string, uid, gid int) error {
+	return filepath.WalkDir(root, func(path string, _ fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		return os.Chown(path, uid, gid)
+	})
 }

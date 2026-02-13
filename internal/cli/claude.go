@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"os/user"
 	"strconv"
 	"strings"
 	"syscall"
@@ -44,8 +45,38 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 	cmd.Dir = opts.WorkDir
-	cmd.Env = append(os.Environ(), "ANTHROPIC_API_KEY="+opts.APIKey)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	// Build environment. If running as root and a "codeforge" user exists,
+	// drop privileges and replace HOME/SHELL so Claude Code accepts bypassPermissions.
+	baseEnv := os.Environ()
+	if os.Getuid() == 0 {
+		if u, err := user.Lookup("codeforge"); err == nil {
+			uid, _ := strconv.ParseUint(u.Uid, 10, 32)
+			gid, _ := strconv.ParseUint(u.Gid, 10, 32)
+			cmd.SysProcAttr.Credential = &syscall.Credential{
+				Uid: uint32(uid),
+				Gid: uint32(gid),
+			}
+			// Filter out HOME/SHELL/USER from root env and replace them
+			filtered := make([]string, 0, len(baseEnv))
+			for _, e := range baseEnv {
+				if !strings.HasPrefix(e, "HOME=") &&
+					!strings.HasPrefix(e, "SHELL=") &&
+					!strings.HasPrefix(e, "USER=") {
+					filtered = append(filtered, e)
+				}
+			}
+			filtered = append(filtered,
+				"HOME="+u.HomeDir,
+				"SHELL=/bin/sh",
+				"USER=codeforge",
+			)
+			baseEnv = filtered
+			slog.Debug("dropping privileges for claude CLI", "uid", uid, "gid", gid)
+		}
+	}
+	cmd.Env = append(baseEnv, "ANTHROPIC_API_KEY="+opts.APIKey)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -126,10 +157,10 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 	return result, nil
 }
 
-// extractStreamData parses a stream-json line for result text and usage info.
+// extractStreamData parses a Claude Code stream-json line for result text and usage info.
 // Claude Code stream-json events include:
-// - content_block_delta with text_delta: accumulate result text
-// - message_delta with usage: extract token counts
+// - type "assistant": contains message.content[].text for streaming text
+// - type "result": contains final result text and aggregated usage
 func extractStreamData(line []byte) (text string, inputTokens, outputTokens int) {
 	var event map[string]json.RawMessage
 	if err := json.Unmarshal(line, &event); err != nil {
@@ -142,27 +173,18 @@ func extractStreamData(line []byte) (text string, inputTokens, outputTokens int)
 	}
 
 	switch eventType {
-	case "content_block_delta":
-		var delta struct {
-			Delta struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"delta"`
-		}
-		if err := json.Unmarshal(line, &delta); err == nil && delta.Delta.Type == "text_delta" {
-			text = delta.Delta.Text
-		}
-
-	case "message_delta":
-		var msg struct {
-			Usage struct {
+	case "result":
+		var result struct {
+			Result string `json:"result"`
+			Usage  struct {
 				InputTokens  int `json:"input_tokens"`
 				OutputTokens int `json:"output_tokens"`
 			} `json:"usage"`
 		}
-		if err := json.Unmarshal(line, &msg); err == nil {
-			inputTokens = msg.Usage.InputTokens
-			outputTokens = msg.Usage.OutputTokens
+		if err := json.Unmarshal(line, &result); err == nil {
+			text = result.Result
+			inputTokens = result.Usage.InputTokens
+			outputTokens = result.Usage.OutputTokens
 		}
 	}
 

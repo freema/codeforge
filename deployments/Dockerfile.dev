@@ -1,6 +1,6 @@
 FROM golang:1.24-alpine
 
-RUN apk add --no-cache git nodejs npm ca-certificates tzdata curl
+RUN apk add --no-cache git nodejs npm ca-certificates tzdata curl coreutils
 
 # Install air for hot reload (pinned — latest requires Go 1.25+)
 RUN go install github.com/air-verse/air@v1.61.7
@@ -9,8 +9,13 @@ RUN go install github.com/air-verse/air@v1.61.7
 RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v1.62.2
 
 # Install Claude Code CLI (optional for dev — not needed for unit tests)
-ARG CLAUDE_CODE_VERSION=1.0.23
+ARG CLAUDE_CODE_VERSION=1.0.88
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} 2>/dev/null || true
+
+# Non-root user — Claude Code refuses bypassPermissions under root
+RUN adduser -D -h /home/codeforge codeforge \
+    && mkdir -p /data/workspaces \
+    && chown codeforge:codeforge /data/workspaces
 
 WORKDIR /app
 
