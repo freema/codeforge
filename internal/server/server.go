@@ -14,6 +14,7 @@ import (
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/server/handlers"
 	"github.com/freema/codeforge/internal/server/middleware"
+	"github.com/freema/codeforge/internal/task"
 )
 
 // Server is the HTTP server.
@@ -23,7 +24,7 @@ type Server struct {
 }
 
 // New creates and configures the HTTP server with all routes and middleware.
-func New(cfg *config.Config, redis *redisclient.Client, version string) *Server {
+func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Service, version string) *Server {
 	r := chi.NewRouter()
 
 	// Global middleware
@@ -38,14 +39,16 @@ func New(cfg *config.Config, redis *redisclient.Client, version string) *Server 
 	r.Get("/health", healthHandler.Health)
 	r.Get("/ready", healthHandler.Ready)
 
+	// Task handler
+	taskHandler := handlers.NewTaskHandler(taskService)
+
 	// Protected API routes
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(middleware.BearerAuth(cfg.Server.AuthToken))
 
 		r.Route("/tasks", func(r chi.Router) {
-			// TODO: Phase 1 handlers
-			r.Post("/", notImplemented)
-			r.Get("/{taskID}", notImplemented)
+			r.Post("/", taskHandler.Create)
+			r.Get("/{taskID}", taskHandler.Get)
 			r.Post("/{taskID}/instruct", notImplemented)
 			r.Post("/{taskID}/cancel", notImplemented)
 			r.Post("/{taskID}/create-pr", notImplemented)

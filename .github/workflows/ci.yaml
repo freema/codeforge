@@ -39,7 +39,7 @@ jobs:
         env:
           CODEFORGE_REDIS__URL: redis://localhost:6379
           CODEFORGE_SERVER__AUTH_TOKEN: ci-token
-          CODEFORGE_ENCRYPTION__KEY: "dGVzdC1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcyE="
+          CODEFORGE_ENCRYPTION__KEY: "dGVzdC1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcyF4eHg="
           CODEFORGE_WEBHOOKS__HMAC_SECRET: ci-secret
 
   build:

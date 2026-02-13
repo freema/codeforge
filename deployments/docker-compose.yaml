@@ -11,7 +11,7 @@ services:
       CODEFORGE_REDIS__URL: redis://redis:6379
       CODEFORGE_SERVER__AUTH_TOKEN: dev-token
       CODEFORGE_WEBHOOKS__HMAC_SECRET: dev-secret
-      CODEFORGE_ENCRYPTION__KEY: "dGVzdC1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcyE=" # 32-byte dev key
+      CODEFORGE_ENCRYPTION__KEY: "dGVzdC1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcyF4eHg=" # 32-byte dev key
     volumes:
       - workspaces:/data/workspaces
     depends_on:
