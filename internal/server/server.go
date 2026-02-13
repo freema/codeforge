@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/freema/codeforge/internal/config"
 	"github.com/freema/codeforge/internal/keys"
@@ -100,9 +101,17 @@ func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Servic
 		})
 	})
 
+	// Wrap with OpenTelemetry HTTP instrumentation
+	handler := otelhttp.NewHandler(r, "codeforge",
+		otelhttp.WithFilter(func(r *http.Request) bool {
+			// Skip tracing for health/ready/metrics endpoints
+			return r.URL.Path != "/health" && r.URL.Path != "/ready" && r.URL.Path != "/metrics"
+		}),
+	)
+
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:      r,
+		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,

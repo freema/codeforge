@@ -20,6 +20,7 @@ import (
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/server"
 	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/tracing"
 	"github.com/freema/codeforge/internal/webhook"
 	"github.com/freema/codeforge/internal/worker"
 	"github.com/freema/codeforge/internal/workspace"
@@ -50,6 +51,19 @@ func run() error {
 	// Setup logger
 	logger.Setup(cfg.Logging.Level, cfg.Logging.Format)
 	slog.Info("starting codeforge", "version", version)
+
+	// Initialize tracing
+	tracingShutdown, err := tracing.Setup(context.Background(), tracing.Config{
+		Enabled:      cfg.Tracing.Enabled,
+		Endpoint:     cfg.Tracing.Endpoint,
+		SamplingRate: cfg.Tracing.SamplingRate,
+		ServiceName:  "codeforge",
+		Version:      version,
+	})
+	if err != nil {
+		return fmt.Errorf("initializing tracing: %w", err)
+	}
+	defer tracingShutdown(context.Background())
 
 	// Connect to Redis
 	rdb, err := redisclient.New(cfg.Redis.URL, cfg.Redis.Prefix)

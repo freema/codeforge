@@ -26,6 +26,7 @@ type Payload struct {
 	Error          string                `json:"error,omitempty"`
 	ChangesSummary *gitpkg.ChangesSummary `json:"changes_summary,omitempty"`
 	Usage          *task.UsageInfo        `json:"usage,omitempty"`
+	TraceID        string                `json:"trace_id,omitempty"`
 	FinishedAt     time.Time             `json:"finished_at"`
 }
 
@@ -79,6 +80,9 @@ func (s *Sender) Send(ctx context.Context, callbackURL string, payload Payload) 
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Signature-256", "sha256="+sig)
 		req.Header.Set("X-CodeForge-Event", eventType)
+		if payload.TraceID != "" {
+			req.Header.Set("X-Trace-ID", payload.TraceID)
+		}
 
 		resp, err := s.client.Do(req)
 		if err != nil {

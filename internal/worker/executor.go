@@ -11,12 +11,16 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
 	"github.com/freema/codeforge/internal/cli"
 	gitpkg "github.com/freema/codeforge/internal/git"
 	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/mcp"
 	"github.com/freema/codeforge/internal/metrics"
 	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/tracing"
 	"github.com/freema/codeforge/internal/webhook"
 	"github.com/freema/codeforge/internal/workspace"
 )
@@ -68,7 +72,17 @@ func NewExecutor(
 
 // Execute runs the full task pipeline.
 func (e *Executor) Execute(ctx context.Context, t *task.Task) {
-	log := slog.With("task_id", t.ID, "iteration", t.Iteration)
+	ctx, span := tracing.Tracer().Start(ctx, "task.execute",
+		tracing.WithTaskAttributes(t.ID, t.Iteration),
+	)
+	defer span.End()
+
+	// Store trace ID on task
+	if traceID := tracing.TraceIDFromContext(ctx); traceID != "" {
+		t.TraceID = traceID
+	}
+
+	log := slog.With("task_id", t.ID, "iteration", t.Iteration, "trace_id", t.TraceID)
 	startTime := time.Now().UTC()
 
 	metrics.TasksInProgress.Inc()
@@ -228,7 +242,11 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 }
 
 func (e *Executor) cloneStep(ctx context.Context, t *task.Task, workDir string, log *slog.Logger) error {
+	ctx, span := tracing.Tracer().Start(ctx, "task.clone")
+	defer span.End()
+
 	if err := e.taskService.UpdateStatus(ctx, t.ID, task.StatusCloning); err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 
@@ -260,6 +278,7 @@ func (e *Executor) cloneStep(ctx context.Context, t *task.Task, workDir string, 
 		Shallow: true,
 	})
 	if err != nil {
+		span.SetStatus(codes.Error, "clone failed")
 		return err
 	}
 
@@ -293,9 +312,13 @@ func (e *Executor) pullBranch(ctx context.Context, t *task.Task, workDir string,
 }
 
 func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, log *slog.Logger) (*cli.RunResult, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "task.run")
+	defer span.End()
+
 	// Transition to RUNNING — handle both fresh tasks and follow-up iterations
 	if t.Status != task.StatusRunning {
 		if err := e.taskService.UpdateStatus(ctx, t.ID, task.StatusRunning); err != nil {
+			span.SetStatus(codes.Error, err.Error())
 			return nil, err
 		}
 	}
@@ -307,8 +330,10 @@ func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, lo
 	}
 	runner, err := e.cliRegistry.Get(cliName)
 	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		return nil, fmt.Errorf("resolving CLI runner: %w", err)
 	}
+	span.SetAttributes(attribute.String("cli.name", cliName))
 
 	e.streamer.EmitSystem(ctx, t.ID, "cli_started", map[string]string{
 		"cli":       cliName,
@@ -427,6 +452,7 @@ func (e *Executor) failTask(ctx context.Context, t *task.Task, errMsg string, st
 			TaskID:     t.ID,
 			Status:     string(task.StatusFailed),
 			Error:      errMsg,
+			TraceID:    t.TraceID,
 			FinishedAt: time.Now().UTC(),
 		})
 	}
@@ -439,6 +465,7 @@ func (e *Executor) sendWebhook(ctx context.Context, t *task.Task, result string,
 		Result:         result,
 		ChangesSummary: changes,
 		Usage:          usage,
+		TraceID:        t.TraceID,
 		FinishedAt:     time.Now().UTC(),
 	}); err != nil {
 		log.Error("webhook delivery failed", "error", err)
