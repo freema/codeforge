@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -199,6 +200,96 @@ func (s *Service) SetResult(ctx context.Context, taskID string, result string, c
 	}
 
 	return nil
+}
+
+// Instruct submits a follow-up instruction for an existing task.
+func (s *Service) Instruct(ctx context.Context, taskID string, prompt string) (*Task, error) {
+	t, err := s.Get(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate state allows instruction
+	switch t.Status {
+	case StatusCompleted, StatusAwaitingInstruction, StatusPRCreated:
+		// ok
+	case StatusRunning, StatusCloning, StatusCreatingPR:
+		return nil, apperror.Conflict("task is currently %s, cannot instruct", t.Status)
+	case StatusFailed:
+		return nil, apperror.Validation("task has failed, create a new task instead")
+	default:
+		return nil, apperror.Conflict("task in status %s cannot accept instructions", t.Status)
+	}
+
+	// Transition through AWAITING_INSTRUCTION if needed
+	if t.Status == StatusCompleted || t.Status == StatusPRCreated {
+		if err := ValidateTransition(t.Status, StatusAwaitingInstruction); err != nil {
+			return nil, err
+		}
+	}
+
+	now := time.Now().UTC()
+	newIteration := t.Iteration + 1
+
+	stateKey := s.redis.Key("task", taskID, "state")
+	pipe := s.redis.Unwrap().Pipeline()
+
+	// Update task state
+	pipe.HSet(ctx, stateKey, map[string]interface{}{
+		"status":         string(StatusAwaitingInstruction),
+		"current_prompt": prompt,
+		"iteration":      newIteration,
+		"updated_at":     now.Format(time.RFC3339Nano),
+		"error":          "", // clear previous error
+	})
+
+	// Remove TTL (task is active again)
+	pipe.Persist(ctx, stateKey)
+
+	// Re-enqueue for worker processing
+	pipe.RPush(ctx, s.redis.Key(s.queueName), taskID)
+
+	if _, err := pipe.Exec(ctx); err != nil {
+		return nil, fmt.Errorf("instructing task: %w", err)
+	}
+
+	t.Status = StatusAwaitingInstruction
+	t.CurrentPrompt = prompt
+	t.Iteration = newIteration
+	t.Error = ""
+
+	slog.Info("task instructed", "task_id", taskID, "iteration", newIteration)
+	return t, nil
+}
+
+// SaveIteration appends a completed iteration record to the task's iteration history.
+func (s *Service) SaveIteration(ctx context.Context, taskID string, iter Iteration) error {
+	iterKey := s.redis.Key("task", taskID, "iterations")
+	data, err := json.Marshal(iter)
+	if err != nil {
+		return fmt.Errorf("marshaling iteration: %w", err)
+	}
+
+	return s.redis.Unwrap().RPush(ctx, iterKey, string(data)).Err()
+}
+
+// GetIterations loads the full iteration history from Redis.
+func (s *Service) GetIterations(ctx context.Context, taskID string) ([]Iteration, error) {
+	iterKey := s.redis.Key("task", taskID, "iterations")
+	items, err := s.redis.Unwrap().LRange(ctx, iterKey, 0, -1).Result()
+	if err != nil {
+		return nil, fmt.Errorf("loading iterations: %w", err)
+	}
+
+	iterations := make([]Iteration, 0, len(items))
+	for _, item := range items {
+		var iter Iteration
+		if err := json.Unmarshal([]byte(item), &iter); err != nil {
+			continue
+		}
+		iterations = append(iterations, iter)
+	}
+	return iterations, nil
 }
 
 // SetError stores an error message on the task.

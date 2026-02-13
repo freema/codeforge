@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -24,6 +25,8 @@ type Pool struct {
 	wg          sync.WaitGroup
 	cancel      context.CancelFunc
 	activeCount atomic.Int32
+	cancels     map[string]context.CancelFunc
+	cancelsMu   sync.RWMutex
 }
 
 // NewPool creates a new worker pool.
@@ -40,6 +43,7 @@ func NewPool(
 		taskService: taskService,
 		queueName:   queueName,
 		concurrency: concurrency,
+		cancels:     make(map[string]context.CancelFunc),
 	}
 }
 
@@ -68,6 +72,18 @@ func (p *Pool) Stop() {
 // ActiveCount returns the number of currently active workers.
 func (p *Pool) ActiveCount() int32 {
 	return p.activeCount.Load()
+}
+
+// Cancel cancels a running task by its ID.
+func (p *Pool) Cancel(taskID string) error {
+	p.cancelsMu.RLock()
+	cancelFn, ok := p.cancels[taskID]
+	p.cancelsMu.RUnlock()
+	if !ok {
+		return fmt.Errorf("task %s is not currently running", taskID)
+	}
+	cancelFn()
+	return nil
 }
 
 func (p *Pool) worker(ctx context.Context, id int) {
@@ -106,8 +122,23 @@ func (p *Pool) worker(ctx context.Context, id int) {
 			continue
 		}
 
+		// Create task-specific cancellable context
+		taskCtx, taskCancel := context.WithCancel(ctx)
+
+		// Register cancel func for this task
+		p.cancelsMu.Lock()
+		p.cancels[taskID] = taskCancel
+		p.cancelsMu.Unlock()
+
 		// Execute the task
-		p.executor.Execute(ctx, t)
+		p.executor.Execute(taskCtx, t)
+
+		// Deregister cancel func
+		p.cancelsMu.Lock()
+		delete(p.cancels, taskID)
+		p.cancelsMu.Unlock()
+		taskCancel() // clean up context resources
+
 		p.activeCount.Add(-1)
 	}
 }

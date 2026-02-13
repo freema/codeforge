@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -15,15 +16,21 @@ import (
 
 var validate = validator.New()
 
+// Canceller can cancel a running task.
+type Canceller interface {
+	Cancel(taskID string) error
+}
+
 // TaskHandler handles task-related HTTP endpoints.
 type TaskHandler struct {
 	service   *task.Service
 	prService *task.PRService
+	canceller Canceller
 }
 
 // NewTaskHandler creates a new task handler.
-func NewTaskHandler(service *task.Service, prService *task.PRService) *TaskHandler {
-	return &TaskHandler{service: service, prService: prService}
+func NewTaskHandler(service *task.Service, prService *task.PRService, canceller Canceller) *TaskHandler {
+	return &TaskHandler{service: service, prService: prService, canceller: canceller}
 }
 
 // Create handles POST /api/v1/tasks.
@@ -65,6 +72,7 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 // Get handles GET /api/v1/tasks/{taskID}.
+// Supports ?include=iterations to load full iteration history.
 func (h *TaskHandler) Get(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskID")
 	if taskID == "" {
@@ -78,7 +86,80 @@ func (h *TaskHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Load iterations if requested
+	if r.URL.Query().Get("include") == "iterations" {
+		iterations, err := h.service.GetIterations(r.Context(), taskID)
+		if err == nil {
+			t.Iterations = iterations
+		}
+	}
+
 	writeJSON(w, http.StatusOK, t)
+}
+
+// Instruct handles POST /api/v1/tasks/{taskID}/instruct.
+func (h *TaskHandler) Instruct(w http.ResponseWriter, r *http.Request) {
+	taskID := chi.URLParam(r, "taskID")
+	if taskID == "" {
+		writeError(w, http.StatusBadRequest, "task ID is required")
+		return
+	}
+
+	var req struct {
+		Prompt string `json:"prompt" validate:"required"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := validate.Struct(req); err != nil {
+		writeError(w, http.StatusBadRequest, "prompt is required")
+		return
+	}
+
+	t, err := h.service.Instruct(r.Context(), taskID, req.Prompt)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"id":        t.ID,
+		"status":    t.Status,
+		"iteration": t.Iteration,
+	})
+}
+
+// Cancel handles POST /api/v1/tasks/{taskID}/cancel.
+func (h *TaskHandler) Cancel(w http.ResponseWriter, r *http.Request) {
+	taskID := chi.URLParam(r, "taskID")
+	if taskID == "" {
+		writeError(w, http.StatusBadRequest, "task ID is required")
+		return
+	}
+
+	// Load task to check status
+	t, err := h.service.Get(r.Context(), taskID)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+
+	if t.Status != task.StatusRunning && t.Status != task.StatusCloning {
+		writeError(w, http.StatusConflict, fmt.Sprintf("task is not running (status: %s)", t.Status))
+		return
+	}
+
+	if err := h.canceller.Cancel(taskID); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"id":      taskID,
+		"status":  "cancelling",
+		"message": "task cancellation requested",
+	})
 }
 
 // CreatePR handles POST /api/v1/tasks/{taskID}/create-pr.

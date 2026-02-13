@@ -24,7 +24,7 @@ type Server struct {
 }
 
 // New creates and configures the HTTP server with all routes and middleware.
-func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Service, prService *task.PRService, version string) *Server {
+func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Service, prService *task.PRService, canceller handlers.Canceller, version string) *Server {
 	r := chi.NewRouter()
 
 	// Global middleware
@@ -40,7 +40,7 @@ func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Servic
 	r.Get("/ready", healthHandler.Ready)
 
 	// Task handler
-	taskHandler := handlers.NewTaskHandler(taskService, prService)
+	taskHandler := handlers.NewTaskHandler(taskService, prService, canceller)
 
 	// Protected API routes
 	r.Route("/api/v1", func(r chi.Router) {
@@ -49,8 +49,8 @@ func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Servic
 		r.Route("/tasks", func(r chi.Router) {
 			r.Post("/", taskHandler.Create)
 			r.Get("/{taskID}", taskHandler.Get)
-			r.Post("/{taskID}/instruct", notImplemented)
-			r.Post("/{taskID}/cancel", notImplemented)
+			r.Post("/{taskID}/instruct", taskHandler.Instruct)
+			r.Post("/{taskID}/cancel", taskHandler.Cancel)
 			r.Post("/{taskID}/create-pr", taskHandler.CreatePR)
 		})
 

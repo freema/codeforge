@@ -57,7 +57,7 @@ func CreateBranchAndPush(ctx context.Context, opts BranchOptions) error {
 	slog.Info("changes committed", "branch", opts.BranchName)
 
 	// Push via GIT_ASKPASS
-	pushEnv, cleanup, err := askPassEnv(opts.Token)
+	pushEnv, cleanup, err := AskPassEnv(opts.Token)
 	if err != nil {
 		return fmt.Errorf("preparing push credentials: %w", err)
 	}
@@ -71,9 +71,9 @@ func CreateBranchAndPush(ctx context.Context, opts BranchOptions) error {
 	return nil
 }
 
-// askPassEnv prepares GIT_ASKPASS environment for authenticated push.
+// AskPassEnv prepares GIT_ASKPASS environment for authenticated git operations.
 // Returns extra env vars and a cleanup function.
-func askPassEnv(token string) ([]string, func(), error) {
+func AskPassEnv(token string) ([]string, func(), error) {
 	if token == "" {
 		return nil, func() {}, nil
 	}

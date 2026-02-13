@@ -39,8 +39,9 @@ type Task struct {
 	Usage          *UsageInfo      `json:"usage,omitempty"`
 
 	// Iteration tracking (Phase 3)
-	Iteration     int    `json:"iteration"`
-	CurrentPrompt string `json:"current_prompt,omitempty"`
+	Iteration     int         `json:"iteration"`
+	CurrentPrompt string      `json:"current_prompt,omitempty"`
+	Iterations    []Iteration `json:"iterations,omitempty"` // populated on demand via ?include=iterations
 
 	// Git integration (Phase 2)
 	Branch   string `json:"branch,omitempty"`

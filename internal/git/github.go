@@ -109,6 +109,36 @@ func (c *GitHubPRCreator) addLabel(ctx context.Context, repo *RepoInfo, token st
 	resp.Body.Close()
 }
 
+// UpdatePR updates an existing pull request's body on GitHub.
+func (c *GitHubPRCreator) UpdatePR(ctx context.Context, repo *RepoInfo, token string, prNumber int, body string) error {
+	apiURL := repo.APIURL()
+	endpoint := fmt.Sprintf("%s/repos/%s/%s/pulls/%d", apiURL, repo.Owner, repo.Repo, prNumber)
+
+	bodyJSON, err := json.Marshal(map[string]string{"body": body})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "PATCH", endpoint, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("github PATCH PR returned %d", resp.StatusCode)
+	}
+	return nil
+}
+
 func truncateBytes(b []byte, max int) string {
 	if len(b) <= max {
 		return string(b)

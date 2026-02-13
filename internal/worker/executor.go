@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/freema/codeforge/internal/cli"
@@ -14,6 +16,8 @@ import (
 	"github.com/freema/codeforge/internal/task"
 	"github.com/freema/codeforge/internal/webhook"
 )
+
+const defaultMaxContextChars = 50000
 
 // ExecutorConfig holds executor configuration.
 type ExecutorConfig struct {
@@ -52,6 +56,7 @@ func NewExecutor(
 // Execute runs the full task pipeline.
 func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 	log := slog.With("task_id", t.ID, "iteration", t.Iteration)
+	startTime := time.Now().UTC()
 
 	// Determine timeout
 	timeout := e.cfg.DefaultTimeout
@@ -67,14 +72,27 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 
 	workDir := filepath.Join(e.cfg.WorkspaceBase, t.ID)
 
-	// Skip clone for iterations > 1 (workspace reuse)
+	// Clone or reuse workspace
 	if t.Iteration <= 1 {
 		if err := e.cloneStep(taskCtx, t, workDir, log); err != nil {
-			e.failTask(ctx, t, fmt.Sprintf("clone failed: %v", err), log)
+			e.failTask(ctx, t, fmt.Sprintf("clone failed: %v", err), startTime, log)
 			return
 		}
 	} else {
-		log.Info("reusing existing workspace", "work_dir", workDir)
+		// Reuse workspace — check it still exists
+		if _, err := os.Stat(workDir); os.IsNotExist(err) {
+			log.Warn("workspace missing for iteration, re-cloning", "work_dir", workDir)
+			if err := e.cloneStep(taskCtx, t, workDir, log); err != nil {
+				e.failTask(ctx, t, fmt.Sprintf("re-clone failed: %v", err), startTime, log)
+				return
+			}
+		} else {
+			log.Info("reusing existing workspace", "work_dir", workDir)
+			// Pull latest if a branch was pushed (PR flow)
+			if t.Branch != "" {
+				e.pullBranch(taskCtx, t, workDir, log)
+			}
+		}
 	}
 
 	// Run CLI
@@ -84,10 +102,15 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 			e.streamer.EmitSystem(ctx, t.ID, "task_timeout", map[string]interface{}{
 				"timeout_seconds": timeout,
 			})
-			e.failTask(ctx, t, fmt.Sprintf("task timed out after %ds", timeout), log)
+			e.failTask(ctx, t, fmt.Sprintf("task timed out after %ds", timeout), startTime, log)
 			return
 		}
-		e.failTask(ctx, t, fmt.Sprintf("CLI execution failed: %v", err), log)
+		if ctx.Err() == context.Canceled {
+			e.streamer.EmitSystem(ctx, t.ID, "task_cancelled", nil)
+			e.failTask(context.Background(), t, "cancelled by user", startTime, log)
+			return
+		}
+		e.failTask(ctx, t, fmt.Sprintf("CLI execution failed: %v", err), startTime, log)
 		return
 	}
 
@@ -115,11 +138,29 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 		return
 	}
 
+	// Save iteration record
+	now := time.Now().UTC()
+	prompt := t.CurrentPrompt
+	if prompt == "" {
+		prompt = t.Prompt
+	}
+	e.taskService.SaveIteration(ctx, t.ID, task.Iteration{
+		Number:    t.Iteration,
+		Prompt:    prompt,
+		Result:    truncate(result.Output, 2000),
+		Status:    task.StatusCompleted,
+		Changes:   changes,
+		Usage:     usage,
+		StartedAt: startTime,
+		EndedAt:   &now,
+	})
+
 	// Emit completion events
 	e.streamer.EmitResult(ctx, t.ID, "task_completed", map[string]interface{}{
 		"result":          truncate(result.Output, 2000),
 		"changes_summary": changes,
 		"usage":           usage,
+		"iteration":       t.Iteration,
 	})
 	e.streamer.EmitDone(ctx, t.ID, task.StatusCompleted, changes)
 
@@ -140,7 +181,6 @@ func (e *Executor) cloneStep(ctx context.Context, t *task.Task, workDir string, 
 		"repo_url": gitpkg.SanitizeURL(t.RepoURL),
 	})
 
-	// Ensure workspace directory exists
 	if err := os.MkdirAll(workDir, 0755); err != nil {
 		return fmt.Errorf("creating workspace: %w", err)
 	}
@@ -169,19 +209,42 @@ func (e *Executor) cloneStep(ctx context.Context, t *task.Task, workDir string, 
 	return nil
 }
 
+func (e *Executor) pullBranch(ctx context.Context, t *task.Task, workDir string, log *slog.Logger) {
+	log.Info("pulling latest changes", "branch", t.Branch)
+
+	askPassEnv, cleanup, err := gitpkg.AskPassEnv(t.AccessToken)
+	if err != nil {
+		log.Warn("failed to create askpass for pull", "error", err)
+		return
+	}
+	defer cleanup()
+
+	cmd := exec.CommandContext(ctx, "git", "pull", "origin", t.Branch)
+	cmd.Dir = workDir
+	if len(askPassEnv) > 0 {
+		cmd.Env = append(os.Environ(), askPassEnv...)
+	}
+
+	if err := cmd.Run(); err != nil {
+		log.Warn("git pull failed (continuing with existing workspace)", "error", err)
+	}
+}
+
 func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, log *slog.Logger) (*cli.RunResult, error) {
-	if err := e.taskService.UpdateStatus(ctx, t.ID, task.StatusRunning); err != nil {
-		return nil, err
+	// Transition to RUNNING — handle both fresh tasks and follow-up iterations
+	if t.Status != task.StatusRunning {
+		if err := e.taskService.UpdateStatus(ctx, t.ID, task.StatusRunning); err != nil {
+			return nil, err
+		}
 	}
 
 	e.streamer.EmitSystem(ctx, t.ID, "cli_started", map[string]string{
-		"cli": "claude-code",
+		"cli":       "claude-code",
+		"iteration": fmt.Sprintf("%d", t.Iteration),
 	})
 
-	prompt := t.CurrentPrompt
-	if prompt == "" {
-		prompt = t.Prompt
-	}
+	// Build prompt with conversation context for iterations > 1
+	prompt := e.buildPrompt(ctx, t)
 
 	model := e.cfg.DefaultModel
 	apiKey := ""
@@ -217,18 +280,75 @@ func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, lo
 	return result, nil
 }
 
-func (e *Executor) failTask(ctx context.Context, t *task.Task, errMsg string, log *slog.Logger) {
+// buildPrompt constructs the prompt with conversation context for multi-turn iterations.
+func (e *Executor) buildPrompt(ctx context.Context, t *task.Task) string {
+	currentPrompt := t.CurrentPrompt
+	if currentPrompt == "" {
+		currentPrompt = t.Prompt
+	}
+
+	// First iteration — no context needed
+	if t.Iteration <= 1 {
+		return currentPrompt
+	}
+
+	// Load previous iterations for context
+	iterations, err := e.taskService.GetIterations(ctx, t.ID)
+	if err != nil || len(iterations) == 0 {
+		return currentPrompt
+	}
+
+	var ctx2 strings.Builder
+	ctx2.WriteString("## Previous iterations on this codebase:\n\n")
+
+	totalChars := 0
+	// Build from oldest to newest, but we may need to truncate oldest first
+	for _, iter := range iterations {
+		entry := fmt.Sprintf("### Iteration %d\n**Prompt:** %s\n**Result summary:** %s\n**Status:** %s\n\n",
+			iter.Number, iter.Prompt, iter.Result, iter.Status)
+
+		if totalChars+len(entry) > defaultMaxContextChars {
+			// Truncate — drop this and older entries
+			ctx2.WriteString("(earlier iterations truncated for context limits)\n\n")
+			break
+		}
+
+		ctx2.WriteString(entry)
+		totalChars += len(entry)
+	}
+
+	ctx2.WriteString("## Current instruction:\n\n")
+	ctx2.WriteString(currentPrompt)
+
+	return ctx2.String()
+}
+
+func (e *Executor) failTask(ctx context.Context, t *task.Task, errMsg string, startTime time.Time, log *slog.Logger) {
 	log.Error("task failed", "error", errMsg)
 
 	e.taskService.SetError(ctx, t.ID, errMsg)
 	e.taskService.UpdateStatus(ctx, t.ID, task.StatusFailed)
+
+	// Save failed iteration record
+	now := time.Now().UTC()
+	prompt := t.CurrentPrompt
+	if prompt == "" {
+		prompt = t.Prompt
+	}
+	e.taskService.SaveIteration(ctx, t.ID, task.Iteration{
+		Number:    t.Iteration,
+		Prompt:    prompt,
+		Error:     errMsg,
+		Status:    task.StatusFailed,
+		StartedAt: startTime,
+		EndedAt:   &now,
+	})
 
 	e.streamer.EmitSystem(ctx, t.ID, "task_failed", map[string]string{
 		"error": errMsg,
 	})
 	e.streamer.EmitDone(ctx, t.ID, task.StatusFailed, nil)
 
-	// Send failure webhook
 	if t.CallbackURL != "" && e.webhook != nil {
 		e.webhook.Send(ctx, t.CallbackURL, webhook.Payload{
 			TaskID:     t.ID,

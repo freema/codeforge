@@ -77,3 +77,33 @@ func (c *GitLabMRCreator) CreateMR(ctx context.Context, repo *RepoInfo, token st
 		Number: result.IID,
 	}, nil
 }
+
+// UpdateMR updates an existing merge request's description on GitLab.
+func (c *GitLabMRCreator) UpdateMR(ctx context.Context, repo *RepoInfo, token string, mrIID int, description string) error {
+	apiURL := repo.APIURL()
+	projectPath := url.PathEscape(repo.FullName())
+	endpoint := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d", apiURL, projectPath, mrIID)
+
+	bodyJSON, err := json.Marshal(map[string]string{"description": description})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "PUT", endpoint, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("PRIVATE-TOKEN", token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("gitlab PUT MR returned %d", resp.StatusCode)
+	}
+	return nil
+}

@@ -132,7 +132,7 @@ func run() error {
 	listener := task.NewListener(rdb, taskService, "input:tasks")
 
 	// Create and start HTTP server
-	srv := server.New(cfg, rdb, taskService, prService, version)
+	srv := server.New(cfg, rdb, taskService, prService, pool, version)
 
 	// Start background services
 	appCtx, appCancel := context.WithCancel(context.Background())
