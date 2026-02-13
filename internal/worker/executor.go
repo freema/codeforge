@@ -239,7 +239,7 @@ func (e *Executor) failTask(ctx context.Context, t *task.Task, errMsg string, lo
 	}
 }
 
-func (e *Executor) sendWebhook(ctx context.Context, t *task.Task, result string, changes *task.ChangesSummary, usage *task.UsageInfo, log *slog.Logger) {
+func (e *Executor) sendWebhook(ctx context.Context, t *task.Task, result string, changes *gitpkg.ChangesSummary, usage *task.UsageInfo, log *slog.Logger) {
 	if err := e.webhook.Send(ctx, t.CallbackURL, webhook.Payload{
 		TaskID:         t.ID,
 		Status:         string(task.StatusCompleted),

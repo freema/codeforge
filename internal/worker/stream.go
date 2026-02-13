@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	gitpkg "github.com/freema/codeforge/internal/git"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/task"
 )
@@ -80,7 +81,7 @@ func (s *Streamer) EmitResult(ctx context.Context, taskID, event string, data in
 }
 
 // EmitDone publishes completion signal on the done channel and sets history TTL.
-func (s *Streamer) EmitDone(ctx context.Context, taskID string, status task.TaskStatus, summary *task.ChangesSummary) error {
+func (s *Streamer) EmitDone(ctx context.Context, taskID string, status task.TaskStatus, summary *gitpkg.ChangesSummary) error {
 	data, _ := json.Marshal(map[string]interface{}{
 		"task_id":         taskID,
 		"status":          status,

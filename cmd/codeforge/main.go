@@ -116,11 +116,23 @@ func run() error {
 		cfg.Workers.Concurrency,
 	)
 
+	// Initialize prompt analyzer
+	analyzer := cli.NewAnalyzer("") // API key resolved per-task from config
+
+	// Initialize PR service
+	prService := task.NewPRService(taskService, analyzer, task.PRServiceConfig{
+		WorkspaceBase:   cfg.Tasks.WorkspaceBase,
+		BranchPrefix:    cfg.Git.BranchPrefix,
+		CommitAuthor:    cfg.Git.CommitAuthor,
+		CommitEmail:     cfg.Git.CommitEmail,
+		ProviderDomains: cfg.Git.ProviderDomains,
+	})
+
 	// Initialize Redis input listener
 	listener := task.NewListener(rdb, taskService, "input:tasks")
 
 	// Create and start HTTP server
-	srv := server.New(cfg, rdb, taskService, version)
+	srv := server.New(cfg, rdb, taskService, prService, version)
 
 	// Start background services
 	appCtx, appCancel := context.WithCancel(context.Background())

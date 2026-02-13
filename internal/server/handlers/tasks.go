@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
@@ -16,12 +17,13 @@ var validate = validator.New()
 
 // TaskHandler handles task-related HTTP endpoints.
 type TaskHandler struct {
-	service *task.Service
+	service   *task.Service
+	prService *task.PRService
 }
 
 // NewTaskHandler creates a new task handler.
-func NewTaskHandler(service *task.Service) *TaskHandler {
-	return &TaskHandler{service: service}
+func NewTaskHandler(service *task.Service, prService *task.PRService) *TaskHandler {
+	return &TaskHandler{service: service, prService: prService}
 }
 
 // Create handles POST /api/v1/tasks.
@@ -77,6 +79,44 @@ func (h *TaskHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, t)
+}
+
+// CreatePR handles POST /api/v1/tasks/{taskID}/create-pr.
+func (h *TaskHandler) CreatePR(w http.ResponseWriter, r *http.Request) {
+	taskID := chi.URLParam(r, "taskID")
+	if taskID == "" {
+		writeError(w, http.StatusBadRequest, "task ID is required")
+		return
+	}
+
+	var req task.CreatePRRequest
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+	}
+
+	result, err := h.prService.CreatePR(r.Context(), taskID, req)
+	if err != nil {
+		// Determine status code from error message
+		errMsg := err.Error()
+		switch {
+		case strings.Contains(errMsg, "not found"):
+			writeError(w, http.StatusNotFound, errMsg)
+		case strings.Contains(errMsg, "must be in completed status"):
+			writeError(w, http.StatusConflict, errMsg)
+		case strings.Contains(errMsg, "no changes"):
+			writeError(w, http.StatusBadRequest, errMsg)
+		case strings.Contains(errMsg, "not supported"):
+			writeError(w, http.StatusBadRequest, errMsg)
+		default:
+			writeError(w, http.StatusInternalServerError, errMsg)
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {

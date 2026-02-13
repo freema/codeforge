@@ -13,18 +13,19 @@ import (
 	"net/http"
 	"time"
 
+	gitpkg "github.com/freema/codeforge/internal/git"
 	"github.com/freema/codeforge/internal/task"
 )
 
 // Payload is the webhook request body.
 type Payload struct {
-	TaskID         string               `json:"task_id"`
-	Status         string               `json:"status"`
-	Result         string               `json:"result,omitempty"`
-	Error          string               `json:"error,omitempty"`
-	ChangesSummary *task.ChangesSummary  `json:"changes_summary,omitempty"`
-	Usage          *task.UsageInfo       `json:"usage,omitempty"`
-	FinishedAt     time.Time            `json:"finished_at"`
+	TaskID         string                `json:"task_id"`
+	Status         string                `json:"status"`
+	Result         string                `json:"result,omitempty"`
+	Error          string                `json:"error,omitempty"`
+	ChangesSummary *gitpkg.ChangesSummary `json:"changes_summary,omitempty"`
+	Usage          *task.UsageInfo        `json:"usage,omitempty"`
+	FinishedAt     time.Time             `json:"finished_at"`
 }
 
 // Sender delivers webhook callbacks with HMAC-SHA256 signatures.

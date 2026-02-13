@@ -3,6 +3,8 @@ package task
 import (
 	"encoding/json"
 	"time"
+
+	gitpkg "github.com/freema/codeforge/internal/git"
 )
 
 // TaskStatus represents the current state of a task.
@@ -33,7 +35,7 @@ type Task struct {
 	// Result fields
 	Result         string          `json:"result,omitempty"`
 	Error          string          `json:"error,omitempty"`
-	ChangesSummary *ChangesSummary `json:"changes_summary,omitempty"`
+	ChangesSummary *gitpkg.ChangesSummary `json:"changes_summary,omitempty"`
 	Usage          *UsageInfo      `json:"usage,omitempty"`
 
 	// Iteration tracking (Phase 3)
@@ -52,14 +54,6 @@ type Task struct {
 	CreatedAt  time.Time  `json:"created_at"`
 	StartedAt  *time.Time `json:"started_at,omitempty"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
-}
-
-// ChangesSummary holds git diff statistics after CLI execution.
-type ChangesSummary struct {
-	FilesModified int    `json:"files_modified"`
-	FilesCreated  int    `json:"files_created"`
-	FilesDeleted  int    `json:"files_deleted"`
-	DiffStats     string `json:"diff_stats"`
 }
 
 // UsageInfo tracks token usage and duration.
@@ -96,7 +90,7 @@ type Iteration struct {
 	Result    string          `json:"result,omitempty"`
 	Error     string          `json:"error,omitempty"`
 	Status    TaskStatus      `json:"status"`
-	Changes   *ChangesSummary `json:"changes,omitempty"`
+	Changes   *gitpkg.ChangesSummary `json:"changes,omitempty"`
 	Usage     *UsageInfo      `json:"usage,omitempty"`
 	StartedAt time.Time       `json:"started_at"`
 	EndedAt   *time.Time      `json:"ended_at,omitempty"`
@@ -124,7 +118,7 @@ func UnmarshalConfig(data string) *TaskConfig {
 }
 
 // MarshalChangesSummary serializes ChangesSummary to JSON string for Redis.
-func MarshalChangesSummary(cs *ChangesSummary) string {
+func MarshalChangesSummary(cs *gitpkg.ChangesSummary) string {
 	if cs == nil {
 		return ""
 	}
@@ -133,11 +127,11 @@ func MarshalChangesSummary(cs *ChangesSummary) string {
 }
 
 // UnmarshalChangesSummary deserializes ChangesSummary from JSON string.
-func UnmarshalChangesSummary(data string) *ChangesSummary {
+func UnmarshalChangesSummary(data string) *gitpkg.ChangesSummary {
 	if data == "" {
 		return nil
 	}
-	var cs ChangesSummary
+	var cs gitpkg.ChangesSummary
 	if err := json.Unmarshal([]byte(data), &cs); err != nil {
 		return nil
 	}

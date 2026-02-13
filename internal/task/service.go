@@ -12,6 +12,7 @@ import (
 
 	"github.com/freema/codeforge/internal/apperror"
 	"github.com/freema/codeforge/internal/crypto"
+	gitpkg "github.com/freema/codeforge/internal/git"
 	"github.com/freema/codeforge/internal/redisclient"
 )
 
@@ -176,7 +177,7 @@ func (s *Service) UpdateStatus(ctx context.Context, taskID string, newStatus Tas
 }
 
 // SetResult stores the task result and changes summary.
-func (s *Service) SetResult(ctx context.Context, taskID string, result string, changes *ChangesSummary, usage *UsageInfo) error {
+func (s *Service) SetResult(ctx context.Context, taskID string, result string, changes *gitpkg.ChangesSummary, usage *UsageInfo) error {
 	resultKey := s.redis.Key("task", taskID, "result")
 	stateKey := s.redis.Key("task", taskID, "state")
 

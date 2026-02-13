@@ -7,13 +7,19 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-
-	"github.com/freema/codeforge/internal/task"
 )
+
+// ChangesSummary holds git diff statistics after CLI execution.
+type ChangesSummary struct {
+	FilesModified int    `json:"files_modified"`
+	FilesCreated  int    `json:"files_created"`
+	FilesDeleted  int    `json:"files_deleted"`
+	DiffStats     string `json:"diff_stats"`
+}
 
 // CalculateChanges computes a summary of workspace changes after CLI execution.
 // It runs git status and git diff --shortstat (both staged and unstaged).
-func CalculateChanges(ctx context.Context, workDir string) (*task.ChangesSummary, error) {
+func CalculateChanges(ctx context.Context, workDir string) (*ChangesSummary, error) {
 	// git status --porcelain for file counts
 	statusCmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
 	statusCmd.Dir = workDir
@@ -50,7 +56,7 @@ func CalculateChanges(ctx context.Context, workDir string) (*task.ChangesSummary
 
 	diffStats := fmt.Sprintf("+%d -%d", unstagedIns+stagedIns, unstagedDel+stagedDel)
 
-	return &task.ChangesSummary{
+	return &ChangesSummary{
 		FilesModified: modified,
 		FilesCreated:  created,
 		FilesDeleted:  deleted,
