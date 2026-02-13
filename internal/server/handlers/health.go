@@ -7,25 +7,28 @@ import (
 	"time"
 
 	"github.com/freema/codeforge/internal/redisclient"
+	"github.com/freema/codeforge/internal/workspace"
 )
 
 // HealthHandler serves /health and /ready endpoints.
 type HealthHandler struct {
-	redis     *redisclient.Client
-	startTime time.Time
-	version   string
-	ready     *atomic.Bool
+	redis        *redisclient.Client
+	workspaceMgr *workspace.Manager
+	startTime    time.Time
+	version      string
+	ready        *atomic.Bool
 }
 
 // NewHealthHandler creates a health handler.
-func NewHealthHandler(redis *redisclient.Client, version string) *HealthHandler {
+func NewHealthHandler(redis *redisclient.Client, workspaceMgr *workspace.Manager, version string) *HealthHandler {
 	ready := &atomic.Bool{}
 	ready.Store(true)
 	return &HealthHandler{
-		redis:     redis,
-		startTime: time.Now(),
-		version:   version,
-		ready:     ready,
+		redis:        redis,
+		workspaceMgr: workspaceMgr,
+		startTime:    time.Now(),
+		version:      version,
+		ready:        ready,
 	}
 }
 
@@ -35,10 +38,11 @@ func (h *HealthHandler) SetReady(v bool) {
 }
 
 type healthResponse struct {
-	Status  string `json:"status"`
-	Redis   string `json:"redis"`
-	Version string `json:"version"`
-	Uptime  string `json:"uptime"`
+	Status              string  `json:"status"`
+	Redis               string  `json:"redis"`
+	Version             string  `json:"version"`
+	Uptime              string  `json:"uptime"`
+	WorkspaceDiskUsageMB float64 `json:"workspace_disk_usage_mb"`
 }
 
 // Health checks Redis connectivity and returns system health.
@@ -55,6 +59,11 @@ func (h *HealthHandler) Health(w http.ResponseWriter, r *http.Request) {
 		resp.Status = "error"
 		resp.Redis = "disconnected"
 		statusCode = http.StatusServiceUnavailable
+	}
+
+	if h.workspaceMgr != nil {
+		totalBytes := h.workspaceMgr.TotalSizeBytes(r.Context())
+		resp.WorkspaceDiskUsageMB = float64(totalBytes) / (1024 * 1024)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

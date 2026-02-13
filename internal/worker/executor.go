@@ -17,6 +17,7 @@ import (
 	"github.com/freema/codeforge/internal/mcp"
 	"github.com/freema/codeforge/internal/task"
 	"github.com/freema/codeforge/internal/webhook"
+	"github.com/freema/codeforge/internal/workspace"
 )
 
 const defaultMaxContextChars = 50000
@@ -37,6 +38,7 @@ type Executor struct {
 	webhook      *webhook.Sender
 	keyResolver  *keys.Resolver
 	mcpInstaller *mcp.Installer
+	workspaceMgr *workspace.Manager
 	cfg          ExecutorConfig
 }
 
@@ -48,6 +50,7 @@ func NewExecutor(
 	webhook *webhook.Sender,
 	keyResolver *keys.Resolver,
 	mcpInstaller *mcp.Installer,
+	workspaceMgr *workspace.Manager,
 	cfg ExecutorConfig,
 ) *Executor {
 	return &Executor{
@@ -57,6 +60,7 @@ func NewExecutor(
 		webhook:      webhook,
 		keyResolver:  keyResolver,
 		mcpInstaller: mcpInstaller,
+		workspaceMgr: workspaceMgr,
 		cfg:          cfg,
 	}
 }
@@ -155,6 +159,13 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 		log.Warn("failed to calculate changes", "error", err)
 	}
 
+	// Update workspace size
+	if e.workspaceMgr != nil {
+		if size, err := e.workspaceMgr.UpdateSize(ctx, t.ID); err == nil {
+			log.Info("workspace size updated", "size_bytes", size)
+		}
+	}
+
 	// Build usage info
 	usage := &task.UsageInfo{
 		InputTokens:     result.InputTokens,
@@ -216,8 +227,15 @@ func (e *Executor) cloneStep(ctx context.Context, t *task.Task, workDir string, 
 		"repo_url": gitpkg.SanitizeURL(t.RepoURL),
 	})
 
-	if err := os.MkdirAll(workDir, 0755); err != nil {
-		return fmt.Errorf("creating workspace: %w", err)
+	// Create workspace via manager (or fallback to raw mkdir)
+	if e.workspaceMgr != nil {
+		if _, err := e.workspaceMgr.Create(ctx, t.ID); err != nil {
+			return fmt.Errorf("creating workspace: %w", err)
+		}
+	} else {
+		if err := os.MkdirAll(workDir, 0755); err != nil {
+			return fmt.Errorf("creating workspace: %w", err)
+		}
 	}
 
 	branch := ""

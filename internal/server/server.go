@@ -17,6 +17,7 @@ import (
 	"github.com/freema/codeforge/internal/server/handlers"
 	"github.com/freema/codeforge/internal/server/middleware"
 	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/workspace"
 )
 
 // Server is the HTTP server.
@@ -26,7 +27,7 @@ type Server struct {
 }
 
 // New creates and configures the HTTP server with all routes and middleware.
-func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Service, prService *task.PRService, canceller handlers.Canceller, keyRegistry *keys.Registry, mcpRegistry *mcp.Registry, version string) *Server {
+func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Service, prService *task.PRService, canceller handlers.Canceller, keyRegistry *keys.Registry, mcpRegistry *mcp.Registry, workspaceMgr *workspace.Manager, version string) *Server {
 	r := chi.NewRouter()
 
 	// Global middleware
@@ -37,7 +38,7 @@ func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Servic
 	r.Use(chimw.Timeout(60 * time.Second))
 
 	// Health endpoints (no auth)
-	healthHandler := handlers.NewHealthHandler(redis, version)
+	healthHandler := handlers.NewHealthHandler(redis, workspaceMgr, version)
 	r.Get("/health", healthHandler.Health)
 	r.Get("/ready", healthHandler.Ready)
 
@@ -49,6 +50,9 @@ func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Servic
 
 	// MCP handler
 	mcpHandler := handlers.NewMCPHandler(mcpRegistry)
+
+	// Workspace handler
+	wsHandler := handlers.NewWorkspaceHandler(workspaceMgr, taskService)
 
 	// Protected API routes
 	r.Route("/api/v1", func(r chi.Router) {
@@ -72,6 +76,11 @@ func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Servic
 			r.Post("/", mcpHandler.CreateGlobal)
 			r.Get("/", mcpHandler.ListGlobal)
 			r.Delete("/{name}", mcpHandler.DeleteGlobal)
+		})
+
+		r.Route("/workspaces", func(r chi.Router) {
+			r.Get("/", wsHandler.List)
+			r.Delete("/{taskID}", wsHandler.Delete)
 		})
 	})
 

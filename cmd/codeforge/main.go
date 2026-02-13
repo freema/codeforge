@@ -22,6 +22,7 @@ import (
 	"github.com/freema/codeforge/internal/task"
 	"github.com/freema/codeforge/internal/webhook"
 	"github.com/freema/codeforge/internal/worker"
+	"github.com/freema/codeforge/internal/workspace"
 )
 
 var version = "dev"
@@ -97,6 +98,13 @@ func run() error {
 	mcpRegistry := mcp.NewRegistry(rdb)
 	mcpInstaller := mcp.NewInstaller(mcpRegistry)
 
+	// Initialize workspace manager
+	workspaceMgr := workspace.NewManager(
+		cfg.Tasks.WorkspaceBase,
+		rdb,
+		time.Duration(cfg.Tasks.WorkspaceTTL)*time.Second,
+	)
+
 	// Initialize CLI runner
 	runner := cli.NewClaudeRunner(cfg.CLI.ClaudeCode.Path)
 
@@ -111,6 +119,7 @@ func run() error {
 		webhookSender,
 		keyResolver,
 		mcpInstaller,
+		workspaceMgr,
 		worker.ExecutorConfig{
 			WorkspaceBase:  cfg.Tasks.WorkspaceBase,
 			DefaultTimeout: cfg.Tasks.DefaultTimeout,
@@ -144,7 +153,14 @@ func run() error {
 	listener := task.NewListener(rdb, taskService, "input:tasks")
 
 	// Create and start HTTP server
-	srv := server.New(cfg, rdb, taskService, prService, pool, keyRegistry, mcpRegistry, version)
+	// Initialize workspace cleaner
+	wsCleaner := workspace.NewCleaner(workspaceMgr, taskService, workspace.CleanerConfig{
+		Interval:              10 * time.Minute,
+		DiskWarningThreshold:  int64(cfg.Tasks.DiskWarningThresholdGB) * 1024 * 1024 * 1024,
+		DiskCriticalThreshold: int64(cfg.Tasks.DiskCriticalThresholdGB) * 1024 * 1024 * 1024,
+	})
+
+	srv := server.New(cfg, rdb, taskService, prService, pool, keyRegistry, mcpRegistry, workspaceMgr, version)
 
 	// Start background services
 	appCtx, appCancel := context.WithCancel(context.Background())
@@ -152,6 +168,7 @@ func run() error {
 
 	pool.Start(appCtx)
 	go listener.Start(appCtx)
+	go wsCleaner.Start(appCtx)
 
 	errCh := make(chan error, 1)
 	go func() {
