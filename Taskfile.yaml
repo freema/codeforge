@@ -1,0 +1,89 @@
+version: '3'
+
+vars:
+  DC: docker compose -f deployments/docker-compose.yaml
+  DC_DEV: docker compose -f deployments/docker-compose.yaml -f deployments/docker-compose.dev.yaml
+  IMAGE_NAME: codeforge
+  IMAGE_TAG: latest
+
+tasks:
+  dev:
+    desc: Start dev environment with hot reload
+    cmds:
+      - "{{.DC_DEV}} up --build"
+
+  dev:detach:
+    desc: Start dev environment in background
+    cmds:
+      - "{{.DC_DEV}} up --build -d"
+
+  down:
+    desc: Stop all containers and remove volumes
+    cmds:
+      - "{{.DC_DEV}} down"
+
+  down:clean:
+    desc: Stop all containers and remove volumes + data
+    cmds:
+      - "{{.DC_DEV}} down -v"
+
+  build:
+    desc: Build production Docker image
+    cmds:
+      - docker build -f deployments/Dockerfile -t {{.IMAGE_NAME}}:{{.IMAGE_TAG}} .
+
+  test:
+    desc: Run unit tests inside Docker
+    cmds:
+      - "{{.DC_DEV}} run --rm --no-deps app go test -race -cover ./..."
+
+  test:integration:
+    desc: Run integration tests (with Redis)
+    cmds:
+      - "{{.DC_DEV}} run --rm app go test -tags integration -race ./tests/integration/..."
+
+  test:all:
+    desc: Run all tests
+    cmds:
+      - task: test
+      - task: test:integration
+
+  lint:
+    desc: Run golangci-lint inside Docker
+    cmds:
+      - "{{.DC_DEV}} run --rm --no-deps app golangci-lint run ./..."
+
+  fmt:
+    desc: Run gofmt inside Docker
+    cmds:
+      - "{{.DC_DEV}} run --rm --no-deps app gofmt -w ."
+
+  logs:
+    desc: Tail docker-compose logs
+    cmds:
+      - "{{.DC_DEV}} logs -f"
+
+  logs:app:
+    desc: Tail only app logs
+    cmds:
+      - "{{.DC_DEV}} logs -f app"
+
+  redis:cli:
+    desc: Open redis-cli
+    cmds:
+      - "{{.DC_DEV}} exec redis redis-cli"
+
+  shell:
+    desc: Open shell in app container
+    cmds:
+      - "{{.DC_DEV}} exec app sh"
+
+  mod:tidy:
+    desc: Run go mod tidy inside Docker
+    cmds:
+      - "{{.DC_DEV}} run --rm --no-deps app go mod tidy"
+
+  build:mock-cli:
+    desc: Build mock Claude CLI for testing
+    cmds:
+      - "{{.DC_DEV}} run --rm --no-deps app go build -o bin/mock-claude ./tests/mockcli"

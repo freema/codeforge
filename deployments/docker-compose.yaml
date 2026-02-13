@@ -1,0 +1,32 @@
+name: codeforge
+
+services:
+  app:
+    build:
+      context: ../
+      dockerfile: deployments/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      CODEFORGE_REDIS__URL: redis://redis:6379
+      CODEFORGE_SERVER__AUTH_TOKEN: dev-token
+      CODEFORGE_WEBHOOKS__HMAC_SECRET: dev-secret
+      CODEFORGE_ENCRYPTION__KEY: "dGVzdC1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcyE=" # 32-byte dev key
+    volumes:
+      - workspaces:/data/workspaces
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  workspaces:

@@ -1,0 +1,61 @@
+# CodeForge configuration example.
+# All values can be overridden via env vars with CODEFORGE_ prefix.
+# Use double underscore (__) for nesting: CODEFORGE_SERVER__AUTH_TOKEN
+
+server:
+  port: 8080
+  auth_token: "${CODEFORGE_SERVER__AUTH_TOKEN}"
+
+redis:
+  url: "redis://localhost:6379"
+  db: 0
+  prefix: "codeforge:"
+
+workers:
+  concurrency: 3
+  queue_name: "queue:tasks"
+
+tasks:
+  default_timeout: 300       # seconds
+  max_timeout: 1800          # seconds
+  workspace_ttl: 86400       # 24h
+  workspace_base: "/data/workspaces"
+  state_ttl: 604800          # 7 days
+  result_ttl: 604800         # 7 days
+  disk_warning_threshold_gb: 10
+  disk_critical_threshold_gb: 20
+
+cli:
+  default: "claude-code"
+  claude_code:
+    path: "claude"
+    version: ""              # empty = use installed version
+    default_model: "claude-sonnet-4-20250514"
+
+git:
+  branch_prefix: "codeforge/"
+  commit_author: "CodeForge Bot"
+  commit_email: "codeforge@noreply"
+  provider_domains: {}       # e.g., {"git.company.com": "gitlab"}
+
+encryption:
+  key: "${CODEFORGE_ENCRYPTION__KEY}"  # 32 bytes, base64-encoded
+
+webhooks:
+  hmac_secret: "${CODEFORGE_WEBHOOKS__HMAC_SECRET}"
+  retry_count: 3
+  retry_delay: 5s
+
+rate_limit:
+  enabled: true
+  tasks_per_minute: 10
+
+tracing:
+  enabled: false
+  exporter: "otlp"
+  endpoint: ""
+  sampling_rate: 0.1
+
+logging:
+  level: "info"
+  format: "json"

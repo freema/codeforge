@@ -1,0 +1,18 @@
+services:
+  app:
+    build:
+      context: ../
+      dockerfile: deployments/Dockerfile.dev
+    volumes:
+      - ../:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+      - workspaces:/data/workspaces
+    environment:
+      CODEFORGE_LOGGING__LEVEL: debug
+      CODEFORGE_LOGGING__FORMAT: text
+
+volumes:
+  go-mod-cache:
+  go-build-cache:
+  workspaces:

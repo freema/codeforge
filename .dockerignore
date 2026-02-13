@@ -1,0 +1,14 @@
+.git
+.github
+.claude
+bin/
+tmp/
+tasks/
+*.test
+*.out
+coverage.*
+.env
+.env.*
+.DS_Store
+.idea/
+.vscode/
