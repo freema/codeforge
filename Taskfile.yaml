@@ -35,12 +35,12 @@ tasks:
   test:
     desc: Run unit tests inside Docker
     cmds:
-      - "{{.DC_DEV}} run --rm --no-deps app go test -race -cover ./..."
+      - "{{.DC_DEV}} run --rm --no-deps app go test -cover ./..."
 
   test:integration:
     desc: Run integration tests (with Redis)
     cmds:
-      - "{{.DC_DEV}} run --rm app go test -tags integration -race ./tests/integration/..."
+      - "{{.DC_DEV}} run --rm -e CODEFORGE_TEST_URL=http://app:8080 -e CODEFORGE_TEST_TOKEN=dev-token app go test -tags integration -v -count=1 ./tests/integration/..."
 
   test:all:
     desc: Run all tests

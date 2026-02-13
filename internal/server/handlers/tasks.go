@@ -106,14 +106,14 @@ func (h *TaskHandler) Instruct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Prompt string `json:"prompt" validate:"required"`
+		Prompt string `json:"prompt" validate:"required,max=102400"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 	if err := validate.Struct(req); err != nil {
-		writeError(w, http.StatusBadRequest, "prompt is required")
+		writeError(w, http.StatusBadRequest, "prompt is required and must be under 100KB")
 		return
 	}
 
@@ -151,7 +151,7 @@ func (h *TaskHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.canceller.Cancel(taskID); err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+		writeError(w, http.StatusConflict, "task is not currently running")
 		return
 	}
 

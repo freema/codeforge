@@ -3,11 +3,14 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/freema/codeforge/internal/mcp"
 )
+
+var validName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // MCPHandler handles MCP server configuration endpoints.
 type MCPHandler struct {
@@ -35,6 +38,10 @@ func (h *MCPHandler) CreateGlobal(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name and package are required")
 		return
 	}
+	if !validName.MatchString(req.Name) {
+		writeError(w, http.StatusBadRequest, "name must contain only alphanumeric characters, hyphens, and underscores")
+		return
+	}
 
 	srv := mcp.Server{
 		Name:    req.Name,
@@ -58,7 +65,7 @@ func (h *MCPHandler) CreateGlobal(w http.ResponseWriter, r *http.Request) {
 func (h *MCPHandler) ListGlobal(w http.ResponseWriter, r *http.Request) {
 	servers, err := h.registry.ListGlobal(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to list MCP servers")
 		return
 	}
 

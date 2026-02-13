@@ -15,6 +15,7 @@ import (
 	gitpkg "github.com/freema/codeforge/internal/git"
 	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/mcp"
+	"github.com/freema/codeforge/internal/metrics"
 	"github.com/freema/codeforge/internal/task"
 	"github.com/freema/codeforge/internal/webhook"
 	"github.com/freema/codeforge/internal/workspace"
@@ -33,7 +34,7 @@ type ExecutorConfig struct {
 // Executor orchestrates the full task lifecycle: clone → run CLI → diff → report.
 type Executor struct {
 	taskService  *task.Service
-	runner       cli.Runner
+	cliRegistry  *cli.Registry
 	streamer     *Streamer
 	webhook      *webhook.Sender
 	keyResolver  *keys.Resolver
@@ -45,7 +46,7 @@ type Executor struct {
 // NewExecutor creates a new task executor.
 func NewExecutor(
 	taskService *task.Service,
-	runner cli.Runner,
+	cliRegistry *cli.Registry,
 	streamer *Streamer,
 	webhook *webhook.Sender,
 	keyResolver *keys.Resolver,
@@ -55,7 +56,7 @@ func NewExecutor(
 ) *Executor {
 	return &Executor{
 		taskService:  taskService,
-		runner:       runner,
+		cliRegistry:  cliRegistry,
 		streamer:     streamer,
 		webhook:      webhook,
 		keyResolver:  keyResolver,
@@ -69,6 +70,13 @@ func NewExecutor(
 func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 	log := slog.With("task_id", t.ID, "iteration", t.Iteration)
 	startTime := time.Now().UTC()
+
+	metrics.TasksInProgress.Inc()
+	defer func() {
+		metrics.TasksInProgress.Dec()
+		duration := time.Since(startTime).Seconds()
+		metrics.TaskDuration.WithLabelValues(string(t.Status)).Observe(duration)
+	}()
 
 	// Determine timeout
 	timeout := e.cfg.DefaultTimeout
@@ -183,6 +191,7 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 		log.Error("failed to update status to completed", "error", err)
 		return
 	}
+	metrics.TasksTotal.WithLabelValues(string(task.StatusCompleted)).Inc()
 
 	// Save iteration record
 	now := time.Now().UTC()
@@ -291,8 +300,18 @@ func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, lo
 		}
 	}
 
+	// Resolve CLI runner from registry
+	cliName := ""
+	if t.Config != nil {
+		cliName = t.Config.CLI
+	}
+	runner, err := e.cliRegistry.Get(cliName)
+	if err != nil {
+		return nil, fmt.Errorf("resolving CLI runner: %w", err)
+	}
+
 	e.streamer.EmitSystem(ctx, t.ID, "cli_started", map[string]string{
-		"cli":       "claude-code",
+		"cli":       cliName,
 		"iteration": fmt.Sprintf("%d", t.Iteration),
 	})
 
@@ -313,7 +332,7 @@ func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, lo
 		maxBudget = t.Config.MaxBudgetUSD
 	}
 
-	result, err := e.runner.Run(ctx, cli.RunOptions{
+	result, err := runner.Run(ctx, cli.RunOptions{
 		Prompt:       prompt,
 		WorkDir:      workDir,
 		Model:        model,
@@ -381,6 +400,7 @@ func (e *Executor) failTask(ctx context.Context, t *task.Task, errMsg string, st
 
 	e.taskService.SetError(ctx, t.ID, errMsg)
 	e.taskService.UpdateStatus(ctx, t.ID, task.StatusFailed)
+	metrics.TasksTotal.WithLabelValues(string(task.StatusFailed)).Inc()
 
 	// Save failed iteration record
 	now := time.Now().UTC()

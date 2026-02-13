@@ -11,6 +11,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/freema/codeforge/internal/metrics"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/task"
 )
@@ -52,6 +53,8 @@ func (p *Pool) Start(ctx context.Context) {
 	ctx, p.cancel = context.WithCancel(ctx)
 
 	slog.Info("starting worker pool", "concurrency", p.concurrency, "queue", p.queueName)
+
+	metrics.WorkersTotal.Set(float64(p.concurrency))
 
 	for i := 0; i < p.concurrency; i++ {
 		p.wg.Add(1)
@@ -113,6 +116,12 @@ func (p *Pool) worker(ctx context.Context, id int) {
 
 		log.Info("picked up task", "task_id", taskID)
 		p.activeCount.Add(1)
+		metrics.WorkersActive.Set(float64(p.activeCount.Load()))
+
+		// Update queue depth (approximate)
+		if qLen, err := p.redis.Unwrap().LLen(ctx, queueKey).Result(); err == nil {
+			metrics.QueueDepth.Set(float64(qLen))
+		}
 
 		// Load task from Redis
 		t, err := p.taskService.Get(ctx, taskID)
@@ -140,5 +149,6 @@ func (p *Pool) worker(ctx context.Context, id int) {
 		taskCancel() // clean up context resources
 
 		p.activeCount.Add(-1)
+		metrics.WorkersActive.Set(float64(p.activeCount.Load()))
 	}
 }

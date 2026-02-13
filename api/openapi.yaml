@@ -1,0 +1,755 @@
+openapi: 3.0.3
+info:
+  title: CodeForge API
+  description: Remote AI code task runner. Submit code tasks, monitor progress via SSE, and create pull requests.
+  version: 1.0.0
+  contact:
+    name: CodeForge
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+security:
+  - BearerAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: health
+      security: []
+      tags: [System]
+      responses:
+        "200":
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  redis:
+                    type: string
+                    example: connected
+                  workspace_disk_usage_mb:
+                    type: number
+                    example: 123.45
+
+  /ready:
+    get:
+      summary: Readiness probe
+      operationId: ready
+      security: []
+      tags: [System]
+      responses:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ready:
+                    type: boolean
+        "503":
+          description: Service is not ready
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: metrics
+      security: []
+      tags: [System]
+      responses:
+        "200":
+          description: Prometheus text format metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/v1/tasks:
+    post:
+      summary: Create a new task
+      operationId: createTask
+      tags: [Tasks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequest"
+      responses:
+        "201":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    example: pending
+                  created_at:
+                    type: string
+                    format: date-time
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/tasks/{taskID}:
+    get:
+      summary: Get task status and result
+      operationId: getTask
+      tags: [Tasks]
+      parameters:
+        - name: taskID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: include
+          in: query
+          description: Include additional data (e.g., "iterations")
+          schema:
+            type: string
+            enum: [iterations]
+      responses:
+        "200":
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/tasks/{taskID}/instruct:
+    post:
+      summary: Send follow-up instruction to a completed task
+      operationId: instructTask
+      tags: [Tasks]
+      parameters:
+        - name: taskID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                  description: Follow-up instruction
+      responses:
+        "200":
+          description: Instruction accepted, new iteration started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+                  iteration:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/tasks/{taskID}/cancel:
+    post:
+      summary: Cancel a running task
+      operationId: cancelTask
+      tags: [Tasks]
+      parameters:
+        - name: taskID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Cancellation requested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+                    example: cancelling
+                  message:
+                    type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/tasks/{taskID}/create-pr:
+    post:
+      summary: Create a pull request from task changes
+      operationId: createPR
+      tags: [Tasks]
+      parameters:
+        - name: taskID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePRRequest"
+      responses:
+        "200":
+          description: PR created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatePRResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/keys:
+    post:
+      summary: Register a provider access key
+      operationId: createKey
+      tags: [Keys]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, provider, token]
+              properties:
+                name:
+                  type: string
+                  description: Unique key name
+                  example: my-github-key
+                provider:
+                  type: string
+                  description: Git provider (github, gitlab)
+                  example: github
+                token:
+                  type: string
+                  description: Access token (stored encrypted)
+                scope:
+                  type: string
+                  description: Optional scope restriction
+      responses:
+        "201":
+          description: Key registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  provider:
+                    type: string
+                  message:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    get:
+      summary: List registered keys (tokens redacted)
+      operationId: listKeys
+      tags: [Keys]
+      responses:
+        "200":
+          description: List of keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        provider:
+                          type: string
+                        scope:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+
+  /api/v1/keys/{name}:
+    delete:
+      summary: Delete a registered key
+      operationId: deleteKey
+      tags: [Keys]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Key deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/mcp/servers:
+    post:
+      summary: Register a global MCP server
+      operationId: createMCPServer
+      tags: [MCP]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, package]
+              properties:
+                name:
+                  type: string
+                  description: Unique server name
+                  example: context7
+                package:
+                  type: string
+                  description: NPM package or binary path
+                  example: "@anthropic-ai/context7"
+                args:
+                  type: array
+                  items:
+                    type: string
+                env:
+                  type: object
+                  additionalProperties:
+                    type: string
+      responses:
+        "201":
+          description: MCP server registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  message:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    get:
+      summary: List global MCP servers
+      operationId: listMCPServers
+      tags: [MCP]
+      responses:
+        "200":
+          description: List of MCP servers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  servers:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MCPServer"
+
+  /api/v1/mcp/servers/{name}:
+    delete:
+      summary: Delete a global MCP server
+      operationId: deleteMCPServer
+      tags: [MCP]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: MCP server deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/workspaces:
+    get:
+      summary: List active workspaces
+      operationId: listWorkspaces
+      tags: [Workspaces]
+      responses:
+        "200":
+          description: Workspace list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspaces:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkspaceInfo"
+                  total_size_mb:
+                    type: number
+                  total_count:
+                    type: integer
+
+  /api/v1/workspaces/{taskID}:
+    delete:
+      summary: Delete a workspace
+      operationId: deleteWorkspace
+      tags: [Workspaces]
+      parameters:
+        - name: taskID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Workspace deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid auth token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Operation conflicts with current state
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds to wait before retrying
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+
+    CreateTaskRequest:
+      type: object
+      required: [repo_url, prompt]
+      properties:
+        repo_url:
+          type: string
+          format: uri
+          description: Git repository URL
+          example: "https://github.com/user/repo.git"
+        provider_key:
+          type: string
+          description: Name of a registered key to use for git auth
+        access_token:
+          type: string
+          description: Inline access token for git auth
+        prompt:
+          type: string
+          description: Task instruction for the AI
+          maxLength: 102400
+          example: "Fix the failing tests in the auth module"
+        callback_url:
+          type: string
+          format: uri
+          description: Webhook URL for completion notification
+        config:
+          $ref: "#/components/schemas/TaskConfig"
+
+    TaskConfig:
+      type: object
+      properties:
+        timeout_seconds:
+          type: integer
+          description: Task timeout in seconds
+        cli:
+          type: string
+          description: CLI tool to use (e.g., "claude-code")
+          default: claude-code
+        ai_model:
+          type: string
+          description: AI model override
+        ai_api_key:
+          type: string
+          description: API key for the AI provider
+        max_turns:
+          type: integer
+          description: Maximum conversation turns
+        target_branch:
+          type: string
+          description: Git branch to clone
+        max_budget_usd:
+          type: number
+          description: Maximum spend in USD
+        mcp_servers:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskMCPServer"
+
+    TaskMCPServer:
+      type: object
+      required: [name, command]
+      properties:
+        name:
+          type: string
+        command:
+          type: string
+        args:
+          type: array
+          items:
+            type: string
+        env:
+          type: array
+          items:
+            type: string
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, cloning, running, completed, failed, awaiting_instruction, creating_pr, pr_created]
+        repo_url:
+          type: string
+        prompt:
+          type: string
+        callback_url:
+          type: string
+        config:
+          $ref: "#/components/schemas/TaskConfig"
+        result:
+          type: string
+        error:
+          type: string
+        changes_summary:
+          $ref: "#/components/schemas/ChangesSummary"
+        usage:
+          $ref: "#/components/schemas/UsageInfo"
+        iteration:
+          type: integer
+        current_prompt:
+          type: string
+        iterations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Iteration"
+        branch:
+          type: string
+        pr_number:
+          type: integer
+        pr_url:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+
+    ChangesSummary:
+      type: object
+      properties:
+        files_changed:
+          type: integer
+        insertions:
+          type: integer
+        deletions:
+          type: integer
+        diff:
+          type: string
+
+    UsageInfo:
+      type: object
+      properties:
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        duration_seconds:
+          type: integer
+
+    Iteration:
+      type: object
+      properties:
+        number:
+          type: integer
+        prompt:
+          type: string
+        result:
+          type: string
+        error:
+          type: string
+        status:
+          type: string
+        changes:
+          $ref: "#/components/schemas/ChangesSummary"
+        usage:
+          $ref: "#/components/schemas/UsageInfo"
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+
+    CreatePRRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          description: PR title (auto-generated if empty)
+        description:
+          type: string
+          description: PR description (auto-generated if empty)
+        target_branch:
+          type: string
+          description: Target branch (defaults to main/master)
+
+    CreatePRResponse:
+      type: object
+      properties:
+        pr_url:
+          type: string
+        pr_number:
+          type: integer
+        branch:
+          type: string
+
+    MCPServer:
+      type: object
+      properties:
+        name:
+          type: string
+        package:
+          type: string
+        args:
+          type: array
+          items:
+            type: string
+        env:
+          type: object
+          additionalProperties:
+            type: string
+
+    WorkspaceInfo:
+      type: object
+      properties:
+        task_id:
+          type: string
+        size_mb:
+          type: number
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        task_status:
+          type: string

@@ -105,8 +105,9 @@ func run() error {
 		time.Duration(cfg.Tasks.WorkspaceTTL)*time.Second,
 	)
 
-	// Initialize CLI runner
-	runner := cli.NewClaudeRunner(cfg.CLI.ClaudeCode.Path)
+	// Initialize CLI registry
+	cliRegistry := cli.NewRegistry(cfg.CLI.Default)
+	cliRegistry.Register("claude-code", cli.NewClaudeRunner(cfg.CLI.ClaudeCode.Path))
 
 	// Initialize streamer
 	streamer := worker.NewStreamer(rdb, time.Duration(cfg.Tasks.WorkspaceTTL)*time.Second)
@@ -114,7 +115,7 @@ func run() error {
 	// Initialize executor
 	executor := worker.NewExecutor(
 		taskService,
-		runner,
+		cliRegistry,
 		streamer,
 		webhookSender,
 		keyResolver,

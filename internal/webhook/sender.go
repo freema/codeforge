@@ -14,6 +14,7 @@ import (
 	"time"
 
 	gitpkg "github.com/freema/codeforge/internal/git"
+	"github.com/freema/codeforge/internal/metrics"
 	"github.com/freema/codeforge/internal/task"
 )
 
@@ -88,12 +89,14 @@ func (s *Sender) Send(ctx context.Context, callbackURL string, payload Payload) 
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			slog.Info("webhook delivered", "url", callbackURL, "status", resp.StatusCode, "attempt", attempt)
+			metrics.WebhookDeliveries.WithLabelValues("success").Inc()
 			return nil
 		}
 
 		slog.Warn("webhook non-2xx response", "attempt", attempt, "status", resp.StatusCode, "url", callbackURL)
 	}
 
+	metrics.WebhookDeliveries.WithLabelValues("failed").Inc()
 	return fmt.Errorf("webhook delivery failed after %d attempts to %s", s.maxRetries+1, callbackURL)
 }
 

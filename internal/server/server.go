@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/freema/codeforge/internal/config"
 	"github.com/freema/codeforge/internal/keys"
@@ -34,13 +35,24 @@ func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Servic
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
 	r.Use(middleware.RequestLogger)
+	r.Use(middleware.PrometheusMetrics)
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.Timeout(60 * time.Second))
+
+	// Rate limiter
+	var rateLimitMw func(http.Handler) http.Handler
+	if cfg.RateLimit.Enabled && cfg.RateLimit.TasksPerMinute > 0 {
+		rl := middleware.NewRateLimiter(redis, cfg.RateLimit.TasksPerMinute, time.Minute)
+		rateLimitMw = rl.Middleware()
+	}
 
 	// Health endpoints (no auth)
 	healthHandler := handlers.NewHealthHandler(redis, workspaceMgr, version)
 	r.Get("/health", healthHandler.Health)
 	r.Get("/ready", healthHandler.Ready)
+
+	// Prometheus metrics endpoint (no auth)
+	r.Handle("/metrics", promhttp.Handler())
 
 	// Task handler
 	taskHandler := handlers.NewTaskHandler(taskService, prService, canceller)
@@ -59,7 +71,11 @@ func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Servic
 		r.Use(middleware.BearerAuth(cfg.Server.AuthToken))
 
 		r.Route("/tasks", func(r chi.Router) {
-			r.Post("/", taskHandler.Create)
+			if rateLimitMw != nil {
+				r.With(rateLimitMw).Post("/", taskHandler.Create)
+			} else {
+				r.Post("/", taskHandler.Create)
+			}
 			r.Get("/{taskID}", taskHandler.Get)
 			r.Post("/{taskID}/instruct", taskHandler.Instruct)
 			r.Post("/{taskID}/cancel", taskHandler.Cancel)

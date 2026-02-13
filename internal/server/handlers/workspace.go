@@ -24,7 +24,7 @@ func NewWorkspaceHandler(manager *workspace.Manager, taskService *task.Service) 
 func (h *WorkspaceHandler) List(w http.ResponseWriter, r *http.Request) {
 	workspaces, err := h.manager.List(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to list workspaces")
 		return
 	}
 
@@ -85,7 +85,7 @@ func (h *WorkspaceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.manager.Delete(r.Context(), taskID); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to delete workspace")
 		return
 	}
 
