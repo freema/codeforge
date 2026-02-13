@@ -11,6 +11,8 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 
 	"github.com/freema/codeforge/internal/config"
+	"github.com/freema/codeforge/internal/keys"
+	"github.com/freema/codeforge/internal/mcp"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/server/handlers"
 	"github.com/freema/codeforge/internal/server/middleware"
@@ -24,7 +26,7 @@ type Server struct {
 }
 
 // New creates and configures the HTTP server with all routes and middleware.
-func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Service, prService *task.PRService, canceller handlers.Canceller, version string) *Server {
+func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Service, prService *task.PRService, canceller handlers.Canceller, keyRegistry *keys.Registry, mcpRegistry *mcp.Registry, version string) *Server {
 	r := chi.NewRouter()
 
 	// Global middleware
@@ -42,6 +44,12 @@ func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Servic
 	// Task handler
 	taskHandler := handlers.NewTaskHandler(taskService, prService, canceller)
 
+	// Key handler
+	keyHandler := handlers.NewKeyHandler(keyRegistry)
+
+	// MCP handler
+	mcpHandler := handlers.NewMCPHandler(mcpRegistry)
+
 	// Protected API routes
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(middleware.BearerAuth(cfg.Server.AuthToken))
@@ -55,17 +63,15 @@ func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Servic
 		})
 
 		r.Route("/keys", func(r chi.Router) {
-			// TODO: Phase 4 handlers
-			r.Post("/", notImplemented)
-			r.Get("/", notImplemented)
-			r.Delete("/{name}", notImplemented)
+			r.Post("/", keyHandler.Create)
+			r.Get("/", keyHandler.List)
+			r.Delete("/{name}", keyHandler.Delete)
 		})
 
 		r.Route("/mcp/servers", func(r chi.Router) {
-			// TODO: Phase 4 handlers
-			r.Post("/", notImplemented)
-			r.Get("/", notImplemented)
-			r.Delete("/{name}", notImplemented)
+			r.Post("/", mcpHandler.CreateGlobal)
+			r.Get("/", mcpHandler.ListGlobal)
+			r.Delete("/{name}", mcpHandler.DeleteGlobal)
 		})
 	})
 

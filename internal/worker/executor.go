@@ -13,6 +13,8 @@ import (
 
 	"github.com/freema/codeforge/internal/cli"
 	gitpkg "github.com/freema/codeforge/internal/git"
+	"github.com/freema/codeforge/internal/keys"
+	"github.com/freema/codeforge/internal/mcp"
 	"github.com/freema/codeforge/internal/task"
 	"github.com/freema/codeforge/internal/webhook"
 )
@@ -29,11 +31,13 @@ type ExecutorConfig struct {
 
 // Executor orchestrates the full task lifecycle: clone → run CLI → diff → report.
 type Executor struct {
-	taskService *task.Service
-	runner      cli.Runner
-	streamer    *Streamer
-	webhook     *webhook.Sender
-	cfg         ExecutorConfig
+	taskService  *task.Service
+	runner       cli.Runner
+	streamer     *Streamer
+	webhook      *webhook.Sender
+	keyResolver  *keys.Resolver
+	mcpInstaller *mcp.Installer
+	cfg          ExecutorConfig
 }
 
 // NewExecutor creates a new task executor.
@@ -42,14 +46,18 @@ func NewExecutor(
 	runner cli.Runner,
 	streamer *Streamer,
 	webhook *webhook.Sender,
+	keyResolver *keys.Resolver,
+	mcpInstaller *mcp.Installer,
 	cfg ExecutorConfig,
 ) *Executor {
 	return &Executor{
-		taskService: taskService,
-		runner:      runner,
-		streamer:    streamer,
-		webhook:     webhook,
-		cfg:         cfg,
+		taskService:  taskService,
+		runner:       runner,
+		streamer:     streamer,
+		webhook:      webhook,
+		keyResolver:  keyResolver,
+		mcpInstaller: mcpInstaller,
+		cfg:          cfg,
 	}
 }
 
@@ -72,6 +80,16 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 
 	workDir := filepath.Join(e.cfg.WorkspaceBase, t.ID)
 
+	// Resolve access token (task → registry → env)
+	if e.keyResolver != nil && t.AccessToken == "" {
+		token, err := e.keyResolver.ResolveToken(taskCtx, t.RepoURL, t.AccessToken, t.ProviderKey)
+		if err != nil {
+			log.Warn("token resolution failed", "error", err)
+		} else {
+			t.AccessToken = token
+		}
+	}
+
 	// Clone or reuse workspace
 	if t.Iteration <= 1 {
 		if err := e.cloneStep(taskCtx, t, workDir, log); err != nil {
@@ -92,6 +110,23 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 			if t.Branch != "" {
 				e.pullBranch(taskCtx, t, workDir, log)
 			}
+		}
+	}
+
+	// Setup MCP servers (generate .mcp.json)
+	if e.mcpInstaller != nil {
+		var taskMCPServers []mcp.Server
+		if t.Config != nil {
+			for _, s := range t.Config.MCPServers {
+				taskMCPServers = append(taskMCPServers, mcp.Server{
+					Name:    s.Name,
+					Package: s.Command, // task model uses "command" as package
+					Args:    s.Args,
+				})
+			}
+		}
+		if err := e.mcpInstaller.Setup(taskCtx, workDir, t.RepoURL, taskMCPServers); err != nil {
+			log.Warn("MCP setup failed (continuing without MCP)", "error", err)
 		}
 	}
 

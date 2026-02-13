@@ -14,7 +14,9 @@ import (
 	"github.com/freema/codeforge/internal/cli"
 	"github.com/freema/codeforge/internal/config"
 	"github.com/freema/codeforge/internal/crypto"
+	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/logger"
+	"github.com/freema/codeforge/internal/mcp"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/server"
 	"github.com/freema/codeforge/internal/task"
@@ -87,6 +89,14 @@ func run() error {
 		)
 	}
 
+	// Initialize key registry and resolver
+	keyRegistry := keys.NewRegistry(rdb, cryptoSvc)
+	keyResolver := keys.NewResolver(keyRegistry, cfg.Git.ProviderDomains)
+
+	// Initialize MCP registry and installer
+	mcpRegistry := mcp.NewRegistry(rdb)
+	mcpInstaller := mcp.NewInstaller(mcpRegistry)
+
 	// Initialize CLI runner
 	runner := cli.NewClaudeRunner(cfg.CLI.ClaudeCode.Path)
 
@@ -99,6 +109,8 @@ func run() error {
 		runner,
 		streamer,
 		webhookSender,
+		keyResolver,
+		mcpInstaller,
 		worker.ExecutorConfig{
 			WorkspaceBase:  cfg.Tasks.WorkspaceBase,
 			DefaultTimeout: cfg.Tasks.DefaultTimeout,
@@ -132,7 +144,7 @@ func run() error {
 	listener := task.NewListener(rdb, taskService, "input:tasks")
 
 	// Create and start HTTP server
-	srv := server.New(cfg, rdb, taskService, prService, pool, version)
+	srv := server.New(cfg, rdb, taskService, prService, pool, keyRegistry, mcpRegistry, version)
 
 	// Start background services
 	appCtx, appCancel := context.WithCancel(context.Background())
