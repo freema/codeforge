@@ -145,7 +145,6 @@ pending ──▶ cloning ──▶ running ──▶ completed ──▶ creati
 - `codeforge_http_requests_total` (counter) - HTTP requests
 - `codeforge_http_request_duration_seconds` (histogram) - HTTP latency
 - `codeforge_webhook_deliveries_total` (counter) - webhook outcomes
-- `codeforge_workspace_disk_usage_bytes` (gauge) - disk usage
 
 ### OpenTelemetry Tracing
 - Spans: `task.execute`, `task.clone`, `task.run`

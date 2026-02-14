@@ -2,11 +2,13 @@
 
 ## Docker
 
-### Build
+### Pull the image
 
 ```bash
-docker build -f deployments/Dockerfile -t codeforge:latest .
+docker pull ghcr.io/freema/codeforge:latest
 ```
+
+All releases are published as multi-arch images (`linux/amd64`, `linux/arm64`) to [GitHub Container Registry](https://github.com/freema/codeforge/pkgs/container/codeforge).
 
 ### Run
 
@@ -18,15 +20,27 @@ docker run -d \
   -e CODEFORGE_ENCRYPTION__KEY=$(openssl rand -base64 32) \
   -e CODEFORGE_WEBHOOKS__HMAC_SECRET=your-webhook-secret \
   -v /data/workspaces:/data/workspaces \
-  codeforge:latest
+  ghcr.io/freema/codeforge:latest
 ```
 
 ### Docker Compose (Production)
 
+A ready-to-use file is available at [`deployments/docker-compose.production.yaml`](../deployments/docker-compose.production.yaml):
+
+```bash
+cd deployments
+export CODEFORGE_AUTH_TOKEN="your-secure-token"
+export CODEFORGE_ENCRYPTION_KEY=$(openssl rand -base64 32)
+docker compose -f docker-compose.production.yaml up -d
+```
+
+Or use this inline:
+
 ```yaml
 services:
-  app:
-    image: codeforge:latest
+  codeforge:
+    image: ghcr.io/freema/codeforge:latest
+    restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
@@ -37,8 +51,6 @@ services:
       CODEFORGE_WORKERS__CONCURRENCY: "5"
       CODEFORGE_LOGGING__LEVEL: info
       CODEFORGE_LOGGING__FORMAT: json
-      CODEFORGE_TRACING__ENABLED: "true"
-      CODEFORGE_TRACING__ENDPOINT: otel-collector:4318
     volumes:
       - workspaces:/data/workspaces
     depends_on:
@@ -47,7 +59,8 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
     volumes:
       - redis-data:/data
     healthcheck:
@@ -59,6 +72,13 @@ services:
 volumes:
   workspaces:
   redis-data:
+```
+
+### Pin a specific version
+
+```bash
+# Use a specific release instead of :latest
+docker pull ghcr.io/freema/codeforge:v0.1.0
 ```
 
 ## Kubernetes
@@ -86,7 +106,7 @@ spec:
     spec:
       containers:
         - name: codeforge
-          image: codeforge:latest
+          image: ghcr.io/freema/codeforge:latest
           ports:
             - containerPort: 8080
           env:
@@ -166,7 +186,6 @@ Scrape the `/metrics` endpoint. Key metrics to alert on:
 
 - `codeforge_tasks_in_progress` > worker count (queue backing up)
 - `codeforge_queue_depth` > threshold (tasks waiting)
-- `codeforge_workspace_disk_usage_bytes` approaching disk limits
 - `codeforge_http_requests_total{status="500"}` increasing (errors)
 
 ### Tracing
