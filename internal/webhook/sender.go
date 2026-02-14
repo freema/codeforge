@@ -106,6 +106,6 @@ func (s *Sender) Send(ctx context.Context, callbackURL string, payload Payload) 
 
 func (s *Sender) sign(body []byte) string {
 	mac := hmac.New(sha256.New, []byte(s.secret))
-	mac.Write(body)
+	_, _ = mac.Write(body)
 	return hex.EncodeToString(mac.Sum(nil))
 }

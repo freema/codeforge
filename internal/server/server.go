@@ -152,9 +152,3 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.health.SetReady(false)
 	return s.httpServer.Shutdown(ctx)
 }
-
-func notImplemented(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotImplemented)
-	_, _ = w.Write([]byte(`{"error":"not implemented"}`))
-}

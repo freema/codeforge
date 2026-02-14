@@ -63,7 +63,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("initializing tracing: %w", err)
 	}
-	defer tracingShutdown(context.Background())
+	defer func() { _ = tracingShutdown(context.Background()) }()
 
 	// Connect to Redis
 	rdb, err := redisclient.New(cfg.Redis.URL, cfg.Redis.Prefix)

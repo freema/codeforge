@@ -163,14 +163,14 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 	result, err := e.runStep(taskCtx, t, workDir, log)
 	if err != nil {
 		if taskCtx.Err() == context.DeadlineExceeded {
-			e.streamer.EmitSystem(ctx, t.ID, "task_timeout", map[string]interface{}{
+			_ = e.streamer.EmitSystem(ctx, t.ID, "task_timeout", map[string]interface{}{
 				"timeout_seconds": timeout,
 			})
 			e.failTask(ctx, t, fmt.Sprintf("task timed out after %ds", timeout), startTime, log)
 			return
 		}
 		if ctx.Err() == context.Canceled {
-			e.streamer.EmitSystem(ctx, t.ID, "task_cancelled", nil)
+			_ = e.streamer.EmitSystem(ctx, t.ID, "task_cancelled", nil)
 			e.failTask(context.Background(), t, "cancelled by user", startTime, log)
 			return
 		}
@@ -216,7 +216,7 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 	if prompt == "" {
 		prompt = t.Prompt
 	}
-	e.taskService.SaveIteration(ctx, t.ID, task.Iteration{
+	_ = e.taskService.SaveIteration(ctx, t.ID, task.Iteration{
 		Number:    t.Iteration,
 		Prompt:    prompt,
 		Result:    truncate(result.Output, 2000),
@@ -228,13 +228,13 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 	})
 
 	// Emit completion events
-	e.streamer.EmitResult(ctx, t.ID, "task_completed", map[string]interface{}{
+	_ = e.streamer.EmitResult(ctx, t.ID, "task_completed", map[string]interface{}{
 		"result":          truncate(result.Output, 2000),
 		"changes_summary": changes,
 		"usage":           usage,
 		"iteration":       t.Iteration,
 	})
-	e.streamer.EmitDone(ctx, t.ID, task.StatusCompleted, changes)
+	_ = e.streamer.EmitDone(ctx, t.ID, task.StatusCompleted, changes)
 
 	// Send webhook
 	if t.CallbackURL != "" && e.webhook != nil {
@@ -253,7 +253,7 @@ func (e *Executor) cloneStep(ctx context.Context, t *task.Task, workDir string, 
 		return err
 	}
 
-	e.streamer.EmitGit(ctx, t.ID, "clone_started", map[string]string{
+	_ = e.streamer.EmitGit(ctx, t.ID, "clone_started", map[string]string{
 		"repo_url": gitpkg.SanitizeURL(t.RepoURL),
 	})
 
@@ -285,7 +285,7 @@ func (e *Executor) cloneStep(ctx context.Context, t *task.Task, workDir string, 
 		return err
 	}
 
-	e.streamer.EmitGit(ctx, t.ID, "clone_completed", map[string]string{
+	_ = e.streamer.EmitGit(ctx, t.ID, "clone_completed", map[string]string{
 		"work_dir": workDir,
 	})
 
@@ -348,7 +348,7 @@ func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, lo
 	}
 	span.SetAttributes(attribute.String("cli.name", cliName))
 
-	e.streamer.EmitSystem(ctx, t.ID, "cli_started", map[string]string{
+	_ = e.streamer.EmitSystem(ctx, t.ID, "cli_started", map[string]string{
 		"cli":       cliName,
 		"iteration": fmt.Sprintf("%d", t.Iteration),
 	})
@@ -378,7 +378,7 @@ func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, lo
 		MaxTurns:     maxTurns,
 		MaxBudgetUSD: maxBudget,
 		OnEvent: func(event json.RawMessage) {
-			e.streamer.EmitCLIOutput(ctx, t.ID, event)
+			_ = e.streamer.EmitCLIOutput(ctx, t.ID, event)
 		},
 	})
 
@@ -436,8 +436,8 @@ func (e *Executor) buildPrompt(ctx context.Context, t *task.Task) string {
 func (e *Executor) failTask(ctx context.Context, t *task.Task, errMsg string, startTime time.Time, log *slog.Logger) {
 	log.Error("task failed", "error", errMsg)
 
-	e.taskService.SetError(ctx, t.ID, errMsg)
-	e.taskService.UpdateStatus(ctx, t.ID, task.StatusFailed)
+	_ = e.taskService.SetError(ctx, t.ID, errMsg)
+	_ = e.taskService.UpdateStatus(ctx, t.ID, task.StatusFailed)
 	metrics.TasksTotal.WithLabelValues(string(task.StatusFailed)).Inc()
 
 	// Save failed iteration record
@@ -446,7 +446,7 @@ func (e *Executor) failTask(ctx context.Context, t *task.Task, errMsg string, st
 	if prompt == "" {
 		prompt = t.Prompt
 	}
-	e.taskService.SaveIteration(ctx, t.ID, task.Iteration{
+	_ = e.taskService.SaveIteration(ctx, t.ID, task.Iteration{
 		Number:    t.Iteration,
 		Prompt:    prompt,
 		Error:     errMsg,
@@ -455,13 +455,13 @@ func (e *Executor) failTask(ctx context.Context, t *task.Task, errMsg string, st
 		EndedAt:   &now,
 	})
 
-	e.streamer.EmitSystem(ctx, t.ID, "task_failed", map[string]string{
+	_ = e.streamer.EmitSystem(ctx, t.ID, "task_failed", map[string]string{
 		"error": errMsg,
 	})
-	e.streamer.EmitDone(ctx, t.ID, task.StatusFailed, nil)
+	_ = e.streamer.EmitDone(ctx, t.ID, task.StatusFailed, nil)
 
 	if t.CallbackURL != "" && e.webhook != nil {
-		e.webhook.Send(ctx, t.CallbackURL, webhook.Payload{
+		_ = e.webhook.Send(ctx, t.CallbackURL, webhook.Payload{
 			TaskID:     t.ID,
 			Status:     string(task.StatusFailed),
 			Error:      errMsg,
