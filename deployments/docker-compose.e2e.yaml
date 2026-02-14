@@ -1,0 +1,6 @@
+# E2E test overlay — uses mock CLI instead of real Claude Code.
+# Usage: task dev:e2e  (start), then task test:e2e  (run tests)
+services:
+  app:
+    environment:
+      CODEFORGE_CLI__CLAUDE_CODE__PATH: /app/bin/mock-claude

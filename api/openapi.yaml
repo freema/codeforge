@@ -243,6 +243,56 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /api/v1/tasks/{taskID}/stream:
+    get:
+      summary: Stream task events via SSE
+      operationId: streamTask
+      tags: [Tasks]
+      description: |
+        Opens a Server-Sent Events (SSE) connection to stream real-time task progress.
+
+        **Event types:**
+        - `connected` — Initial event with task ID and current status.
+        - `data` (unnamed) — Stream events from Redis history and live Pub/Sub.
+          Each event is a JSON object: `{ type, event, data, ts }`.
+          Types: `system`, `git`, `cli`, `stream`, `result`.
+        - `done` — Task finished (completed/failed). Connection closes after this.
+        - `timeout` — Connection closed after 10 minutes.
+
+        **Behavior:**
+        1. Replays all historical events from Redis.
+        2. Subscribes to live events via Redis Pub/Sub.
+        3. Sends keepalive comments (`: keepalive`) every 15 seconds.
+        4. For terminal tasks (completed/failed/pr_created), sends history + done immediately.
+
+        **Client example:**
+        ```javascript
+        const es = new EventSource('/api/v1/tasks/abc/stream', {
+          headers: { Authorization: 'Bearer TOKEN' }
+        });
+        es.onmessage = (e) => console.log(JSON.parse(e.data));
+        es.addEventListener('done', (e) => { es.close(); });
+        ```
+      parameters:
+        - name: taskID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-Sent Events stream
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/v1/keys:
     post:
       summary: Register a provider access key
@@ -737,6 +787,24 @@ components:
           type: object
           additionalProperties:
             type: string
+
+    StreamEvent:
+      type: object
+      description: A single event from the task's real-time stream
+      properties:
+        type:
+          type: string
+          enum: [system, git, cli, stream, result]
+          description: Event category
+        event:
+          type: string
+          description: Event name (e.g., status_change, output, clone_start)
+        data:
+          description: Event-specific payload (varies by type)
+        ts:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp
 
     WorkspaceInfo:
       type: object

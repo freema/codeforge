@@ -3,6 +3,7 @@ version: '3'
 vars:
   DC: docker compose -f deployments/docker-compose.yaml
   DC_DEV: docker compose -f deployments/docker-compose.yaml -f deployments/docker-compose.dev.yaml
+  DC_E2E: docker compose -f deployments/docker-compose.yaml -f deployments/docker-compose.dev.yaml -f deployments/docker-compose.e2e.yaml
   IMAGE_NAME: codeforge
   IMAGE_TAG: latest
 
@@ -43,7 +44,7 @@ tasks:
       - "{{.DC_DEV}} run --rm -e CODEFORGE_TEST_URL=http://app:8080 -e CODEFORGE_TEST_TOKEN=dev-token app go test -tags integration -v -count=1 ./tests/integration/..."
 
   test:all:
-    desc: Run all tests
+    desc: Run unit + integration tests
     cmds:
       - task: test
       - task: test:integration
@@ -82,6 +83,23 @@ tasks:
     desc: Run go mod tidy inside Docker
     cmds:
       - "{{.DC_DEV}} run --rm --no-deps app go mod tidy"
+
+  dev:e2e:
+    desc: Start dev environment with mock CLI for E2E testing
+    deps: [build:mock-cli]
+    cmds:
+      - "{{.DC_E2E}} up --build"
+
+  dev:e2e:detach:
+    desc: Start E2E environment in background
+    deps: [build:mock-cli]
+    cmds:
+      - "{{.DC_E2E}} up --build -d"
+
+  test:e2e:
+    desc: Run E2E tests (requires dev:e2e running)
+    cmds:
+      - "{{.DC_E2E}} run --rm -e CODEFORGE_TEST_URL=http://app:8080 -e CODEFORGE_TEST_TOKEN=dev-token app go test -tags integration -v -count=1 -timeout 120s ./tests/e2e/..."
 
   build:mock-cli:
     desc: Build mock Claude CLI for testing

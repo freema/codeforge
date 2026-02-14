@@ -64,6 +64,70 @@ curl -X POST http://localhost:8080/api/v1/tasks/{id}/cancel \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+### Stream Task Events (SSE)
+
+Opens a Server-Sent Events connection to stream real-time task progress. The endpoint replays all historical events first, then streams live events via Redis Pub/Sub.
+
+```bash
+curl -N http://localhost:8080/api/v1/tasks/{id}/stream \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Named events:**
+
+| Event | Description |
+|-------|-------------|
+| `connected` | Initial event with task ID and current status |
+| `done` | Task finished (completed/failed/pr_created). Connection closes after this. |
+| `timeout` | Connection closed after 10 minutes of inactivity |
+
+**Unnamed data events** are JSON objects with the structure:
+
+```json
+{
+  "type": "stream",
+  "event": "output",
+  "data": { "...Claude Code stream-json event..." },
+  "ts": "2025-01-15T10:31:00Z"
+}
+```
+
+Event types: `system`, `git`, `cli`, `stream`, `result`.
+
+**Behavior:**
+1. Subscribes to live Redis Pub/Sub channels *before* reading history (prevents missed events).
+2. Sends `event: connected` with current task state.
+3. Replays all events from Redis history list.
+4. For terminal tasks (completed/failed/pr_created), sends history + `done` immediately and closes.
+5. For active tasks, streams live events with 15s keepalive comments (`: keepalive`).
+6. Auto-closes after 10 minutes.
+
+**JavaScript client example:**
+
+```javascript
+const es = new EventSource('/api/v1/tasks/abc/stream', {
+  headers: { Authorization: 'Bearer TOKEN' }
+});
+
+es.onmessage = (e) => {
+  const event = JSON.parse(e.data);
+  console.log(event.type, event.event, event.data);
+};
+
+es.addEventListener('done', (e) => {
+  const { status } = JSON.parse(e.data);
+  console.log('Task finished:', status);
+  es.close();
+});
+
+es.addEventListener('connected', (e) => {
+  const { task_id, status } = JSON.parse(e.data);
+  console.log('Connected to task:', task_id, status);
+});
+```
+
+**Polling fallback:** If your client doesn't support SSE, use `GET /api/v1/tasks/{id}` to poll task status.
+
 ### Create Pull Request
 
 ```bash
@@ -180,6 +244,18 @@ curl http://localhost:8080/ready
 
 ```bash
 curl http://localhost:8080/metrics
+```
+
+### API Documentation (Swagger UI)
+
+Interactive API docs served from the embedded OpenAPI spec:
+
+```bash
+# Swagger UI
+open http://localhost:8080/api/docs
+
+# Raw OpenAPI 3.0 YAML spec
+curl http://localhost:8080/api/docs/openapi.yaml
 ```
 
 ## Webhook Callbacks

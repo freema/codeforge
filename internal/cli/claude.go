@@ -98,7 +98,8 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB buffer
 
-	var lastResultText string
+	var resultText string      // from the "result" event (authoritative if present)
+	var lastAssistantText string // from the latest "assistant" text event (fallback)
 	var inputTokens, outputTokens int
 
 	for scanner.Scan() {
@@ -115,9 +116,12 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 		}
 
 		// Extract result text and usage from stream events
-		text, iTokens, oTokens := extractStreamData(line)
-		if text != "" {
-			lastResultText += text
+		rText, aText, iTokens, oTokens := extractStreamData(line)
+		if rText != "" {
+			resultText = rText
+		}
+		if aText != "" {
+			lastAssistantText = aText
 		}
 		inputTokens += iTokens
 		outputTokens += oTokens
@@ -126,8 +130,15 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 	err = cmd.Wait()
 	duration := time.Since(startTime)
 
+	// Prefer the result event's text (authoritative), fall back to last assistant text.
+	// The result event may be empty when subtype is "error_during_execution".
+	output := resultText
+	if output == "" {
+		output = lastAssistantText
+	}
+
 	result := &RunResult{
-		Output:       lastResultText,
+		Output:       output,
 		ExitCode:     -1,
 		Duration:     duration,
 		InputTokens:  inputTokens,
@@ -157,19 +168,22 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 	return result, nil
 }
 
-// extractStreamData parses a Claude Code stream-json line for result text and usage info.
-// Claude Code stream-json events include:
-// - type "assistant": contains message.content[].text for streaming text
-// - type "result": contains final result text and aggregated usage
-func extractStreamData(line []byte) (text string, inputTokens, outputTokens int) {
+// extractStreamData parses a Claude Code stream-json line for result text,
+// assistant text, and usage info.
+//
+// Returns:
+//   - resultText: from the final "result" event (authoritative when present)
+//   - assistantText: from "assistant" text events (fallback when result is empty)
+//   - inputTokens, outputTokens: from the "result" event usage
+func extractStreamData(line []byte) (resultText, assistantText string, inputTokens, outputTokens int) {
 	var event map[string]json.RawMessage
 	if err := json.Unmarshal(line, &event); err != nil {
-		return "", 0, 0
+		return "", "", 0, 0
 	}
 
 	var eventType string
 	if err := json.Unmarshal(event["type"], &eventType); err != nil {
-		return "", 0, 0
+		return "", "", 0, 0
 	}
 
 	switch eventType {
@@ -182,13 +196,35 @@ func extractStreamData(line []byte) (text string, inputTokens, outputTokens int)
 			} `json:"usage"`
 		}
 		if err := json.Unmarshal(line, &result); err == nil {
-			text = result.Result
+			resultText = result.Result
 			inputTokens = result.Usage.InputTokens
 			outputTokens = result.Usage.OutputTokens
 		}
+
+	case "assistant":
+		// Capture text content from assistant messages as fallback.
+		// When the result event has subtype "error_during_execution",
+		// its result field is empty — the actual output is here.
+		var msg struct {
+			Message struct {
+				Content []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal(line, &msg); err == nil {
+			var sb strings.Builder
+			for _, c := range msg.Message.Content {
+				if c.Type == "text" && c.Text != "" {
+					sb.WriteString(c.Text)
+				}
+			}
+			assistantText = sb.String()
+		}
 	}
 
-	return text, inputTokens, outputTokens
+	return resultText, assistantText, inputTokens, outputTokens
 }
 
 // KillProcessGroup sends SIGKILL to the entire process group.

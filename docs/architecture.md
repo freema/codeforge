@@ -5,28 +5,35 @@
 CodeForge is a Go HTTP server that orchestrates AI-powered code tasks. It receives task requests via REST API, clones repositories, runs AI CLI tools against them, and optionally creates pull requests with the changes.
 
 ```
-Client (ScopeBot)
+Client (ScopeBot / curl)
     │
-    ▼
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  HTTP Server │────▶│  Redis Queue  │────▶│  Worker Pool │
-│  (Chi)       │     │  (BLPOP)      │     │  (N workers) │
-└──────────────┘     └──────────────┘     └──────┬───────┘
-                                                  │
-                                    ┌─────────────┼─────────────┐
-                                    ▼             ▼             ▼
-                              ┌──────────┐ ┌──────────┐ ┌──────────┐
-                              │ Git Clone│ │ CLI Run  │ │ Webhook  │
-                              │          │ │ (Claude) │ │ Callback │
-                              └──────────┘ └──────────┘ └──────────┘
+    ├── POST /tasks ──────▶ ┌──────────────┐     ┌──────────────┐
+    │                       │  HTTP Server │────▶│  Redis Queue  │
+    │                       │  (Chi)       │     │  (BLPOP)      │
+    │                       └──────┬───────┘     └──────┬───────┘
+    │                              │                     │
+    │                              │               ┌─────▼───────┐
+    └── GET /tasks/{id}/stream ──▶ │               │ Worker Pool │
+                                   │               │ (N workers) │
+                    ┌──────────────┘               └──────┬──────┘
+                    ▼                                      │
+             ┌──────────────┐             ┌───────────────┼───────────────┐
+             │  SSE Handler │◀── Pub/Sub ─┤               │               │
+             │  (stream.go) │             ▼               ▼               ▼
+             └──────────────┘       ┌──────────┐   ┌──────────┐   ┌──────────┐
+                                    │ Git Clone│   │ CLI Run  │   │ Webhook  │
+                                    │          │   │ (Claude) │   │ Callback │
+                                    └──────────┘   └──────────┘   └──────────┘
 ```
 
 ## Key Components
 
 ### HTTP Server (`internal/server/`)
 - Chi router with middleware (auth, logging, rate limiting, metrics, tracing)
-- Handlers for tasks, keys, MCP servers, and workspaces
+- Handlers for tasks, keys, MCP servers, workspaces, and SSE streams
+- Swagger UI at `/api/docs` with embedded OpenAPI spec
 - Prometheus `/metrics` and health endpoints (no auth required)
+- SSE stream endpoint bypasses `otelhttp` and request timeout middleware (see Streaming below)
 
 ### Task Service (`internal/task/`)
 - CRUD operations on task state stored in Redis hashes
@@ -43,15 +50,33 @@ Client (ScopeBot)
 
 ### CLI Registry (`internal/cli/`)
 - `Runner` interface for pluggable AI tools
-- `ClaudeRunner` implements stream-json output parsing
+- `ClaudeRunner` implements `--output-format stream-json` parsing
 - Registry maps CLI names to Runner implementations
 - Selected per-task via `config.cli` field
+- Result extraction: prefers the `type: "result"` event text; falls back to the last `type: "assistant"` message text (handles cases where result has `subtype: "error_during_execution"` with an empty result field)
 
-### Streaming (`internal/worker/stream.go`)
+### Streaming
+
+**Worker side (`internal/worker/stream.go`):**
 - Events published to Redis Pub/Sub channels (`task:{id}:stream`)
 - Dual-write to history list (`task:{id}:history`) for reconnection
 - Event types: system, git, cli, stream, result
 - Done signal on separate channel (`task:{id}:done`)
+
+**SSE handler (`internal/server/handlers/stream.go`):**
+- `GET /api/v1/tasks/{id}/stream` opens a long-lived SSE connection
+- Subscribes to Redis Pub/Sub *before* reading history to avoid missed events
+- Replays full history, then streams live events
+- Named events: `connected`, `done`, `timeout`; keepalive comments every 15s
+- For terminal tasks (completed/failed/pr_created): replays history + sends `done` immediately
+- Uses `http.ResponseController` for per-write deadlines (30s) instead of global `WriteTimeout`
+- Auto-closes after 10 minutes
+
+**Middleware considerations for SSE:**
+- The SSE endpoint is excluded from the `chimw.Timeout` middleware group (long-lived connection)
+- `otelhttp` wraps `http.ResponseWriter` without `http.Flusher` support — SSE requests bypass `otelhttp` via path-suffix check in `server.go`
+- The PrometheusMetrics middleware's `responseWriter` implements `Flush()` (delegates to underlying writer) and `Unwrap()` (for `http.ResponseController` compatibility)
+- Global `http.Server.WriteTimeout` is set to `0` (disabled) — SSE handler manages its own deadlines
 
 ### Git Integration (`internal/git/`)
 - Clone with `GIT_ASKPASS` for token auth (never in URL or .git/config)

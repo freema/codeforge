@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -12,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	"github.com/freema/codeforge/api"
 	"github.com/freema/codeforge/internal/config"
 	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/mcp"
@@ -32,13 +34,12 @@ type Server struct {
 func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Service, prService *task.PRService, canceller handlers.Canceller, keyRegistry *keys.Registry, mcpRegistry *mcp.Registry, workspaceMgr *workspace.Manager, version string) *Server {
 	r := chi.NewRouter()
 
-	// Global middleware
+	// Global middleware (timeout applied per-route-group, not globally, for SSE support)
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
 	r.Use(middleware.RequestLogger)
 	r.Use(middleware.PrometheusMetrics)
 	r.Use(chimw.Recoverer)
-	r.Use(chimw.Timeout(60 * time.Second))
 
 	// Rate limiter
 	var rateLimitMw func(http.Handler) http.Handler
@@ -55,65 +56,82 @@ func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Servic
 	// Prometheus metrics endpoint (no auth)
 	r.Handle("/metrics", promhttp.Handler())
 
-	// Task handler
+	// API docs (no auth)
+	docsHandler := handlers.NewDocsHandler(api.OpenAPISpec)
+	r.Get("/api/docs", docsHandler.SwaggerUI)
+	r.Get("/api/docs/openapi.yaml", docsHandler.OpenAPISpec)
+
+	// Handlers
 	taskHandler := handlers.NewTaskHandler(taskService, prService, canceller)
-
-	// Key handler
+	streamHandler := handlers.NewStreamHandler(taskService, redis)
 	keyHandler := handlers.NewKeyHandler(keyRegistry)
-
-	// MCP handler
 	mcpHandler := handlers.NewMCPHandler(mcpRegistry)
-
-	// Workspace handler
 	wsHandler := handlers.NewWorkspaceHandler(workspaceMgr, taskService)
 
 	// Protected API routes
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(middleware.BearerAuth(cfg.Server.AuthToken))
 
-		r.Route("/tasks", func(r chi.Router) {
-			if rateLimitMw != nil {
-				r.With(rateLimitMw).Post("/", taskHandler.Create)
-			} else {
-				r.Post("/", taskHandler.Create)
-			}
-			r.Get("/{taskID}", taskHandler.Get)
-			r.Post("/{taskID}/instruct", taskHandler.Instruct)
-			r.Post("/{taskID}/cancel", taskHandler.Cancel)
-			r.Post("/{taskID}/create-pr", taskHandler.CreatePR)
-		})
+		// SSE stream endpoint — no timeout middleware (long-lived connection)
+		r.Get("/tasks/{taskID}/stream", streamHandler.Stream)
 
-		r.Route("/keys", func(r chi.Router) {
-			r.Post("/", keyHandler.Create)
-			r.Get("/", keyHandler.List)
-			r.Delete("/{name}", keyHandler.Delete)
-		})
+		// All other routes — with timeout
+		r.Group(func(r chi.Router) {
+			r.Use(chimw.Timeout(60 * time.Second))
 
-		r.Route("/mcp/servers", func(r chi.Router) {
-			r.Post("/", mcpHandler.CreateGlobal)
-			r.Get("/", mcpHandler.ListGlobal)
-			r.Delete("/{name}", mcpHandler.DeleteGlobal)
-		})
+			r.Route("/tasks", func(r chi.Router) {
+				if rateLimitMw != nil {
+					r.With(rateLimitMw).Post("/", taskHandler.Create)
+				} else {
+					r.Post("/", taskHandler.Create)
+				}
+				r.Get("/{taskID}", taskHandler.Get)
+				r.Post("/{taskID}/instruct", taskHandler.Instruct)
+				r.Post("/{taskID}/cancel", taskHandler.Cancel)
+				r.Post("/{taskID}/create-pr", taskHandler.CreatePR)
+			})
 
-		r.Route("/workspaces", func(r chi.Router) {
-			r.Get("/", wsHandler.List)
-			r.Delete("/{taskID}", wsHandler.Delete)
+			r.Route("/keys", func(r chi.Router) {
+				r.Post("/", keyHandler.Create)
+				r.Get("/", keyHandler.List)
+				r.Delete("/{name}", keyHandler.Delete)
+			})
+
+			r.Route("/mcp/servers", func(r chi.Router) {
+				r.Post("/", mcpHandler.CreateGlobal)
+				r.Get("/", mcpHandler.ListGlobal)
+				r.Delete("/{name}", mcpHandler.DeleteGlobal)
+			})
+
+			r.Route("/workspaces", func(r chi.Router) {
+				r.Get("/", wsHandler.List)
+				r.Delete("/{taskID}", wsHandler.Delete)
+			})
 		})
 	})
 
-	// Wrap with OpenTelemetry HTTP instrumentation
-	handler := otelhttp.NewHandler(r, "codeforge",
+	// Wrap with OpenTelemetry HTTP instrumentation.
+	// SSE endpoints bypass otelhttp because its response writer wrapper
+	// does not support http.Flusher, which breaks real-time streaming.
+	otelHandler := otelhttp.NewHandler(r, "codeforge",
 		otelhttp.WithFilter(func(r *http.Request) bool {
 			// Skip tracing for health/ready/metrics endpoints
 			return r.URL.Path != "/health" && r.URL.Path != "/ready" && r.URL.Path != "/metrics"
 		}),
 	)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodGet && strings.HasSuffix(req.URL.Path, "/stream") {
+			r.ServeHTTP(w, req) // bypass otelhttp for SSE
+			return
+		}
+		otelHandler.ServeHTTP(w, req)
+	})
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
 		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 0, // Disabled — SSE handler manages deadlines via ResponseController
 		IdleTimeout:  60 * time.Second,
 	}
 
