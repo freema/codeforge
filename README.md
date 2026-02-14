@@ -69,6 +69,14 @@ If you have [Task](https://taskfile.dev/) installed, just run `task dev` instead
 | [Deployment](docs/deployment.md) | Docker, Kubernetes, monitoring |
 | [Development](docs/development.md) | Dev setup, testing, project structure |
 
+## Roadmap
+
+- [ ] **Multi-CLI Support** — Runners for OpenCode, Codex, and other AI coding CLIs alongside Claude Code
+- [ ] **Task Sessions** — Cross-task memory for projects; remember context from previous tasks on the same repository
+- [ ] **Code Review** — Automated review of changes by a separate model before creating a pull request
+- [ ] **Enhanced PR Messages** — Richer pull request descriptions with structured sections and conventional commits
+- [ ] **Subscription & Multi-User Auth** — Per-user API keys, usage tracking, and subscription management
+
 ## Author
 
 **Tomáš Grasl** — [tomasgrasl.cz](https://tomasgrasl.cz)
