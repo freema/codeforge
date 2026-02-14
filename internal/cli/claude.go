@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -21,7 +22,12 @@ type ClaudeRunner struct {
 }
 
 // NewClaudeRunner creates a runner for the Claude Code CLI.
+// If binaryPath is relative, it is resolved to an absolute path so that
+// it remains valid when cmd.Dir is set to the task workspace.
 func NewClaudeRunner(binaryPath string) *ClaudeRunner {
+	if abs, err := filepath.Abs(binaryPath); err == nil {
+		binaryPath = abs
+	}
 	return &ClaudeRunner{binaryPath: binaryPath}
 }
 

@@ -1,5 +1,5 @@
 // Mock Claude CLI for integration testing.
-// Simulates stream-json output format.
+// Simulates Claude Code --output-format stream-json output.
 package main
 
 import (
@@ -12,15 +12,13 @@ import (
 
 func main() {
 	prompt := flag.String("p", "", "prompt")
-	outputFormat := flag.String("output-format", "", "output format")
+	_ = flag.String("output-format", "", "output format")
 	_ = flag.Bool("verbose", false, "verbose")
 	_ = flag.String("permission-mode", "", "permission mode")
 	_ = flag.String("model", "", "model")
 	_ = flag.Int("max-turns", 0, "max turns")
 	_ = flag.String("max-budget-usd", "", "max budget")
 	flag.Parse()
-
-	_ = outputFormat
 
 	// Check for special prompts that trigger different behaviors
 	switch {
@@ -35,24 +33,33 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Simulate stream-json output
+	resultText := fmt.Sprintf("Task completed successfully. Processed prompt: %s", truncate(*prompt, 100))
+
+	// Simulate Claude Code stream-json output:
+	// 1. system init event
+	// 2. assistant message with text content
+	// 3. result event with text and usage
 	events := []map[string]interface{}{
 		{
-			"type": "content_block_delta",
-			"delta": map[string]interface{}{
-				"type": "text_delta",
-				"text": "Task completed successfully. ",
+			"type":    "system",
+			"subtype": "init",
+			"model":   "mock-claude",
+		},
+		{
+			"type": "assistant",
+			"message": map[string]interface{}{
+				"content": []map[string]interface{}{
+					{
+						"type": "text",
+						"text": resultText,
+					},
+				},
 			},
 		},
 		{
-			"type": "content_block_delta",
-			"delta": map[string]interface{}{
-				"type": "text_delta",
-				"text": fmt.Sprintf("Processed prompt: %s", truncate(*prompt, 100)),
-			},
-		},
-		{
-			"type": "message_delta",
+			"type":    "result",
+			"subtype": "success",
+			"result":  resultText,
 			"usage": map[string]interface{}{
 				"input_tokens":  150,
 				"output_tokens": 50,
