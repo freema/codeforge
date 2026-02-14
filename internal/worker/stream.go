@@ -61,11 +61,6 @@ func (s *Streamer) EmitGit(ctx context.Context, taskID, event string, data inter
 	return s.emitTyped(ctx, taskID, "git", event, data)
 }
 
-// EmitCLI publishes a cli event.
-func (s *Streamer) EmitCLI(ctx context.Context, taskID, event string, data interface{}) error {
-	return s.emitTyped(ctx, taskID, "cli", event, data)
-}
-
 // EmitCLIOutput forwards a raw Claude Code stream-json line.
 func (s *Streamer) EmitCLIOutput(ctx context.Context, taskID string, rawEvent json.RawMessage) error {
 	return s.Emit(ctx, taskID, StreamEvent{

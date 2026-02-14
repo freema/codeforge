@@ -8,7 +8,6 @@ server:
 
 redis:
   url: "redis://localhost:6379"
-  db: 0
   prefix: "codeforge:"
 
 workers:
@@ -29,7 +28,6 @@ cli:
   default: "claude-code"
   claude_code:
     path: "claude"
-    version: ""              # empty = use installed version
     default_model: "claude-sonnet-4-20250514"
 
 git:

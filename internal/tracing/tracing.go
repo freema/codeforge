@@ -76,11 +76,6 @@ func Tracer() trace.Tracer {
 	return otel.Tracer("codeforge")
 }
 
-// SpanFromContext extracts the current span from the context.
-func SpanFromContext(ctx context.Context) trace.Span {
-	return trace.SpanFromContext(ctx)
-}
-
 // TraceIDFromContext extracts the trace ID string from the current span context.
 func TraceIDFromContext(ctx context.Context) string {
 	sc := trace.SpanFromContext(ctx).SpanContext()

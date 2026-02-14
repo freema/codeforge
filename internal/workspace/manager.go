@@ -49,11 +49,6 @@ func NewManager(basePath string, redis *redisclient.Client, ttl time.Duration) *
 	}
 }
 
-// BasePath returns the workspace base directory.
-func (m *Manager) BasePath() string {
-	return m.basePath
-}
-
 // Create creates a workspace directory and registers it in Redis.
 func (m *Manager) Create(ctx context.Context, taskID string) (*Workspace, error) {
 	wsPath := filepath.Join(m.basePath, taskID)
@@ -93,13 +88,6 @@ func (m *Manager) Get(ctx context.Context, taskID string) *Workspace {
 		return nil
 	}
 	return hashToWorkspace(fields)
-}
-
-// Exists checks if the workspace directory exists on disk.
-func (m *Manager) Exists(taskID string) bool {
-	wsPath := filepath.Join(m.basePath, taskID)
-	_, err := os.Stat(wsPath)
-	return err == nil
 }
 
 // Delete removes a workspace directory and its Redis metadata.

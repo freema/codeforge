@@ -42,11 +42,6 @@ func ValidateTransition(current, next TaskStatus) error {
 	}
 }
 
-// IsTerminal returns true if the status is a terminal state (no further transitions for this iteration).
-func IsTerminal(s TaskStatus) bool {
-	return s == StatusFailed
-}
-
 // IsFinished returns true if the task has reached a completion state.
 func IsFinished(s TaskStatus) bool {
 	return s == StatusCompleted || s == StatusFailed || s == StatusPRCreated

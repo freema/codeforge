@@ -62,18 +62,6 @@ func TestInvalidTransitions(t *testing.T) {
 	}
 }
 
-func TestFailedIsTerminal(t *testing.T) {
-	if !IsTerminal(StatusFailed) {
-		t.Error("StatusFailed should be terminal")
-	}
-	if IsTerminal(StatusCompleted) {
-		t.Error("StatusCompleted should not be terminal")
-	}
-	if IsTerminal(StatusRunning) {
-		t.Error("StatusRunning should not be terminal")
-	}
-}
-
 func TestIsFinished(t *testing.T) {
 	finished := []TaskStatus{StatusCompleted, StatusFailed, StatusPRCreated}
 	for _, s := range finished {

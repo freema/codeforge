@@ -151,6 +151,7 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 					Name:    s.Name,
 					Package: s.Command, // task model uses "command" as package
 					Args:    s.Args,
+					Env:     s.Env,
 				})
 			}
 		}

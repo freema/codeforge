@@ -85,11 +85,4 @@ var (
 		[]string{"method", "path"},
 	)
 
-	// WorkspaceDiskUsage tracks total workspace disk usage.
-	WorkspaceDiskUsage = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "codeforge_workspace_disk_usage_bytes",
-			Help: "Total workspace disk usage in bytes",
-		},
-	)
 )

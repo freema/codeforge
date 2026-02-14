@@ -153,7 +153,7 @@ func run() error {
 	)
 
 	// Initialize prompt analyzer
-	analyzer := cli.NewAnalyzer("") // API key resolved per-task from config
+	analyzer := cli.NewAnalyzer()
 
 	// Initialize PR service
 	prService := task.NewPRService(taskService, analyzer, task.PRServiceConfig{

@@ -72,11 +72,6 @@ func (p *Pool) Stop() {
 	slog.Info("worker pool stopped")
 }
 
-// ActiveCount returns the number of currently active workers.
-func (p *Pool) ActiveCount() int32 {
-	return p.activeCount.Load()
-}
-
 // Cancel cancels a running task by its ID.
 func (p *Pool) Cancel(taskID string) error {
 	p.cancelsMu.RLock()

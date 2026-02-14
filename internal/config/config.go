@@ -32,10 +32,8 @@ type ServerConfig struct {
 }
 
 type RedisConfig struct {
-	URL      string `koanf:"url"`
-	Password string `koanf:"password"`
-	DB       int    `koanf:"db"`
-	Prefix   string `koanf:"prefix"`
+	URL    string `koanf:"url"`
+	Prefix string `koanf:"prefix"`
 }
 
 type WorkersConfig struct {
@@ -61,7 +59,6 @@ type CLIConfig struct {
 
 type ClaudeCodeConfig struct {
 	Path         string `koanf:"path"`
-	Version      string `koanf:"version"`
 	DefaultModel string `koanf:"default_model"`
 }
 
@@ -76,9 +73,7 @@ type EncryptionConfig struct {
 	Key string `koanf:"key"`
 }
 
-type MCPConfig struct {
-	GlobalServers []interface{} `koanf:"global_servers"`
-}
+type MCPConfig struct{}
 
 type WebhookConfig struct {
 	HMACSecret string        `koanf:"hmac_secret"`
@@ -110,7 +105,6 @@ func Defaults() *Config {
 			Port: 8080,
 		},
 		Redis: RedisConfig{
-			DB:     0,
 			Prefix: "codeforge:",
 		},
 		Workers: WorkersConfig{

@@ -94,10 +94,10 @@ func (c *TaskConfig) UnmarshalJSON(data []byte) error {
 
 // MCPServer defines an MCP server configuration.
 type MCPServer struct {
-	Name    string   `json:"name"`
-	Command string   `json:"command"`
-	Args    []string `json:"args,omitempty"`
-	Env     []string `json:"env,omitempty"`
+	Name    string            `json:"name"`
+	Command string            `json:"command"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
 }
 
 // Iteration stores result data for a single iteration (Phase 3).
