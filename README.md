@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/freema/codeforge/actions/workflows/ci.yaml/badge.svg)](https://github.com/freema/codeforge/actions/workflows/ci.yaml)
 [![Go](https://img.shields.io/github/go-mod/go-version/freema/codeforge)](https://go.dev/)
-[![Go Report Card](https://goreportcard.com/badge/github.com/freema/codeforge)](https://goreportcard.com/report/github.com/freema/codeforge)
 [![Author](https://img.shields.io/badge/Author-Tom%C3%A1%C5%A1%20Grasl-orange)](https://tomasgrasl.cz)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
