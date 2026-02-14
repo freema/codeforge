@@ -70,7 +70,7 @@ func main() {
 	enc := json.NewEncoder(os.Stdout)
 	for _, event := range events {
 		time.Sleep(50 * time.Millisecond) // Simulate streaming delay
-		enc.Encode(event)
+		_ = enc.Encode(event)
 	}
 }
 

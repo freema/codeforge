@@ -240,6 +240,6 @@ func KillProcessGroup(cmd *exec.Cmd) {
 	}
 	pgid, err := syscall.Getpgid(cmd.Process.Pid)
 	if err == nil {
-		syscall.Kill(-pgid, syscall.SIGKILL)
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 	}
 }

@@ -68,7 +68,7 @@ func (h *HealthHandler) Health(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // Ready returns 200 if the server is accepting traffic, 503 during shutdown.
@@ -76,10 +76,10 @@ func (h *HealthHandler) Ready(w http.ResponseWriter, r *http.Request) {
 	if !h.ready.Load() {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "shutting_down"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "shutting_down"})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }

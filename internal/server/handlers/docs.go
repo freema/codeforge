@@ -17,14 +17,14 @@ func (h *DocsHandler) OpenAPISpec(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/yaml")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.WriteHeader(http.StatusOK)
-	w.Write(h.spec)
+	_, _ = w.Write(h.spec)
 }
 
 // SwaggerUI serves an HTML page with Swagger UI loaded from CDN.
 func (h *DocsHandler) SwaggerUI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(swaggerHTML))
+	_, _ = w.Write([]byte(swaggerHTML))
 }
 
 const swaggerHTML = `<!DOCTYPE html>

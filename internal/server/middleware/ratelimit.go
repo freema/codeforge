@@ -46,7 +46,7 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
 				w.WriteHeader(http.StatusTooManyRequests)
-				json.NewEncoder(w).Encode(map[string]string{
+				_ = json.NewEncoder(w).Encode(map[string]string{
 					"error":   "rate_limit_exceeded",
 					"message": fmt.Sprintf("rate limit exceeded, retry after %ds", int(retryAfter.Seconds())),
 				})
@@ -71,7 +71,7 @@ func (rl *RateLimiter) allow(r *http.Request, clientID string) (bool, time.Durat
 	countCmd := pipe.ZCard(ctx, key)
 	pipe.ZAdd(ctx, key, redis.Z{Score: float64(now), Member: member})
 	pipe.Expire(ctx, key, rl.window)
-	pipe.Exec(ctx)
+	_, _ = pipe.Exec(ctx)
 
 	count := countCmd.Val()
 	if count >= int64(rl.limit) {

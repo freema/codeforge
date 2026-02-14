@@ -195,10 +195,10 @@ func hashToServer(fields map[string]string) *Server {
 	}
 
 	if v := fields["args"]; v != "" {
-		json.Unmarshal([]byte(v), &srv.Args)
+		_ = json.Unmarshal([]byte(v), &srv.Args)
 	}
 	if v := fields["env"]; v != "" {
-		json.Unmarshal([]byte(v), &srv.Env)
+		_ = json.Unmarshal([]byte(v), &srv.Env)
 	}
 	if v := fields["created_at"]; v != "" {
 		srv.CreatedAt, _ = time.Parse(time.RFC3339Nano, v)

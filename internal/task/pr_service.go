@@ -174,6 +174,6 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 
 func (s *PRService) failPR(ctx context.Context, taskID string, err error) {
 	slog.Error("PR creation failed", "task_id", taskID, "error", err)
-	s.taskService.SetError(ctx, taskID, fmt.Sprintf("PR creation failed: %v", err))
-	s.taskService.UpdateStatus(ctx, taskID, StatusFailed)
+	_ = s.taskService.SetError(ctx, taskID, fmt.Sprintf("PR creation failed: %v", err))
+	_ = s.taskService.UpdateStatus(ctx, taskID, StatusFailed)
 }
