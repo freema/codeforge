@@ -5,7 +5,7 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -40,3 +42,16 @@ jobs:
             VERSION=${{ steps.version.outputs.VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body: |
+            ## Docker image
+
+            ```bash
+            docker pull ghcr.io/freema/codeforge:${{ steps.version.outputs.VERSION }}
+            ```
+
+            See [deployment docs](https://github.com/freema/codeforge/blob/main/docs/deployment.md) for full setup instructions.

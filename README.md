@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/freema/codeforge/actions/workflows/ci.yaml/badge.svg)](https://github.com/freema/codeforge/actions/workflows/ci.yaml)
 [![Go](https://img.shields.io/github/go-mod/go-version/freema/codeforge)](https://go.dev/)
+[![GHCR](https://img.shields.io/badge/GHCR-ghcr.io%2Ffreema%2Fcodeforge-blue?logo=github)](https://github.com/freema/codeforge/pkgs/container/codeforge)
 [![Author](https://img.shields.io/badge/Author-Tom%C3%A1%C5%A1%20Grasl-orange)](https://tomasgrasl.cz)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -37,13 +38,61 @@ CodeForge receives task requests via REST API, clones the repository, runs an AI
 
 ## Quick Start
 
-```bash
-# Start the server (requires Docker + docker-compose)
-docker compose -f deployments/docker-compose.yaml -f deployments/docker-compose.dev.yaml up --build
+### Using pre-built image (recommended)
 
+```bash
+docker pull ghcr.io/freema/codeforge:latest
+```
+
+Create a `docker-compose.yaml`:
+
+```yaml
+services:
+  codeforge:
+    image: ghcr.io/freema/codeforge:latest
+    ports:
+      - "8080:8080"
+    environment:
+      CODEFORGE_REDIS__URL: redis://redis:6379
+      CODEFORGE_SERVER__AUTH_TOKEN: ${CODEFORGE_AUTH_TOKEN:?set CODEFORGE_AUTH_TOKEN}
+      CODEFORGE_ENCRYPTION__KEY: ${CODEFORGE_ENCRYPTION_KEY:?set CODEFORGE_ENCRYPTION_KEY}
+    volumes:
+      - workspaces:/data/workspaces
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  workspaces:
+  redis-data:
+```
+
+```bash
+# Generate an encryption key
+export CODEFORGE_ENCRYPTION_KEY=$(openssl rand -base64 32)
+export CODEFORGE_AUTH_TOKEN="your-secure-token"
+
+docker compose up -d
+```
+
+A ready-to-use production compose file is also available at [`deployments/docker-compose.production.yaml`](deployments/docker-compose.production.yaml).
+
+### Try it
+
+```bash
 # Create a task
 curl -X POST http://localhost:8080/api/v1/tasks \
-  -H "Authorization: Bearer dev-token" \
+  -H "Authorization: Bearer $CODEFORGE_AUTH_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "repo_url": "https://github.com/user/repo.git",
@@ -53,10 +102,16 @@ curl -X POST http://localhost:8080/api/v1/tasks \
 
 # Check status
 curl http://localhost:8080/api/v1/tasks/{id} \
-  -H "Authorization: Bearer dev-token"
+  -H "Authorization: Bearer $CODEFORGE_AUTH_TOKEN"
 ```
 
-If you have [Task](https://taskfile.dev/) installed, just run `task dev` instead of the docker compose command.
+### Development
+
+```bash
+# Requires Docker + docker-compose
+# Install Task runner: https://taskfile.dev/installation/
+task dev
+```
 
 ## Documentation
 
@@ -78,7 +133,7 @@ If you have [Task](https://taskfile.dev/) installed, just run `task dev` instead
 
 ## Author
 
-**Tomáš Grasl** — [tomasgrasl.cz](https://tomasgrasl.cz)
+**Tomas Grasl** — [tomasgrasl.cz](https://tomasgrasl.cz)
 
 ## License
 
