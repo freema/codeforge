@@ -1,12 +1,14 @@
-# CodeForge
+<p align="center">
+  <img src="assets/logo.svg" alt="CodeForge" width="720"/>
+</p>
 
-[![CI](https://github.com/freema/codeforge/actions/workflows/ci.yaml/badge.svg)](https://github.com/freema/codeforge/actions/workflows/ci.yaml)
-[![Go](https://img.shields.io/github/go-mod/go-version/freema/codeforge)](https://go.dev/)
-[![GHCR](https://img.shields.io/badge/GHCR-ghcr.io%2Ffreema%2Fcodeforge-blue?logo=github)](https://github.com/freema/codeforge/pkgs/container/codeforge)
-[![Author](https://img.shields.io/badge/Author-Tom%C3%A1%C5%A1%20Grasl-orange)](https://tomasgrasl.cz)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-
-Remote AI code task runner. Submit tasks via HTTP, stream progress through Redis, get results back.
+<p align="center">
+  <a href="https://github.com/freema/codeforge/actions/workflows/ci.yaml"><img src="https://github.com/freema/codeforge/actions/workflows/ci.yaml/badge.svg" alt="CI"/></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/github/go-mod/go-version/freema/codeforge" alt="Go"/></a>
+  <a href="https://github.com/freema/codeforge/pkgs/container/codeforge"><img src="https://img.shields.io/badge/GHCR-ghcr.io%2Ffreema%2Fcodeforge-blue?logo=github" alt="GHCR"/></a>
+  <a href="https://tomasgrasl.cz"><img src="https://img.shields.io/badge/Author-Tom%C3%A1%C5%A1%20Grasl-orange" alt="Author"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"/></a>
+</p>
 
 ## Overview
 
