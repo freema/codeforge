@@ -1,3 +1,4 @@
+# Branch naming test by CodeForge
 # CodeForge configuration example.
 # All values can be overridden via env vars with CODEFORGE_ prefix.
 # Use double underscore (__) for nesting: CODEFORGE_SERVER__AUTH_TOKEN
