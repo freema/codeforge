@@ -18,6 +18,7 @@ import (
 	"github.com/freema/codeforge/internal/database"
 	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/tool/mcp"
+	"github.com/freema/codeforge/internal/tool/runner"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/server/handlers"
 	"github.com/freema/codeforge/internal/server/middleware"
@@ -34,7 +35,7 @@ type Server struct {
 }
 
 // New creates and configures the HTTP server with all routes and middleware.
-func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, taskService *task.Service, prService *task.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, toolRegistry tools.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowRunStore workflow.RunStore, workflowRunCreator handlers.WorkflowRunCreator, version string) *Server {
+func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, taskService *task.Service, prService *task.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, toolRegistry tools.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowRunStore workflow.RunStore, workflowRunCreator handlers.WorkflowRunCreator, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, version string) *Server {
 	r := chi.NewRouter()
 
 	// Global middleware (timeout applied per-route-group, not globally, for SSE support)
@@ -66,7 +67,8 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, t
 	r.Get("/api/docs/openapi.yaml", docsHandler.OpenAPISpec)
 
 	// Handlers
-	taskHandler := handlers.NewTaskHandler(taskService, prService, canceller)
+	taskHandler := handlers.NewTaskHandler(taskService, prService, canceller, cliRegistry)
+	cliHandler := handlers.NewCLIHandler(cliRegistry, cliConfigs)
 	streamHandler := handlers.NewStreamHandler(taskService, redis)
 	keyHandler := handlers.NewKeyHandler(keyRegistry)
 	mcpHandler := handlers.NewMCPHandler(mcpRegistry)
@@ -101,6 +103,11 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, t
 				r.Post("/{taskID}/instruct", taskHandler.Instruct)
 				r.Post("/{taskID}/cancel", taskHandler.Cancel)
 				r.Post("/{taskID}/create-pr", taskHandler.CreatePR)
+			})
+
+			r.Route("/cli", func(r chi.Router) {
+				r.Get("/", cliHandler.List)
+				r.Get("/health", cliHandler.Health)
 			})
 
 			r.Route("/keys", func(r chi.Router) {

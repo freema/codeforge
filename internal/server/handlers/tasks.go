@@ -13,6 +13,7 @@ import (
 
 	"github.com/freema/codeforge/internal/apperror"
 	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/tool/runner"
 )
 
 var validate = validator.New()
@@ -24,14 +25,15 @@ type Canceller interface {
 
 // TaskHandler handles task-related HTTP endpoints.
 type TaskHandler struct {
-	service   *task.Service
-	prService *task.PRService
-	canceller Canceller
+	service     *task.Service
+	prService   *task.PRService
+	canceller   Canceller
+	cliRegistry *runner.Registry
 }
 
 // NewTaskHandler creates a new task handler.
-func NewTaskHandler(service *task.Service, prService *task.PRService, canceller Canceller) *TaskHandler {
-	return &TaskHandler{service: service, prService: prService, canceller: canceller}
+func NewTaskHandler(service *task.Service, prService *task.PRService, canceller Canceller, cliRegistry *runner.Registry) *TaskHandler {
+	return &TaskHandler{service: service, prService: prService, canceller: canceller, cliRegistry: cliRegistry}
 }
 
 // List handles GET /api/v1/tasks.
@@ -86,6 +88,17 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, http.StatusBadRequest, "validation failed")
 		return
+	}
+
+	// Validate CLI name against registry
+	if req.Config != nil && req.Config.CLI != "" {
+		if _, err := h.cliRegistry.Get(req.Config.CLI); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"error":  "validation_error",
+				"fields": map[string]string{"cli": fmt.Sprintf("unknown CLI: %s", req.Config.CLI)},
+			})
+			return
+		}
 	}
 
 	t, err := h.service.Create(r.Context(), req)

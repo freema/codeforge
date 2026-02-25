@@ -38,6 +38,11 @@ func (r *Registry) Get(name string) (Runner, error) {
 	return runner, nil
 }
 
+// DefaultCLI returns the name of the default CLI.
+func (r *Registry) DefaultCLI() string {
+	return r.defaultCLI
+}
+
 // Available returns the names of all registered CLIs.
 func (r *Registry) Available() []string {
 	names := make([]string, 0, len(r.runners))

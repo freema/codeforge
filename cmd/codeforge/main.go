@@ -20,6 +20,7 @@ import (
 	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/server"
+	"github.com/freema/codeforge/internal/server/handlers"
 	"github.com/freema/codeforge/internal/task"
 	"github.com/freema/codeforge/internal/tools"
 	"github.com/freema/codeforge/internal/tracing"
@@ -147,6 +148,12 @@ func run() error {
 	cliRegistry.Register("claude-code", runner.NewClaudeRunner(cfg.CLI.ClaudeCode.Path))
 	cliRegistry.Register("codex", runner.NewCodexRunner(cfg.CLI.Codex.Path))
 
+	// Build CLI info map for HTTP handler
+	cliConfigs := map[string]handlers.CLIInfo{
+		"claude-code": {Name: "claude-code", BinaryPath: cfg.CLI.ClaudeCode.Path, DefaultModel: cfg.CLI.ClaudeCode.DefaultModel},
+		"codex":       {Name: "codex", BinaryPath: cfg.CLI.Codex.Path, DefaultModel: cfg.CLI.Codex.DefaultModel},
+	}
+
 	// Initialize streamer
 	streamer := worker.NewStreamer(rdb, time.Duration(cfg.Tasks.WorkspaceTTL)*time.Second)
 
@@ -229,7 +236,7 @@ func run() error {
 		},
 	)
 
-	srv := server.New(cfg, rdb, sqliteDB, taskService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowRunStore, orchestrator, version)
+	srv := server.New(cfg, rdb, sqliteDB, taskService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowRunStore, orchestrator, cliRegistry, cliConfigs, version)
 
 	// Start background services
 	appCtx, appCancel := context.WithCancel(context.Background())
