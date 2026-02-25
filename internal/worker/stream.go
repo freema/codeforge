@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	gitpkg "github.com/freema/codeforge/internal/git"
+	gitpkg "github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/task"
 )

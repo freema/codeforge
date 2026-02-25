@@ -2,14 +2,11 @@ package keys
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"time"
-
-	"github.com/redis/go-redis/v9"
-
-	"github.com/freema/codeforge/internal/apperror"
-	"github.com/freema/codeforge/internal/crypto"
-	"github.com/freema/codeforge/internal/redisclient"
 )
 
 // Key represents a stored access token.
@@ -21,117 +18,112 @@ type Key struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Registry manages encrypted access tokens in Redis.
-type Registry struct {
-	redis  *redisclient.Client
-	crypto *crypto.Service
+// VerifyResult contains the result of a provider token verification.
+type VerifyResult struct {
+	Valid    bool   `json:"valid"`
+	Username string `json:"username,omitempty"`
+	Email    string `json:"email,omitempty"`
+	Scopes   string `json:"scopes,omitempty"`
+	Error    string `json:"error,omitempty"`
 }
 
-// NewRegistry creates a new key registry.
-func NewRegistry(redis *redisclient.Client, cryptoSvc *crypto.Service) *Registry {
-	return &Registry{redis: redis, crypto: cryptoSvc}
+// Registry manages encrypted access tokens.
+type Registry interface {
+	Create(ctx context.Context, key Key) error
+	List(ctx context.Context) ([]Key, error)
+	Delete(ctx context.Context, name string) error
+	Resolve(ctx context.Context, provider, name string) (string, error)
+	Verify(ctx context.Context, name string) (*VerifyResult, string, error)
+	// ResolveByName looks up a key by name (regardless of provider) and returns
+	// the decrypted token and provider.
+	ResolveByName(ctx context.Context, name string) (token, provider string, err error)
 }
 
-// Create registers a new key. Returns error if the name already exists for the provider.
-func (r *Registry) Create(ctx context.Context, key Key) error {
-	if key.Provider != "github" && key.Provider != "gitlab" {
-		return apperror.Validation("provider must be 'github' or 'gitlab'")
+func verifyToken(ctx context.Context, provider, token string) *VerifyResult {
+	switch provider {
+	case "github":
+		return verifyGitHub(ctx, token)
+	case "gitlab":
+		return verifyGitLab(ctx, token)
+	default:
+		return &VerifyResult{Valid: false, Error: "unsupported provider"}
 	}
+}
 
-	redisKey := r.redisKey(key.Provider, key.Name)
-
-	// Check uniqueness
-	exists, err := r.redis.Unwrap().Exists(ctx, redisKey).Result()
+func verifyGitHub(ctx context.Context, token string) *VerifyResult {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/user", nil)
 	if err != nil {
-		return fmt.Errorf("checking key existence: %w", err)
+		return &VerifyResult{Valid: false, Error: "failed to create request"}
 	}
-	if exists > 0 {
-		return apperror.Conflict("key '%s' already exists for provider '%s'", key.Name, key.Provider)
-	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
 
-	// Encrypt token
-	encrypted, err := r.crypto.Encrypt(key.Token)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("encrypting token: %w", err)
+		return &VerifyResult{Valid: false, Error: "connection failed"}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return &VerifyResult{Valid: false, Error: "invalid or expired token"}
+	}
+	if resp.StatusCode != http.StatusOK {
+		return &VerifyResult{Valid: false, Error: fmt.Sprintf("unexpected status %d", resp.StatusCode)}
 	}
 
-	fields := map[string]interface{}{
-		"name":            key.Name,
-		"provider":        key.Provider,
-		"encrypted_token": encrypted,
-		"scope":           key.Scope,
-		"created_at":      time.Now().UTC().Format(time.RFC3339Nano),
-	}
-
-	if err := r.redis.Unwrap().HSet(ctx, redisKey, fields).Err(); err != nil {
-		return fmt.Errorf("storing key: %w", err)
-	}
-
-	return nil
-}
-
-// List returns all keys (without tokens).
-func (r *Registry) List(ctx context.Context) ([]Key, error) {
-	pattern := r.redis.Key("keys", "*")
-	var keys []Key
-
-	iter := r.redis.Unwrap().Scan(ctx, 0, pattern, 100).Iterator()
-	for iter.Next(ctx) {
-		redisKey := iter.Val()
-		fields, err := r.redis.Unwrap().HGetAll(ctx, redisKey).Result()
-		if err != nil {
-			continue
-		}
-		key := Key{
-			Name:     fields["name"],
-			Provider: fields["provider"],
-			Scope:    fields["scope"],
-		}
-		if v := fields["created_at"]; v != "" {
-			key.CreatedAt, _ = time.Parse(time.RFC3339Nano, v)
-		}
-		keys = append(keys, key)
-	}
-	if err := iter.Err(); err != nil {
-		return nil, fmt.Errorf("scanning keys: %w", err)
-	}
-
-	if keys == nil {
-		keys = []Key{}
-	}
-
-	return keys, nil
-}
-
-// Delete removes a key. Returns error if not found.
-func (r *Registry) Delete(ctx context.Context, name string) error {
-	// Try both providers
-	for _, provider := range []string{"github", "gitlab"} {
-		redisKey := r.redisKey(provider, name)
-		deleted, err := r.redis.Unwrap().Del(ctx, redisKey).Result()
-		if err != nil {
-			return fmt.Errorf("deleting key: %w", err)
-		}
-		if deleted > 0 {
-			return nil
-		}
-	}
-	return apperror.NotFound("key '%s' not found", name)
-}
-
-// Resolve decrypts and returns the token for a given provider and key name.
-func (r *Registry) Resolve(ctx context.Context, provider, name string) (string, error) {
-	redisKey := r.redisKey(provider, name)
-	encrypted, err := r.redis.Unwrap().HGet(ctx, redisKey, "encrypted_token").Result()
-	if err == redis.Nil {
-		return "", apperror.NotFound("key '%s' not found for provider '%s'", name, provider)
-	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 	if err != nil {
-		return "", fmt.Errorf("reading key: %w", err)
+		return &VerifyResult{Valid: true} // token works, just can't parse body
 	}
-	return r.crypto.Decrypt(encrypted)
+
+	var user struct {
+		Login string `json:"login"`
+		Email string `json:"email"`
+	}
+	_ = json.Unmarshal(body, &user)
+
+	return &VerifyResult{
+		Valid:    true,
+		Username: user.Login,
+		Email:    user.Email,
+		Scopes:   resp.Header.Get("X-OAuth-Scopes"),
+	}
 }
 
-func (r *Registry) redisKey(provider, name string) string {
-	return r.redis.Key("keys", provider, name)
+func verifyGitLab(ctx context.Context, token string) *VerifyResult {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://gitlab.com/api/v4/user", nil)
+	if err != nil {
+		return &VerifyResult{Valid: false, Error: "failed to create request"}
+	}
+	req.Header.Set("PRIVATE-TOKEN", token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return &VerifyResult{Valid: false, Error: "connection failed"}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return &VerifyResult{Valid: false, Error: "invalid or expired token"}
+	}
+	if resp.StatusCode != http.StatusOK {
+		return &VerifyResult{Valid: false, Error: fmt.Sprintf("unexpected status %d", resp.StatusCode)}
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	if err != nil {
+		return &VerifyResult{Valid: true}
+	}
+
+	var user struct {
+		Username string `json:"username"`
+		Email    string `json:"email"`
+	}
+	_ = json.Unmarshal(body, &user)
+
+	return &VerifyResult{
+		Valid:    true,
+		Username: user.Username,
+		Email:    user.Email,
+	}
 }

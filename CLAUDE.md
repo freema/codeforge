@@ -47,10 +47,11 @@ internal/
     middleware/        Auth, logging, recovery
   task/                Task model, service, state machine
   worker/              Worker pool, executor, streaming
-  git/                 Clone, branch, GitHub/GitLab PR
-  cli/                 AI CLI runner interface + Claude Code implementation
+  tool/                Tool subsystem namespace
+    git/               Clone, branch, GitHub/GitLab PR
+    runner/            AI CLI runner interface + Claude Code implementation
+    mcp/               MCP server registry + installer
   keys/                Key registry + AES-256-GCM encryption
-  mcp/                 MCP server registry + installer
   workspace/           Workspace lifecycle, cleanup
   webhook/             HMAC-signed webhook callbacks
   redis/               Redis client wrapper

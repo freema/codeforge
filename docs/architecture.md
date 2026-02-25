@@ -48,7 +48,7 @@ Client (ScopeBot / curl)
 - Per-task cancellable contexts for cancel support
 - Executor orchestrates: clone -> run CLI -> diff -> report
 
-### CLI Registry (`internal/cli/`)
+### CLI Runner (`internal/tool/runner/`)
 - `Runner` interface for pluggable AI tools
 - `ClaudeRunner` implements `--output-format stream-json` parsing
 - Registry maps CLI names to Runner implementations
@@ -78,11 +78,42 @@ Client (ScopeBot / curl)
 - The PrometheusMetrics middleware's `responseWriter` implements `Flush()` (delegates to underlying writer) and `Unwrap()` (for `http.ResponseController` compatibility)
 - Global `http.Server.WriteTimeout` is set to `0` (disabled) — SSE handler manages its own deadlines
 
-### Git Integration (`internal/git/`)
+### Workflow System (`internal/workflow/`)
+- Multi-step workflow orchestrator consuming from Redis FIFO queue (`BLPOP queue:workflows`)
+- Three step types:
+  - **fetch** — HTTP request to external APIs (e.g., Sentry, GitHub Issues) with JSONPath output extraction
+  - **task** — creates and waits for a CodeForge task (clone + AI CLI run)
+  - **action** — built-in actions (e.g., `create_pr`, `notify`) that operate on previous step results
+- Go `text/template` engine for step configuration: `{{.Params.key}}`, `{{.Steps.step_name.field}}`
+- Built-in workflows: `sentry-fixer`, `github-issue-fixer`
+- Workflow definitions stored in SQLite (user-created + built-in, seeded on startup)
+- Run state tracked in SQLite with per-step status records
+- Streaming via Redis Pub/Sub (`workflow:{runID}:stream`) with history replay, same SSE pattern as tasks
+
+```
+Workflow Run Lifecycle:
+
+pending ──▶ running ──▶ completed
+   │           │
+   ▼           ▼
+ (queue)     failed
+```
+
+### SQLite (`internal/database/`)
+- Embedded SQLite database for persistent storage of workflow definitions, workflow runs, keys, and MCP server configs
+- Auto-migration on startup
+- Default path: `/data/codeforge.db` (configurable via `CODEFORGE_SQLITE__PATH`)
+
+### Git Integration (`internal/tool/git/`)
 - Clone with `GIT_ASKPASS` for token auth (never in URL or .git/config)
 - Provider detection from URL (GitHub, GitLab, custom domains)
 - PR creation via GitHub/GitLab APIs
 - Branch management, diff calculation
+
+### MCP Server Registry (`internal/tool/mcp/`)
+- Global and per-project MCP server registration
+- Generates `.mcp.json` consumed by Claude Code at runtime
+- Server configs stored in SQLite
 
 ### Security (`internal/crypto/`, `internal/keys/`)
 - AES-256-GCM encryption for sensitive fields in Redis
@@ -112,6 +143,11 @@ All keys use configurable prefix (default: `codeforge:`).
 | `workspaces:index` | Set | Index of all workspaces |
 | `ratelimit:{token_hash}` | Sorted Set | Sliding window rate limit |
 | `input:tasks` | List | Redis-based task input channel |
+| `queue:workflows` | List | FIFO workflow run queue (RPUSH/BLPOP) |
+| `workflow:{runID}:stream` | Pub/Sub | Live workflow event stream |
+| `workflow:{runID}:history` | List | Workflow event history for reconnection |
+| `workflow:{runID}:done` | Pub/Sub | Workflow run completion signal |
+| `workflow:{runID}:context` | Hash | Step outputs for template interpolation |
 
 ## Task Lifecycle
 
@@ -158,20 +194,23 @@ pending ──▶ cloning ──▶ running ──▶ completed ──▶ creati
 cmd/codeforge/          # Application entrypoint
 internal/
   apperror/             # Application error types
-  cli/                  # CLI runner interface + implementations
   config/               # Configuration loading (koanf)
   crypto/               # AES-256-GCM encryption
-  git/                  # Git operations (clone, branch, PR)
+  database/             # SQLite wrapper + migrations
   keys/                 # Access key registry + resolver
   logger/               # Structured logging (slog)
-  mcp/                  # MCP server registry + installer
   metrics/              # Prometheus metric definitions
   redisclient/          # Redis client wrapper
   server/               # HTTP server + handlers + middleware
   task/                 # Task model, service, state machine
+  tool/                 # Tool subsystem namespace
+    git/                # Git operations (clone, branch, PR)
+    runner/             # CLI runner interface + implementations
+    mcp/                # MCP server registry + installer
   tracing/              # OpenTelemetry setup
   webhook/              # Webhook sender with HMAC + retries
   worker/               # Worker pool, executor, streamer
+  workflow/             # Workflow orchestrator, step executors, templates
   workspace/            # Workspace manager + cleanup
 api/                    # OpenAPI specification
 deployments/            # Docker, docker-compose files

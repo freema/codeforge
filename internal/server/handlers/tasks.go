@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -31,6 +32,35 @@ type TaskHandler struct {
 // NewTaskHandler creates a new task handler.
 func NewTaskHandler(service *task.Service, prService *task.PRService, canceller Canceller) *TaskHandler {
 	return &TaskHandler{service: service, prService: prService, canceller: canceller}
+}
+
+// List handles GET /api/v1/tasks.
+// Supports optional ?status= filter and ?limit=&offset= pagination.
+func (h *TaskHandler) List(w http.ResponseWriter, r *http.Request) {
+	opts := task.ListOptions{
+		Status: r.URL.Query().Get("status"),
+	}
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			opts.Limit = n
+		}
+	}
+	if v := r.URL.Query().Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			opts.Offset = n
+		}
+	}
+
+	tasks, total, err := h.service.List(r.Context(), opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list tasks")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"tasks": tasks,
+		"total": total,
+	})
 }
 
 // Create handles POST /api/v1/tasks.

@@ -36,6 +36,9 @@ paths:
                   redis:
                     type: string
                     example: connected
+                  sqlite:
+                    type: string
+                    example: connected
                   workspace_disk_usage_mb:
                     type: number
                     example: 123.45
@@ -72,6 +75,29 @@ paths:
             text/plain:
               schema:
                 type: string
+
+  /api/v1/auth/verify:
+    get:
+      summary: Verify authentication token
+      operationId: verifyAuth
+      tags: [Auth]
+      description: |
+        Returns 200 if the provided Bearer token is valid.
+        Returns 401 if the token is missing or invalid.
+        Use this endpoint to validate API tokens from your UI before making other API calls.
+      responses:
+        "200":
+          description: Token is valid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: authenticated
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /api/v1/tasks:
     post:
@@ -184,6 +210,11 @@ paths:
     post:
       summary: Cancel a running task
       operationId: cancelTask
+      description: |
+        Requests cancellation of a running or cloning task. Returns a transient
+        "cancelling" status indicating the request was accepted. The task will
+        transition to "failed" once cancellation completes. Poll GET /tasks/{taskID}
+        to observe the final state.
       tags: [Tasks]
       parameters:
         - name: taskID
@@ -198,15 +229,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  status:
-                    type: string
-                    example: cancelling
-                  message:
-                    type: string
+                $ref: "#/components/schemas/CancelResponse"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -265,13 +288,34 @@ paths:
         3. Sends keepalive comments (`: keepalive`) every 15 seconds.
         4. For terminal tasks (completed/failed/pr_created), sends history + done immediately.
 
-        **Client example:**
+        **Client example (fetch + ReadableStream):**
         ```javascript
-        const es = new EventSource('/api/v1/tasks/abc/stream', {
-          headers: { Authorization: 'Bearer TOKEN' }
+        // Browser EventSource does NOT support custom headers.
+        // Use fetch with a ReadableStream instead:
+        const resp = await fetch('/api/v1/tasks/abc/stream', {
+          headers: { Authorization: 'Bearer TOKEN' },
         });
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const text = decoder.decode(value);
+          // Parse SSE frames: lines starting with "data: "
+          for (const line of text.split('\n')) {
+            if (line.startsWith('data: ')) {
+              console.log(JSON.parse(line.slice(6)));
+            }
+          }
+        }
+        ```
+
+        **Alternative — token via query parameter:**
+        ```javascript
+        // If the server supports ?token= auth, EventSource works:
+        const es = new EventSource('/api/v1/tasks/abc/stream?token=TOKEN');
         es.onmessage = (e) => console.log(JSON.parse(e.data));
-        es.addEventListener('done', (e) => { es.close(); });
+        es.addEventListener('done', () => es.close());
         ```
       parameters:
         - name: taskID
@@ -364,6 +408,37 @@ paths:
                         created_at:
                           type: string
                           format: date-time
+
+  /api/v1/keys/{name}/verify:
+    get:
+      summary: Verify a stored provider token
+      operationId: verifyKey
+      tags: [Keys]
+      description: |
+        Decrypts the stored token and validates it against the provider API (GitHub/GitLab).
+        Returns token validity, associated username, email, and scopes.
+        Use this to show a green/red status indicator in the UI after adding a key.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Token is valid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyVerifyResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: Token is invalid or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyVerifyResponse"
 
   /api/v1/keys/{name}:
     delete:
@@ -472,6 +547,273 @@ paths:
                 properties:
                   message:
                     type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/repositories:
+    get:
+      summary: List repositories accessible with a provider token
+      operationId: listRepositories
+      tags: [Repositories]
+      description: |
+        Lists repositories from GitHub or GitLab. Supports two auth modes:
+        1. `provider_key` — uses a stored key from the key registry
+        2. `provider` + `X-Provider-Token` header — inline token
+      parameters:
+        - name: provider_key
+          in: query
+          description: Name of a registered key to use
+          schema:
+            type: string
+        - name: provider
+          in: query
+          description: Git provider (github, gitlab). Required when using X-Provider-Token.
+          schema:
+            type: string
+            enum: [github, gitlab]
+        - name: X-Provider-Token
+          in: header
+          description: Inline provider access token
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 30
+            maximum: 100
+      responses:
+        "200":
+          description: Repository list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  repositories:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Repository"
+                  count:
+                    type: integer
+                  provider:
+                    type: string
+                  page:
+                    type: integer
+                  per_page:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          description: Provider API error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/workflows:
+    post:
+      summary: Create a workflow definition
+      operationId: createWorkflow
+      tags: [Workflows]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowDefinition"
+      responses:
+        "201":
+          description: Workflow created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  message:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    get:
+      summary: List workflow definitions
+      operationId: listWorkflows
+      tags: [Workflows]
+      responses:
+        "200":
+          description: List of workflows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflows:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkflowDefinition"
+
+  /api/v1/workflows/{name}:
+    get:
+      summary: Get a workflow definition
+      operationId: getWorkflow
+      tags: [Workflows]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Workflow definition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowDefinition"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      summary: Delete a workflow definition
+      operationId: deleteWorkflow
+      tags: [Workflows]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Workflow deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/workflows/{name}/run:
+    post:
+      summary: Run a workflow
+      operationId: runWorkflow
+      tags: [Workflows]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunWorkflowRequest"
+      responses:
+        "201":
+          description: Workflow run created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run_id:
+                    type: string
+                    format: uuid
+                  workflow_name:
+                    type: string
+                  status:
+                    type: string
+                    example: pending
+                  created_at:
+                    type: string
+                    format: date-time
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/workflow-runs:
+    get:
+      summary: List workflow runs
+      operationId: listWorkflowRuns
+      tags: [Workflows]
+      parameters:
+        - name: workflow
+          in: query
+          description: Filter by workflow name
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of runs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkflowRun"
+
+  /api/v1/workflow-runs/{runID}:
+    get:
+      summary: Get workflow run details
+      operationId: getWorkflowRun
+      tags: [Workflows]
+      parameters:
+        - name: runID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Workflow run with steps
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRun"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/workflow-runs/{runID}/stream:
+    get:
+      summary: Stream workflow run events via SSE
+      operationId: streamWorkflowRun
+      tags: [Workflows]
+      parameters:
+        - name: runID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -626,9 +968,12 @@ components:
         max_turns:
           type: integer
           description: Maximum conversation turns
+        source_branch:
+          type: string
+          description: Branch to clone/checkout (defaults to target_branch for backward compat)
         target_branch:
           type: string
-          description: Git branch to clone
+          description: Base branch for PR creation
         max_budget_usd:
           type: number
           description: Maximum spend in USD
@@ -650,9 +995,10 @@ components:
           items:
             type: string
         env:
-          type: array
-          items:
+          type: object
+          additionalProperties:
             type: string
+          description: Environment variables as key-value pairs
 
     Task:
       type: object
@@ -665,6 +1011,9 @@ components:
           enum: [pending, cloning, running, completed, failed, awaiting_instruction, creating_pr, pr_created]
         repo_url:
           type: string
+        provider_key:
+          type: string
+          description: Name of the registered key used for git auth
         prompt:
           type: string
         callback_url:
@@ -693,6 +1042,9 @@ components:
           type: integer
         pr_url:
           type: string
+        trace_id:
+          type: string
+          description: OpenTelemetry trace ID for distributed tracing
         created_at:
           type: string
           format: date-time
@@ -705,15 +1057,21 @@ components:
 
     ChangesSummary:
       type: object
+      description: Git diff statistics after CLI execution
       properties:
-        files_changed:
+        files_modified:
           type: integer
-        insertions:
+          description: Number of modified files
+        files_created:
           type: integer
-        deletions:
+          description: Number of newly created files
+        files_deleted:
           type: integer
-        diff:
+          description: Number of deleted files
+        diff_stats:
           type: string
+          description: "Short diff summary, e.g. \"+142 -38\""
+          example: "+142 -38"
 
     UsageInfo:
       type: object
@@ -806,6 +1164,73 @@ components:
           format: date-time
           description: ISO 8601 timestamp
 
+    CancelResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          description: >
+            Transient response status "cancelling" — NOT a stored TaskStatus
+            enum value. It indicates the cancellation request was accepted.
+            Poll GET /tasks/{id} to observe the final state (will be "failed").
+          example: cancelling
+        message:
+          type: string
+          example: cancellation requested
+
+    KeyVerifyResponse:
+      type: object
+      properties:
+        name:
+          type: string
+          example: my-github-key
+        provider:
+          type: string
+          example: github
+        valid:
+          type: boolean
+          example: true
+        username:
+          type: string
+          example: octocat
+        email:
+          type: string
+          example: octocat@github.com
+        scopes:
+          type: string
+          description: Comma-separated OAuth scopes (GitHub only)
+          example: "repo, read:org"
+        error:
+          type: string
+          description: Error message when token is invalid
+
+    Repository:
+      type: object
+      properties:
+        name:
+          type: string
+          example: my-repo
+        full_name:
+          type: string
+          example: owner/my-repo
+        clone_url:
+          type: string
+          format: uri
+          example: "https://github.com/owner/my-repo.git"
+        default_branch:
+          type: string
+          example: main
+        private:
+          type: boolean
+        description:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+
     WorkspaceInfo:
       type: object
       properties:
@@ -821,3 +1246,118 @@ components:
           format: date-time
         task_status:
           type: string
+
+    WorkflowDefinition:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          example: sentry-fixer
+        description:
+          type: string
+        builtin:
+          type: boolean
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/StepDefinition"
+        parameters:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParameterDefinition"
+        created_at:
+          type: string
+          format: date-time
+
+    StepDefinition:
+      type: object
+      required: [name, type, config]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [fetch, task, action]
+        config:
+          type: object
+          description: Step-type-specific configuration
+
+    ParameterDefinition:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        required:
+          type: boolean
+        default:
+          type: string
+
+    RunWorkflowRequest:
+      type: object
+      properties:
+        params:
+          type: object
+          additionalProperties:
+            type: string
+          description: Workflow input parameters
+
+    WorkflowRun:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workflow_name:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        params:
+          type: object
+          additionalProperties:
+            type: string
+        error:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowRunStep"
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+
+    WorkflowRunStep:
+      type: object
+      properties:
+        run_id:
+          type: string
+        step_name:
+          type: string
+        step_type:
+          type: string
+          enum: [fetch, task, action]
+        status:
+          type: string
+          enum: [pending, running, completed, failed, skipped]
+        result:
+          type: object
+          additionalProperties:
+            type: string
+        task_id:
+          type: string
+        error:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time

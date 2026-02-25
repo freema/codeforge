@@ -1,0 +1,93 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    # Security
+    - gosec
+    - bodyclose
+    - noctx
+    - sqlclosecheck
+
+    # Bugs
+    - staticcheck
+    - govet
+    - errcheck
+    - ineffassign
+    - typecheck
+
+    # Style & Quality
+    - gofmt
+    - goimports
+    - goconst
+    - misspell
+    - unconvert
+    - unparam
+    - unused
+    - wastedassign
+    - prealloc
+    - copyloopvar
+
+    # Complexity
+    - gocyclo
+    - cyclop
+
+  settings:
+    gocyclo:
+      min-complexity: 15
+
+    cyclop:
+      max-complexity: 15
+
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+
+    gosec:
+      excludes: []
+
+    govet:
+      enable-all: true
+
+    misspell:
+      locale: US
+
+    prealloc:
+      simple: true
+      range-loops: true
+      for-loops: false
+
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 5
+
+  exclude-rules:
+    # Test files can have longer functions
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - cyclop
+
+    # Test files can have unused params in mock implementations
+    - path: _test\.go
+      linters:
+        - unparam
+
+    # Allow dot imports in tests (for testutil)
+    - path: _test\.go
+      linters:
+        - revive
+      text: "dot-imports"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/freema/codeforge

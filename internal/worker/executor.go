@@ -17,12 +17,13 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
-	"github.com/freema/codeforge/internal/cli"
-	gitpkg "github.com/freema/codeforge/internal/git"
+	"github.com/freema/codeforge/internal/tool/runner"
+	gitpkg "github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/keys"
-	"github.com/freema/codeforge/internal/mcp"
+	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/metrics"
 	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/tools"
 	"github.com/freema/codeforge/internal/tracing"
 	"github.com/freema/codeforge/internal/webhook"
 	"github.com/freema/codeforge/internal/workspace"
@@ -35,17 +36,18 @@ type ExecutorConfig struct {
 	WorkspaceBase  string
 	DefaultTimeout int
 	MaxTimeout     int
-	DefaultModel   string
+	DefaultModels  map[string]string // CLI name → default model (e.g. "claude-code" → "claude-sonnet-4-...")
 }
 
 // Executor orchestrates the full task lifecycle: clone → run CLI → diff → report.
 type Executor struct {
 	taskService  *task.Service
-	cliRegistry  *cli.Registry
+	cliRegistry  *runner.Registry
 	streamer     *Streamer
 	webhook      *webhook.Sender
 	keyResolver  *keys.Resolver
 	mcpInstaller *mcp.Installer
+	toolResolver *tools.Resolver
 	workspaceMgr *workspace.Manager
 	cfg          ExecutorConfig
 }
@@ -53,11 +55,12 @@ type Executor struct {
 // NewExecutor creates a new task executor.
 func NewExecutor(
 	taskService *task.Service,
-	cliRegistry *cli.Registry,
+	cliRegistry *runner.Registry,
 	streamer *Streamer,
 	webhook *webhook.Sender,
 	keyResolver *keys.Resolver,
 	mcpInstaller *mcp.Installer,
+	toolResolver *tools.Resolver,
 	workspaceMgr *workspace.Manager,
 	cfg ExecutorConfig,
 ) *Executor {
@@ -68,6 +71,7 @@ func NewExecutor(
 		webhook:      webhook,
 		keyResolver:  keyResolver,
 		mcpInstaller: mcpInstaller,
+		toolResolver: toolResolver,
 		workspaceMgr: workspaceMgr,
 		cfg:          cfg,
 	}
@@ -107,7 +111,13 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 	taskCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
+	// Resolve workDir: prefer workspace manager path, fallback to legacy
 	workDir := filepath.Join(e.cfg.WorkspaceBase, t.ID)
+	if e.workspaceMgr != nil {
+		if ws := e.workspaceMgr.Get(ctx, t.ID); ws != nil && ws.Path != "" {
+			workDir = ws.Path
+		}
+	}
 
 	// Resolve access token (task → registry → env)
 	if e.keyResolver != nil && t.AccessToken == "" {
@@ -119,11 +129,35 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 		}
 	}
 
+	// Check if we should reuse a workspace from a referenced task (e.g. code review step)
+	reuseWorkspace := false
+	if t.Config != nil && t.Config.WorkspaceTaskID != "" && e.workspaceMgr != nil {
+		if refWs := e.workspaceMgr.Get(ctx, t.Config.WorkspaceTaskID); refWs != nil {
+			if _, statErr := os.Stat(refWs.Path); statErr == nil {
+				workDir = refWs.Path
+				reuseWorkspace = true
+				log.Info("reusing workspace from referenced task",
+					"ref_task_id", t.Config.WorkspaceTaskID,
+					"work_dir", workDir,
+				)
+			}
+		}
+	}
+
 	// Clone or reuse workspace
-	if t.Iteration <= 1 {
+	if reuseWorkspace {
+		// Skip cloning — workspace already populated by the referenced task
+	} else if t.Iteration <= 1 {
 		if err := e.cloneStep(taskCtx, t, workDir, log); err != nil {
 			e.failTask(ctx, t, fmt.Sprintf("clone failed: %v", err), startTime, log)
 			return
+		}
+		// Re-resolve workDir — cloneStep may have created the workspace at a
+		// slug-based path that differs from the initial ID-based fallback.
+		if e.workspaceMgr != nil {
+			if ws := e.workspaceMgr.Get(ctx, t.ID); ws != nil && ws.Path != "" {
+				workDir = ws.Path
+			}
 		}
 	} else {
 		// Reuse workspace — check it still exists
@@ -142,6 +176,17 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 		}
 	}
 
+	// Resolve tool definitions → MCP servers
+	var toolMCPServers []mcp.Server
+	if e.toolResolver != nil && t.Config != nil && len(t.Config.Tools) > 0 {
+		instances, err := e.toolResolver.Resolve(taskCtx, t.RepoURL, t.Config.Tools)
+		if err != nil {
+			log.Warn("tool resolution failed (continuing without tools)", "error", err)
+		} else {
+			toolMCPServers = tools.ToMCPServers(instances)
+		}
+	}
+
 	// Setup MCP servers (generate .mcp.json)
 	if e.mcpInstaller != nil {
 		var taskMCPServers []mcp.Server
@@ -155,6 +200,7 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 				})
 			}
 		}
+		taskMCPServers = append(taskMCPServers, toolMCPServers...)
 		if err := e.mcpInstaller.Setup(taskCtx, workDir, t.RepoURL, taskMCPServers); err != nil {
 			log.Warn("MCP setup failed (continuing without MCP)", "error", err)
 		}
@@ -260,9 +306,15 @@ func (e *Executor) cloneStep(ctx context.Context, t *task.Task, workDir string, 
 
 	// Create workspace via manager (or fallback to raw mkdir)
 	if e.workspaceMgr != nil {
-		if _, err := e.workspaceMgr.Create(ctx, t.ID); err != nil {
+		prompt := t.Prompt
+		if t.CurrentPrompt != "" {
+			prompt = t.CurrentPrompt
+		}
+		ws, err := e.workspaceMgr.Create(ctx, t.ID, prompt)
+		if err != nil {
 			return fmt.Errorf("creating workspace: %w", err)
 		}
+		workDir = ws.Path
 	} else {
 		if err := os.MkdirAll(workDir, 0755); err != nil {
 			return fmt.Errorf("creating workspace: %w", err)
@@ -271,7 +323,10 @@ func (e *Executor) cloneStep(ctx context.Context, t *task.Task, workDir string, 
 
 	branch := ""
 	if t.Config != nil {
-		branch = t.Config.TargetBranch
+		branch = t.Config.SourceBranch
+		if branch == "" {
+			branch = t.Config.TargetBranch // backward compat
+		}
 	}
 
 	err := gitpkg.Clone(ctx, gitpkg.CloneOptions{
@@ -325,7 +380,7 @@ func (e *Executor) pullBranch(ctx context.Context, t *task.Task, workDir string,
 	}
 }
 
-func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, log *slog.Logger) (*cli.RunResult, error) {
+func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, log *slog.Logger) (*runner.RunResult, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "task.run")
 	defer span.End()
 
@@ -342,22 +397,29 @@ func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, lo
 	if t.Config != nil {
 		cliName = t.Config.CLI
 	}
-	runner, err := e.cliRegistry.Get(cliName)
+	cliRunner, err := e.cliRegistry.Get(cliName)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		return nil, fmt.Errorf("resolving CLI runner: %w", err)
 	}
-	span.SetAttributes(attribute.String("cli.name", cliName))
+
+	// Resolve the effective CLI name for model lookup (registry may have
+	// resolved "" to the default CLI).
+	resolvedCLI := cliName
+	if resolvedCLI == "" {
+		resolvedCLI = "claude-code"
+	}
+	span.SetAttributes(attribute.String("cli.name", resolvedCLI))
 
 	_ = e.streamer.EmitSystem(ctx, t.ID, "cli_started", map[string]string{
-		"cli":       cliName,
+		"cli":       resolvedCLI,
 		"iteration": fmt.Sprintf("%d", t.Iteration),
 	})
 
 	// Build prompt with conversation context for iterations > 1
 	prompt := e.buildPrompt(ctx, t)
 
-	model := e.cfg.DefaultModel
+	model := e.cfg.DefaultModels[resolvedCLI]
 	apiKey := ""
 	var maxTurns int
 	var maxBudget float64
@@ -371,7 +433,7 @@ func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, lo
 		maxBudget = t.Config.MaxBudgetUSD
 	}
 
-	result, err := runner.Run(ctx, cli.RunOptions{
+	result, err := cliRunner.Run(ctx, runner.RunOptions{
 		Prompt:       prompt,
 		WorkDir:      workDir,
 		Model:        model,

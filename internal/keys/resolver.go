@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	gitpkg "github.com/freema/codeforge/internal/git"
+	gitpkg "github.com/freema/codeforge/internal/tool/git"
 )
 
 // Resolver resolves access tokens using a priority chain:
@@ -13,12 +13,12 @@ import (
 // 2. Registered key by provider_key name
 // 3. Environment variable fallback (GITHUB_TOKEN / GITLAB_TOKEN)
 type Resolver struct {
-	registry        *Registry
+	registry        Registry
 	providerDomains map[string]string
 }
 
 // NewResolver creates a new key resolver.
-func NewResolver(registry *Registry, providerDomains map[string]string) *Resolver {
+func NewResolver(registry Registry, providerDomains map[string]string) *Resolver {
 	return &Resolver{registry: registry, providerDomains: providerDomains}
 }
 

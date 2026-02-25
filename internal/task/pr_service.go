@@ -6,9 +6,15 @@ import (
 	"log/slog"
 	"path/filepath"
 
-	"github.com/freema/codeforge/internal/cli"
-	gitpkg "github.com/freema/codeforge/internal/git"
+	"github.com/freema/codeforge/internal/tool/runner"
+	gitpkg "github.com/freema/codeforge/internal/tool/git"
+	"github.com/freema/codeforge/internal/slug"
 )
+
+// WorkspacePathResolver resolves the filesystem path for a task workspace.
+type WorkspacePathResolver interface {
+	WorkspacePath(ctx context.Context, taskID string) string
+}
 
 // PRServiceConfig holds configuration for PR creation.
 type PRServiceConfig struct {
@@ -19,19 +25,28 @@ type PRServiceConfig struct {
 	ProviderDomains map[string]string
 }
 
+// TokenResolver resolves access tokens for tasks.
+type TokenResolver interface {
+	ResolveToken(ctx context.Context, repoURL, accessToken, providerKey string) (string, error)
+}
+
 // PRService orchestrates the PR/MR creation workflow.
 type PRService struct {
-	taskService *Service
-	analyzer    *cli.Analyzer
-	cfg         PRServiceConfig
+	taskService       *Service
+	analyzer          *runner.Analyzer
+	workspaceResolver WorkspacePathResolver
+	tokenResolver     TokenResolver
+	cfg               PRServiceConfig
 }
 
 // NewPRService creates a PR service.
-func NewPRService(taskService *Service, analyzer *cli.Analyzer, cfg PRServiceConfig) *PRService {
+func NewPRService(taskService *Service, analyzer *runner.Analyzer, workspaceResolver WorkspacePathResolver, tokenResolver TokenResolver, cfg PRServiceConfig) *PRService {
 	return &PRService{
-		taskService: taskService,
-		analyzer:    analyzer,
-		cfg:         cfg,
+		taskService:       taskService,
+		analyzer:          analyzer,
+		workspaceResolver: workspaceResolver,
+		tokenResolver:     tokenResolver,
+		cfg:               cfg,
 	}
 }
 
@@ -62,9 +77,32 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 		return nil, fmt.Errorf("task must be in completed status, currently: %s", t.Status)
 	}
 
-	// Check for changes
+	// Resolve workDir early — needed for lazy change recalculation.
+	workDir := filepath.Join(s.cfg.WorkspaceBase, taskID)
+	if s.workspaceResolver != nil {
+		if resolved := s.workspaceResolver.WorkspacePath(ctx, taskID); resolved != "" {
+			workDir = resolved
+		}
+	}
+
+	// Check for changes — lazy recalculation if summary is nil but workspace exists.
 	if t.ChangesSummary == nil || (t.ChangesSummary.FilesModified == 0 && t.ChangesSummary.FilesCreated == 0 && t.ChangesSummary.FilesDeleted == 0) {
-		return nil, fmt.Errorf("no changes to create PR for")
+		recalc, err := gitpkg.CalculateChanges(ctx, workDir)
+		if err == nil && recalc != nil && (recalc.FilesModified > 0 || recalc.FilesCreated > 0 || recalc.FilesDeleted > 0) {
+			slog.Info("recalculated changes for PR", "task_id", taskID, "modified", recalc.FilesModified, "created", recalc.FilesCreated, "deleted", recalc.FilesDeleted)
+			t.ChangesSummary = recalc
+		} else {
+			return nil, fmt.Errorf("no changes to create PR for")
+		}
+	}
+
+	// Resolve access token (inline → registry → env) if not already set.
+	if s.tokenResolver != nil && t.AccessToken == "" {
+		token, err := s.tokenResolver.ResolveToken(ctx, t.RepoURL, t.AccessToken, t.ProviderKey)
+		if err != nil {
+			return nil, fmt.Errorf("resolving access token for PR: %w", err)
+		}
+		t.AccessToken = token
 	}
 
 	// Transition to CREATING_PR
@@ -104,7 +142,7 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 		}
 		branchSlug = analysis.BranchSlug
 	} else {
-		branchSlug = "task-" + taskID[:8]
+		branchSlug = slug.Generate(t.Prompt, taskID)
 	}
 
 	baseBranch := req.TargetBranch
@@ -115,8 +153,6 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 			baseBranch = "main"
 		}
 	}
-
-	workDir := filepath.Join(s.cfg.WorkspaceBase, taskID)
 
 	// Generate branch name
 	branchName := gitpkg.GenerateBranchName(ctx, workDir, s.cfg.BranchPrefix, branchSlug)
@@ -156,6 +192,10 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 		"branch":    branchName,
 		"pr_url":    prResult.URL,
 		"pr_number": prResult.Number,
+	})
+
+	s.taskService.persistToSQLite(func() error {
+		return s.taskService.sqlite.UpdatePR(ctx, taskID, branchName, prResult.URL, prResult.Number)
 	})
 
 	// Transition to PR_CREATED

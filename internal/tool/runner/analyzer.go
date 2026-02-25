@@ -1,7 +1,9 @@
-package cli
+package runner
 
 import (
 	"context"
+
+	"github.com/freema/codeforge/internal/slug"
 )
 
 // AnalysisResult holds auto-generated PR metadata.
@@ -21,18 +23,13 @@ func NewAnalyzer() *Analyzer {
 
 // Analyze generates branch slug, PR title, and description from task prompt.
 func (a *Analyzer) Analyze(_ context.Context, prompt, _ string, taskID string) *AnalysisResult {
-	shortID := taskID
-	if len(shortID) > 8 {
-		shortID = shortID[:8]
-	}
-
 	title := truncateStr(prompt, 60)
 	if len(prompt) > 60 {
 		title += "..."
 	}
 
 	return &AnalysisResult{
-		BranchSlug:  "task-" + shortID,
+		BranchSlug:  slug.Generate(prompt, taskID),
 		PRTitle:     "CodeForge: " + title,
 		Description: "Automated changes by CodeForge.",
 	}

@@ -18,6 +18,7 @@ import (
 type Workspace struct {
 	TaskID    string    `json:"task_id"`
 	Path      string    `json:"path"`
+	Slug      string    `json:"slug"`
 	CreatedAt time.Time `json:"created_at"`
 	TTL       int64     `json:"ttl"`        // seconds
 	SizeBytes int64     `json:"size_bytes"`
@@ -50,8 +51,10 @@ func NewManager(basePath string, redis *redisclient.Client, ttl time.Duration) *
 }
 
 // Create creates a workspace directory and registers it in Redis.
-func (m *Manager) Create(ctx context.Context, taskID string) (*Workspace, error) {
-	wsPath := filepath.Join(m.basePath, taskID)
+// The prompt is used to generate a human-readable slug for the directory name.
+func (m *Manager) Create(ctx context.Context, taskID, prompt string) (*Workspace, error) {
+	slug := GenerateSlug(prompt, taskID)
+	wsPath := filepath.Join(m.basePath, slug)
 
 	if err := os.MkdirAll(wsPath, 0755); err != nil {
 		return nil, fmt.Errorf("creating workspace directory: %w", err)
@@ -60,6 +63,7 @@ func (m *Manager) Create(ctx context.Context, taskID string) (*Workspace, error)
 	ws := &Workspace{
 		TaskID:    taskID,
 		Path:      wsPath,
+		Slug:      slug,
 		CreatedAt: time.Now().UTC(),
 		TTL:       int64(m.ttl.Seconds()),
 	}
@@ -67,6 +71,7 @@ func (m *Manager) Create(ctx context.Context, taskID string) (*Workspace, error)
 	fields := map[string]interface{}{
 		"task_id":    ws.TaskID,
 		"path":       ws.Path,
+		"slug":       ws.Slug,
 		"created_at": ws.CreatedAt.Format(time.RFC3339Nano),
 		"ttl":        ws.TTL,
 		"size_bytes": 0,
@@ -78,6 +83,15 @@ func (m *Manager) Create(ctx context.Context, taskID string) (*Workspace, error)
 	}
 
 	return ws, nil
+}
+
+// WorkspacePath returns the filesystem path for a task workspace.
+// Returns empty string if workspace is not found.
+func (m *Manager) WorkspacePath(ctx context.Context, taskID string) string {
+	if ws := m.Get(ctx, taskID); ws != nil && ws.Path != "" {
+		return ws.Path
+	}
+	return ""
 }
 
 // Get retrieves workspace metadata from Redis. Returns nil if not found.
@@ -93,7 +107,11 @@ func (m *Manager) Get(ctx context.Context, taskID string) *Workspace {
 // Delete removes a workspace directory and its Redis metadata.
 // Validates path is inside basePath to prevent path traversal.
 func (m *Manager) Delete(ctx context.Context, taskID string) error {
+	// Read path from Redis; fallback to legacy taskID-based path
 	wsPath := filepath.Join(m.basePath, taskID)
+	if ws := m.Get(ctx, taskID); ws != nil && ws.Path != "" {
+		wsPath = ws.Path
+	}
 
 	// SECURITY: validate path is inside workspace_base
 	absPath, err := filepath.Abs(wsPath)
@@ -118,7 +136,12 @@ func (m *Manager) Delete(ctx context.Context, taskID string) error {
 
 // UpdateSize calculates and stores the workspace size.
 func (m *Manager) UpdateSize(ctx context.Context, taskID string) (int64, error) {
+	// Read path from Redis; fallback to legacy taskID-based path
 	wsPath := filepath.Join(m.basePath, taskID)
+	if ws := m.Get(ctx, taskID); ws != nil && ws.Path != "" {
+		wsPath = ws.Path
+	}
+
 	size, err := DirSize(wsPath)
 	if err != nil {
 		return 0, err
@@ -201,6 +224,7 @@ func hashToWorkspace(fields map[string]string) *Workspace {
 	ws := &Workspace{
 		TaskID: fields["task_id"],
 		Path:   fields["path"],
+		Slug:   fields["slug"],
 	}
 	if v := fields["created_at"]; v != "" {
 		ws.CreatedAt, _ = time.Parse(time.RFC3339Nano, v)

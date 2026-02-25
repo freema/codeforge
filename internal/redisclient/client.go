@@ -50,6 +50,11 @@ func (c *Client) Unwrap() *redis.Client {
 	return c.rdb
 }
 
+// Prefix returns the configured key prefix.
+func (c *Client) Prefix() string {
+	return c.prefix
+}
+
 // Key returns a prefixed Redis key.
 func (c *Client) Key(parts ...string) string {
 	key := ""

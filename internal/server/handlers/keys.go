@@ -14,11 +14,11 @@ var validKeyName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // KeyHandler handles key-related HTTP endpoints.
 type KeyHandler struct {
-	registry *keys.Registry
+	registry keys.Registry
 }
 
 // NewKeyHandler creates a new key handler.
-func NewKeyHandler(registry *keys.Registry) *KeyHandler {
+func NewKeyHandler(registry keys.Registry) *KeyHandler {
 	return &KeyHandler{registry: registry}
 }
 
@@ -72,6 +72,37 @@ func (h *KeyHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"keys": keyList,
+	})
+}
+
+// Verify handles GET /api/v1/keys/{name}/verify.
+// It decrypts the stored token and validates it against the provider API.
+func (h *KeyHandler) Verify(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "key name is required")
+		return
+	}
+
+	result, provider, err := h.registry.Verify(r.Context(), name)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+
+	status := http.StatusOK
+	if !result.Valid {
+		status = http.StatusUnprocessableEntity
+	}
+
+	writeJSON(w, status, map[string]interface{}{
+		"name":     name,
+		"provider": provider,
+		"valid":    result.Valid,
+		"username": result.Username,
+		"email":    result.Email,
+		"scopes":   result.Scopes,
+		"error":    result.Error,
 	})
 }
 

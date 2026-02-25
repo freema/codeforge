@@ -10,11 +10,11 @@ import (
 
 // Installer generates .mcp.json configuration files in workspaces.
 type Installer struct {
-	registry *Registry
+	registry Registry
 }
 
 // NewInstaller creates a new MCP installer.
-func NewInstaller(registry *Registry) *Installer {
+func NewInstaller(registry Registry) *Installer {
 	return &Installer{registry: registry}
 }
 

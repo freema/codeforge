@@ -1,4 +1,4 @@
-package cli
+package runner
 
 import (
 	"bufio"
@@ -53,9 +53,28 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 		args = append(args, "--max-budget-usd", strconv.FormatFloat(opts.MaxBudgetUSD, 'f', 2, 64))
 	}
 
-	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
+	// Resolve the binary to its real path. If it's a Node.js script (shebang),
+	// run it via "node" directly to avoid fork/exec ENOENT issues that can occur
+	// with shebang scripts under privilege dropping (SysProcAttr.Credential).
+	binary := c.binaryPath
+	cmdArgs := args
+
+	resolved, err := exec.LookPath(binary)
+	if err == nil {
+		// Follow symlinks to get the real file
+		if real, linkErr := filepath.EvalSymlinks(resolved); linkErr == nil {
+			resolved = real
+		}
+		// If the target is a .js file, invoke via node to bypass shebang
+		if strings.HasSuffix(resolved, ".js") {
+			slog.Debug("claude binary is a Node.js script, using node interpreter", "script", resolved)
+			cmdArgs = append([]string{resolved}, args...)
+			binary = "node"
+		}
+	}
+
+	cmd := exec.CommandContext(ctx, binary, cmdArgs...)
 	cmd.Dir = opts.WorkDir
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	// Build environment. If running as root and a "codeforge" user exists,
 	// drop privileges and replace HOME/SHELL so Claude Code accepts bypassPermissions.
@@ -64,10 +83,24 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 		if u, err := user.Lookup("codeforge"); err == nil {
 			uid, _ := strconv.ParseUint(u.Uid, 10, 32)
 			gid, _ := strconv.ParseUint(u.Gid, 10, 32)
-			cmd.SysProcAttr.Credential = &syscall.Credential{
-				Uid: uint32(uid),
-				Gid: uint32(gid),
+
+			// Use gosu for privilege dropping. Go's SysProcAttr.Credential
+			// can fail with ENOENT on Alpine + Docker (kernel-level exec issue
+			// with Setpgid + Credential combination).
+			if gosuPath, gosuErr := exec.LookPath("gosu"); gosuErr == nil {
+				gosuArgs := append([]string{u.Username, cmd.Path}, cmd.Args[1:]...)
+				cmd = exec.CommandContext(ctx, gosuPath, gosuArgs...)
+				cmd.Dir = opts.WorkDir
+				slog.Debug("dropping privileges for claude CLI via gosu", "uid", uid, "gid", gid)
+			} else {
+				// Fallback: use SysProcAttr.Credential directly
+				cmd.SysProcAttr = &syscall.SysProcAttr{
+					Setpgid:    true,
+					Credential: &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)},
+				}
+				slog.Debug("dropping privileges for claude CLI via credential", "uid", uid, "gid", gid)
 			}
+
 			// Filter out HOME/SHELL/USER from root env and replace them
 			filtered := make([]string, 0, len(baseEnv))
 			for _, e := range baseEnv {
@@ -83,10 +116,15 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 				"USER=codeforge",
 			)
 			baseEnv = filtered
-			slog.Debug("dropping privileges for claude CLI", "uid", uid, "gid", gid)
 		}
 	}
-	cmd.Env = append(baseEnv, "ANTHROPIC_API_KEY="+opts.APIKey)
+	// Only set ANTHROPIC_API_KEY if provided per-task; otherwise inherit from
+	// process environment (baseEnv) so a global key can be configured via env var.
+	if opts.APIKey != "" {
+		cmd.Env = append(baseEnv, "ANTHROPIC_API_KEY="+opts.APIKey)
+	} else {
+		cmd.Env = baseEnv
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

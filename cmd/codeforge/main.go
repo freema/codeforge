@@ -11,18 +11,21 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/freema/codeforge/internal/cli"
+	"github.com/freema/codeforge/internal/tool/runner"
 	"github.com/freema/codeforge/internal/config"
 	"github.com/freema/codeforge/internal/crypto"
+	"github.com/freema/codeforge/internal/database"
 	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/logger"
-	"github.com/freema/codeforge/internal/mcp"
+	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/server"
 	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/tools"
 	"github.com/freema/codeforge/internal/tracing"
 	"github.com/freema/codeforge/internal/webhook"
 	"github.com/freema/codeforge/internal/worker"
+	"github.com/freema/codeforge/internal/workflow"
 	"github.com/freema/codeforge/internal/workspace"
 )
 
@@ -79,6 +82,18 @@ func run() error {
 	}
 	slog.Info("redis connected", "url", cfg.Redis.URL)
 
+	// Open SQLite database
+	sqliteDB, err := database.Open(cfg.SQLite.Path)
+	if err != nil {
+		return fmt.Errorf("opening sqlite: %w", err)
+	}
+	defer sqliteDB.Close()
+
+	if err := database.Migrate(context.Background(), sqliteDB.Unwrap()); err != nil {
+		return fmt.Errorf("running sqlite migrations: %w", err)
+	}
+	slog.Info("sqlite connected", "path", cfg.SQLite.Path)
+
 	// Initialize crypto service
 	cryptoSvc, err := crypto.NewService(cfg.Encryption.Key)
 	if err != nil {
@@ -89,6 +104,7 @@ func run() error {
 	taskService := task.NewService(
 		rdb,
 		cryptoSvc,
+		sqliteDB.Unwrap(),
 		cfg.Workers.QueueName,
 		time.Duration(cfg.Tasks.StateTTL)*time.Second,
 		time.Duration(cfg.Tasks.ResultTTL)*time.Second,
@@ -105,12 +121,19 @@ func run() error {
 	}
 
 	// Initialize key registry and resolver
-	keyRegistry := keys.NewRegistry(rdb, cryptoSvc)
+	keyRegistry := keys.NewSQLiteRegistry(sqliteDB.Unwrap(), cryptoSvc)
 	keyResolver := keys.NewResolver(keyRegistry, cfg.Git.ProviderDomains)
 
 	// Initialize MCP registry and installer
-	mcpRegistry := mcp.NewRegistry(rdb)
+	mcpRegistry := mcp.NewSQLiteRegistry(sqliteDB.Unwrap())
 	mcpInstaller := mcp.NewInstaller(mcpRegistry)
+
+	// Initialize tool registry and resolver
+	toolRegistry := tools.NewSQLiteRegistry(sqliteDB.Unwrap())
+	if err := tools.SeedBuiltins(context.Background(), toolRegistry); err != nil {
+		return fmt.Errorf("seeding builtin tools: %w", err)
+	}
+	toolResolver := tools.NewResolver(toolRegistry)
 
 	// Initialize workspace manager
 	workspaceMgr := workspace.NewManager(
@@ -120,8 +143,9 @@ func run() error {
 	)
 
 	// Initialize CLI registry
-	cliRegistry := cli.NewRegistry(cfg.CLI.Default)
-	cliRegistry.Register("claude-code", cli.NewClaudeRunner(cfg.CLI.ClaudeCode.Path))
+	cliRegistry := runner.NewRegistry(cfg.CLI.Default)
+	cliRegistry.Register("claude-code", runner.NewClaudeRunner(cfg.CLI.ClaudeCode.Path))
+	cliRegistry.Register("codex", runner.NewCodexRunner(cfg.CLI.Codex.Path))
 
 	// Initialize streamer
 	streamer := worker.NewStreamer(rdb, time.Duration(cfg.Tasks.WorkspaceTTL)*time.Second)
@@ -134,12 +158,16 @@ func run() error {
 		webhookSender,
 		keyResolver,
 		mcpInstaller,
+		toolResolver,
 		workspaceMgr,
 		worker.ExecutorConfig{
 			WorkspaceBase:  cfg.Tasks.WorkspaceBase,
 			DefaultTimeout: cfg.Tasks.DefaultTimeout,
 			MaxTimeout:     cfg.Tasks.MaxTimeout,
-			DefaultModel:   cfg.CLI.ClaudeCode.DefaultModel,
+			DefaultModels: map[string]string{
+				"claude-code": cfg.CLI.ClaudeCode.DefaultModel,
+				"codex":       cfg.CLI.Codex.DefaultModel,
+			},
 		},
 	)
 
@@ -153,10 +181,10 @@ func run() error {
 	)
 
 	// Initialize prompt analyzer
-	analyzer := cli.NewAnalyzer()
+	analyzer := runner.NewAnalyzer()
 
 	// Initialize PR service
-	prService := task.NewPRService(taskService, analyzer, task.PRServiceConfig{
+	prService := task.NewPRService(taskService, analyzer, workspaceMgr, keyResolver, task.PRServiceConfig{
 		WorkspaceBase:   cfg.Tasks.WorkspaceBase,
 		BranchPrefix:    cfg.Git.BranchPrefix,
 		CommitAuthor:    cfg.Git.CommitAuthor,
@@ -167,7 +195,6 @@ func run() error {
 	// Initialize Redis input listener
 	listener := task.NewListener(rdb, taskService, "input:tasks")
 
-	// Create and start HTTP server
 	// Initialize workspace cleaner
 	wsCleaner := workspace.NewCleaner(workspaceMgr, taskService, workspace.CleanerConfig{
 		Interval:              10 * time.Minute,
@@ -175,7 +202,34 @@ func run() error {
 		DiskCriticalThreshold: int64(cfg.Tasks.DiskCriticalThresholdGB) * 1024 * 1024 * 1024,
 	})
 
-	srv := server.New(cfg, rdb, taskService, prService, pool, keyRegistry, mcpRegistry, workspaceMgr, version)
+	// Initialize workflow subsystem
+	workflowRegistry := workflow.NewSQLiteRegistry(sqliteDB.Unwrap())
+	workflowRunStore := workflow.NewSQLiteRunStore(sqliteDB.Unwrap())
+
+	if err := workflow.SeedBuiltins(context.Background(), workflowRegistry); err != nil {
+		return fmt.Errorf("seeding builtin workflows: %w", err)
+	}
+
+	wfStreamer := workflow.NewStreamer(rdb, time.Duration(cfg.Workflow.ContextTTLHours)*time.Hour)
+	fetchExecutor := workflow.NewFetchExecutor(keyRegistry)
+	taskExecutor := workflow.NewTaskExecutor(taskService, rdb)
+	actionExecutor := workflow.NewActionExecutor(prService)
+
+	orchestrator := workflow.NewOrchestrator(
+		workflowRegistry,
+		workflowRunStore,
+		fetchExecutor,
+		taskExecutor,
+		actionExecutor,
+		wfStreamer,
+		rdb,
+		workflow.OrchestratorConfig{
+			ContextTTLHours:   cfg.Workflow.ContextTTLHours,
+			MaxRunDurationSec: cfg.Workflow.MaxRunDurationSec,
+		},
+	)
+
+	srv := server.New(cfg, rdb, sqliteDB, taskService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowRunStore, orchestrator, version)
 
 	// Start background services
 	appCtx, appCancel := context.WithCancel(context.Background())
@@ -184,6 +238,7 @@ func run() error {
 	pool.Start(appCtx)
 	go listener.Start(appCtx)
 	go wsCleaner.Start(appCtx)
+	go orchestrator.Start(appCtx)
 
 	errCh := make(chan error, 1)
 	go func() {

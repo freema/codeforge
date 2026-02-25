@@ -15,12 +15,15 @@ import (
 
 	"github.com/freema/codeforge/api"
 	"github.com/freema/codeforge/internal/config"
+	"github.com/freema/codeforge/internal/database"
 	"github.com/freema/codeforge/internal/keys"
-	"github.com/freema/codeforge/internal/mcp"
+	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/server/handlers"
 	"github.com/freema/codeforge/internal/server/middleware"
 	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/tools"
+	"github.com/freema/codeforge/internal/workflow"
 	"github.com/freema/codeforge/internal/workspace"
 )
 
@@ -31,7 +34,7 @@ type Server struct {
 }
 
 // New creates and configures the HTTP server with all routes and middleware.
-func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Service, prService *task.PRService, canceller handlers.Canceller, keyRegistry *keys.Registry, mcpRegistry *mcp.Registry, workspaceMgr *workspace.Manager, version string) *Server {
+func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, taskService *task.Service, prService *task.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, toolRegistry tools.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowRunStore workflow.RunStore, workflowRunCreator handlers.WorkflowRunCreator, version string) *Server {
 	r := chi.NewRouter()
 
 	// Global middleware (timeout applied per-route-group, not globally, for SSE support)
@@ -49,7 +52,8 @@ func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Servic
 	}
 
 	// Health endpoints (no auth)
-	healthHandler := handlers.NewHealthHandler(redis, workspaceMgr, version)
+	healthHandler := handlers.NewHealthHandler(redis, sqliteDB, workspaceMgr, version)
+	r.Get("/", healthHandler.Info)
 	r.Get("/health", healthHandler.Health)
 	r.Get("/ready", healthHandler.Ready)
 
@@ -66,20 +70,28 @@ func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Servic
 	streamHandler := handlers.NewStreamHandler(taskService, redis)
 	keyHandler := handlers.NewKeyHandler(keyRegistry)
 	mcpHandler := handlers.NewMCPHandler(mcpRegistry)
+	toolHandler := handlers.NewToolHandler(toolRegistry)
 	wsHandler := handlers.NewWorkspaceHandler(workspaceMgr, taskService)
+	repoHandler := handlers.NewRepoHandler(keyRegistry)
+	workflowHandler := handlers.NewWorkflowHandler(workflowRegistry, workflowRunStore, workflowRunCreator, redis)
 
 	// Protected API routes
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(middleware.BearerAuth(cfg.Server.AuthToken))
 
-		// SSE stream endpoint — no timeout middleware (long-lived connection)
+		// Auth verification endpoint
+		r.Get("/auth/verify", healthHandler.AuthVerify)
+
+		// SSE stream endpoints — no timeout middleware (long-lived connection)
 		r.Get("/tasks/{taskID}/stream", streamHandler.Stream)
+		r.Get("/workflow-runs/{runID}/stream", workflowHandler.StreamRun)
 
 		// All other routes — with timeout
 		r.Group(func(r chi.Router) {
 			r.Use(chimw.Timeout(60 * time.Second))
 
 			r.Route("/tasks", func(r chi.Router) {
+				r.Get("/", taskHandler.List)
 				if rateLimitMw != nil {
 					r.With(rateLimitMw).Post("/", taskHandler.Create)
 				} else {
@@ -94,6 +106,7 @@ func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Servic
 			r.Route("/keys", func(r chi.Router) {
 				r.Post("/", keyHandler.Create)
 				r.Get("/", keyHandler.List)
+				r.Get("/{name}/verify", keyHandler.Verify)
 				r.Delete("/{name}", keyHandler.Delete)
 			})
 
@@ -103,9 +116,32 @@ func New(cfg *config.Config, redis *redisclient.Client, taskService *task.Servic
 				r.Delete("/{name}", mcpHandler.DeleteGlobal)
 			})
 
+			r.Route("/tools", func(r chi.Router) {
+				r.Post("/", toolHandler.Create)
+				r.Get("/", toolHandler.List)
+				r.Get("/catalog", toolHandler.Catalog)
+				r.Get("/{name}", toolHandler.Get)
+				r.Delete("/{name}", toolHandler.Delete)
+			})
+
 			r.Route("/workspaces", func(r chi.Router) {
 				r.Get("/", wsHandler.List)
 				r.Delete("/{taskID}", wsHandler.Delete)
+			})
+
+			r.Get("/repositories", repoHandler.List)
+
+			r.Route("/workflows", func(r chi.Router) {
+				r.Post("/", workflowHandler.CreateWorkflow)
+				r.Get("/", workflowHandler.ListWorkflows)
+				r.Get("/{name}", workflowHandler.GetWorkflow)
+				r.Delete("/{name}", workflowHandler.DeleteWorkflow)
+				r.Post("/{name}/run", workflowHandler.RunWorkflow)
+			})
+
+			r.Route("/workflow-runs", func(r chi.Router) {
+				r.Get("/", workflowHandler.ListRuns)
+				r.Get("/{runID}", workflowHandler.GetRun)
 			})
 		})
 	})

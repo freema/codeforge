@@ -10,11 +10,13 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o codeforge ./cmd/codefo
 # Stage 2: Runtime
 FROM alpine:3.20
 ARG CLAUDE_CODE_VERSION=1.0.88
+ARG CODEX_VERSION=0.104.0
 RUN apk add --no-cache git nodejs npm ca-certificates tzdata wget coreutils \
     && npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
+    && npm install -g @openai/codex@${CODEX_VERSION} \
     && adduser -D -h /home/codeforge codeforge \
     && mkdir -p /data/workspaces \
-    && chown codeforge:codeforge /data/workspaces
+    && chown -R codeforge:codeforge /data
 
 USER codeforge
 WORKDIR /home/codeforge

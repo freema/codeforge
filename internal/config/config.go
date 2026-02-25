@@ -14,6 +14,7 @@ import (
 type Config struct {
 	Server     ServerConfig     `koanf:"server"`
 	Redis      RedisConfig      `koanf:"redis"`
+	SQLite     SQLiteConfig     `koanf:"sqlite"`
 	Workers    WorkersConfig    `koanf:"workers"`
 	Tasks      TasksConfig      `koanf:"tasks"`
 	CLI        CLIConfig        `koanf:"cli"`
@@ -22,8 +23,13 @@ type Config struct {
 	MCP        MCPConfig        `koanf:"mcp"`
 	Webhooks   WebhookConfig    `koanf:"webhooks"`
 	RateLimit  RateLimitConfig  `koanf:"rate_limit"`
+	Workflow   WorkflowConfig   `koanf:"workflow"`
 	Tracing    TracingConfig    `koanf:"tracing"`
 	Logging    LoggingConfig    `koanf:"logging"`
+}
+
+type SQLiteConfig struct {
+	Path string `koanf:"path"`
 }
 
 type ServerConfig struct {
@@ -53,8 +59,14 @@ type TasksConfig struct {
 }
 
 type CLIConfig struct {
-	Default    string          `koanf:"default"`
+	Default    string           `koanf:"default"`
 	ClaudeCode ClaudeCodeConfig `koanf:"claude_code"`
+	Codex      CodexConfig      `koanf:"codex"`
+}
+
+type CodexConfig struct {
+	Path         string `koanf:"path"`
+	DefaultModel string `koanf:"default_model"`
 }
 
 type ClaudeCodeConfig struct {
@@ -74,6 +86,11 @@ type EncryptionConfig struct {
 }
 
 type MCPConfig struct{}
+
+type WorkflowConfig struct {
+	ContextTTLHours   int `koanf:"context_ttl_hours"`
+	MaxRunDurationSec int `koanf:"max_run_duration_sec"`
+}
 
 type WebhookConfig struct {
 	HMACSecret string        `koanf:"hmac_secret"`
@@ -107,6 +124,9 @@ func Defaults() *Config {
 		Redis: RedisConfig{
 			Prefix: "codeforge:",
 		},
+		SQLite: SQLiteConfig{
+			Path: "/data/codeforge.db",
+		},
 		Workers: WorkersConfig{
 			Concurrency: 3,
 			QueueName:   "queue:tasks",
@@ -127,6 +147,10 @@ func Defaults() *Config {
 				Path:         "claude",
 				DefaultModel: "claude-sonnet-4-20250514",
 			},
+			Codex: CodexConfig{
+				Path:         "codex",
+				DefaultModel: "", // empty = let Codex CLI use its built-in default
+			},
 		},
 		Git: GitConfig{
 			BranchPrefix:    "codeforge/",
@@ -141,6 +165,10 @@ func Defaults() *Config {
 		RateLimit: RateLimitConfig{
 			Enabled:        true,
 			TasksPerMinute: 10,
+		},
+		Workflow: WorkflowConfig{
+			ContextTTLHours:   24,
+			MaxRunDurationSec: 7200,
 		},
 		Tracing: TracingConfig{
 			Exporter:     "otlp",

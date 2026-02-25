@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -13,7 +14,7 @@ import (
 
 	"github.com/freema/codeforge/internal/apperror"
 	"github.com/freema/codeforge/internal/crypto"
-	gitpkg "github.com/freema/codeforge/internal/git"
+	gitpkg "github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/redisclient"
 )
 
@@ -21,19 +22,35 @@ import (
 type Service struct {
 	redis     *redisclient.Client
 	crypto    *crypto.Service
+	sqlite    *SQLiteStore
 	queueName string
 	stateTTL  time.Duration
 	resultTTL time.Duration
 }
 
 // NewService creates a new task service.
-func NewService(redis *redisclient.Client, cryptoSvc *crypto.Service, queueName string, stateTTL, resultTTL time.Duration) *Service {
-	return &Service{
+func NewService(redis *redisclient.Client, cryptoSvc *crypto.Service, db *sql.DB, queueName string, stateTTL, resultTTL time.Duration) *Service {
+	svc := &Service{
 		redis:     redis,
 		crypto:    cryptoSvc,
 		queueName: queueName,
 		stateTTL:  stateTTL,
 		resultTTL: resultTTL,
+	}
+	if db != nil {
+		svc.sqlite = NewSQLiteStore(db)
+	}
+	return svc
+}
+
+// persistToSQLite runs fn as a fire-and-forget SQLite write.
+// Errors are logged but never block the caller.
+func (s *Service) persistToSQLite(fn func() error) {
+	if s.sqlite == nil {
+		return
+	}
+	if err := fn(); err != nil {
+		slog.Warn("sqlite persistence failed", "error", err)
 	}
 }
 
@@ -79,11 +96,17 @@ func (s *Service) Create(ctx context.Context, req CreateTaskRequest) (*Task, err
 	pipe := s.redis.Unwrap().Pipeline()
 	pipe.HSet(ctx, stateKey, fields)
 	pipe.RPush(ctx, s.redis.Key(s.queueName), t.ID)
+	pipe.SAdd(ctx, s.redis.Key("tasks:index"), t.ID) // track task ID for listing
 	if _, err := pipe.Exec(ctx); err != nil {
 		return nil, fmt.Errorf("creating task in redis: %w", err)
 	}
 
 	slog.Info("task created", "task_id", t.ID, "repo_url", t.RepoURL)
+
+	s.persistToSQLite(func() error {
+		return s.sqlite.Save(ctx, t)
+	})
+
 	return t, nil
 }
 
@@ -95,6 +118,10 @@ func (s *Service) Get(ctx context.Context, taskID string) (*Task, error) {
 		return nil, fmt.Errorf("getting task from redis: %w", err)
 	}
 	if len(fields) == 0 {
+		// Fallback to SQLite for expired Redis keys
+		if s.sqlite != nil {
+			return s.sqlite.Get(ctx, taskID)
+		}
 		return nil, apperror.NotFound("task %s not found", taskID)
 	}
 
@@ -174,6 +201,19 @@ func (s *Service) UpdateStatus(ctx context.Context, taskID string, newStatus Tas
 	}
 
 	slog.Info("task status updated", "task_id", taskID, "status", newStatus)
+
+	// Determine timestamps for SQLite
+	var startedAt, finishedAt *time.Time
+	switch newStatus {
+	case StatusCloning, StatusRunning:
+		startedAt = &now
+	case StatusCompleted, StatusFailed, StatusPRCreated:
+		finishedAt = &now
+	}
+	s.persistToSQLite(func() error {
+		return s.sqlite.UpdateStatus(ctx, taskID, newStatus, startedAt, finishedAt)
+	})
+
 	return nil
 }
 
@@ -198,6 +238,10 @@ func (s *Service) SetResult(ctx context.Context, taskID string, result string, c
 	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("setting task result: %w", err)
 	}
+
+	s.persistToSQLite(func() error {
+		return s.sqlite.UpdateResult(ctx, taskID, result, changes, usage)
+	})
 
 	return nil
 }
@@ -259,6 +303,11 @@ func (s *Service) Instruct(ctx context.Context, taskID string, prompt string) (*
 	t.Error = ""
 
 	slog.Info("task instructed", "task_id", taskID, "iteration", newIteration)
+
+	s.persistToSQLite(func() error {
+		return s.sqlite.Save(ctx, t)
+	})
+
 	return t, nil
 }
 
@@ -270,15 +319,27 @@ func (s *Service) SaveIteration(ctx context.Context, taskID string, iter Iterati
 		return fmt.Errorf("marshaling iteration: %w", err)
 	}
 
-	return s.redis.Unwrap().RPush(ctx, iterKey, string(data)).Err()
+	if err := s.redis.Unwrap().RPush(ctx, iterKey, string(data)).Err(); err != nil {
+		return err
+	}
+
+	s.persistToSQLite(func() error {
+		return s.sqlite.SaveIteration(ctx, taskID, iter)
+	})
+
+	return nil
 }
 
-// GetIterations loads the full iteration history from Redis.
+// GetIterations loads the full iteration history from Redis, falling back to SQLite.
 func (s *Service) GetIterations(ctx context.Context, taskID string) ([]Iteration, error) {
 	iterKey := s.redis.Key("task", taskID, "iterations")
 	items, err := s.redis.Unwrap().LRange(ctx, iterKey, 0, -1).Result()
 	if err != nil {
 		return nil, fmt.Errorf("loading iterations: %w", err)
+	}
+
+	if len(items) == 0 && s.sqlite != nil {
+		return s.sqlite.GetIterations(ctx, taskID)
 	}
 
 	iterations := make([]Iteration, 0, len(items))
@@ -292,10 +353,160 @@ func (s *Service) GetIterations(ctx context.Context, taskID string) ([]Iteration
 	return iterations, nil
 }
 
+// TaskSummary is a lightweight view of a task for listing.
+type TaskSummary struct {
+	ID         string     `json:"id"`
+	Status     TaskStatus `json:"status"`
+	RepoURL    string     `json:"repo_url"`
+	Prompt     string     `json:"prompt"`
+	Iteration  int        `json:"iteration"`
+	Error      string     `json:"error,omitempty"`
+	Branch     string     `json:"branch,omitempty"`
+	PRURL      string     `json:"pr_url,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	StartedAt  *time.Time `json:"started_at,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+// ListOptions configures task listing.
+type ListOptions struct {
+	Status string // filter by status (empty = all)
+	Limit  int    // max results (0 = 50)
+	Offset int    // pagination offset
+}
+
+// List returns task summaries from SQLite (persistent storage).
+func (s *Service) List(ctx context.Context, opts ListOptions) ([]TaskSummary, int, error) {
+	if s.sqlite != nil {
+		return s.sqlite.List(ctx, opts)
+	}
+
+	// Fallback: Redis-only listing (for backwards compatibility when SQLite is nil)
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	indexKey := s.redis.Key("tasks:index")
+	ids, err := s.redis.Unwrap().SMembers(ctx, indexKey).Result()
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing task index: %w", err)
+	}
+
+	if len(ids) == 0 {
+		pattern := s.redis.Key("task", "*", "state")
+		var cursor uint64
+		for {
+			var keys []string
+			keys, cursor, err = s.redis.Unwrap().Scan(ctx, cursor, pattern, 100).Result()
+			if err != nil {
+				return nil, 0, fmt.Errorf("scanning tasks: %w", err)
+			}
+			for _, k := range keys {
+				parts := extractTaskIDFromKey(k, s.redis.Prefix())
+				if parts != "" {
+					ids = append(ids, parts)
+					s.redis.Unwrap().SAdd(ctx, indexKey, parts)
+				}
+			}
+			if cursor == 0 {
+				break
+			}
+		}
+	}
+
+	var tasks []TaskSummary
+	for _, id := range ids {
+		stateKey := s.redis.Key("task", id, "state")
+		fields, err := s.redis.Unwrap().HGetAll(ctx, stateKey).Result()
+		if err != nil || len(fields) == 0 {
+			s.redis.Unwrap().SRem(ctx, indexKey, id)
+			continue
+		}
+
+		t := s.hashToTask(fields)
+		if opts.Status != "" && string(t.Status) != opts.Status {
+			continue
+		}
+
+		tasks = append(tasks, TaskSummary{
+			ID:         t.ID,
+			Status:     t.Status,
+			RepoURL:    t.RepoURL,
+			Prompt:     truncatePrompt(t.Prompt, 200),
+			Iteration:  t.Iteration,
+			Error:      t.Error,
+			Branch:     t.Branch,
+			PRURL:      t.PRURL,
+			CreatedAt:  t.CreatedAt,
+			StartedAt:  t.StartedAt,
+			FinishedAt: t.FinishedAt,
+		})
+	}
+
+	sortTasksByCreatedDesc(tasks)
+	total := len(tasks)
+
+	if opts.Offset >= len(tasks) {
+		return []TaskSummary{}, total, nil
+	}
+	tasks = tasks[opts.Offset:]
+	if len(tasks) > limit {
+		tasks = tasks[:limit]
+	}
+
+	return tasks, total, nil
+}
+
+func truncatePrompt(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
+func extractTaskIDFromKey(key, prefix string) string {
+	// key format: "{prefix}task:{id}:state"
+	trimmed := key
+	if prefix != "" {
+		if len(key) > len(prefix) && key[:len(prefix)] == prefix {
+			trimmed = key[len(prefix):]
+		}
+	}
+	// trimmed should be "task:{id}:state"
+	const taskPrefix = "task:"
+	const stateSuffix = ":state"
+	if len(trimmed) > len(taskPrefix)+len(stateSuffix) &&
+		trimmed[:len(taskPrefix)] == taskPrefix &&
+		trimmed[len(trimmed)-len(stateSuffix):] == stateSuffix {
+		return trimmed[len(taskPrefix) : len(trimmed)-len(stateSuffix)]
+	}
+	return ""
+}
+
+func sortTasksByCreatedDesc(tasks []TaskSummary) {
+	for i := 1; i < len(tasks); i++ {
+		for j := i; j > 0 && tasks[j].CreatedAt.After(tasks[j-1].CreatedAt); j-- {
+			tasks[j], tasks[j-1] = tasks[j-1], tasks[j]
+		}
+	}
+}
+
 // SetError stores an error message on the task.
 func (s *Service) SetError(ctx context.Context, taskID string, errMsg string) error {
 	stateKey := s.redis.Key("task", taskID, "state")
-	return s.redis.Unwrap().HSet(ctx, stateKey, "error", errMsg).Err()
+	if err := s.redis.Unwrap().HSet(ctx, stateKey, "error", errMsg).Err(); err != nil {
+		return err
+	}
+
+	s.persistToSQLite(func() error {
+		return s.sqlite.UpdateError(ctx, taskID, errMsg)
+	})
+
+	return nil
 }
 
 // taskToHash converts a Task to a Redis hash map.

@@ -36,7 +36,7 @@ Client                  CodeForge                          AI CLI
   │◀───────────────────────┤                                 │
 ```
 
-CodeForge receives task requests via REST API, clones the repository, runs an AI CLI tool (Claude Code) against it, streams progress via Redis Pub/Sub, and optionally creates pull requests. It supports multi-turn conversations, webhook callbacks, and workspace lifecycle management.
+CodeForge receives task requests via REST API, clones the repository, runs an AI CLI tool (Claude Code) against it, streams progress via Redis Pub/Sub, and optionally creates pull requests. It supports multi-turn conversations, multi-step workflows, webhook callbacks, and workspace lifecycle management.
 
 ## Quick Start
 
@@ -105,6 +105,18 @@ curl -X POST http://localhost:8080/api/v1/tasks \
 # Check status
 curl http://localhost:8080/api/v1/tasks/{id} \
   -H "Authorization: Bearer $CODEFORGE_AUTH_TOKEN"
+
+# Run a built-in workflow (fetch GitHub issue → fix → create PR)
+curl -X POST http://localhost:8080/api/v1/workflows/github-issue-fixer/run \
+  -H "Authorization: Bearer $CODEFORGE_AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "params": {
+      "repo_url": "https://github.com/user/repo.git",
+      "issue_number": "42",
+      "key_name": "my-github-key"
+    }
+  }'
 ```
 
 ### Development
@@ -127,6 +139,7 @@ task dev
 
 ## Roadmap
 
+- [x] **Multi-Step Workflows** — Orchestrate fetch → task → action pipelines with built-in templates (sentry-fixer, github-issue-fixer)
 - [ ] **Multi-CLI Support** — Runners for OpenCode, Codex, and other AI coding CLIs alongside Claude Code
 - [ ] **Task Sessions** — Cross-task memory for projects; remember context from previous tasks on the same repository
 - [ ] **Code Review** — Automated review of changes by a separate model before creating a pull request

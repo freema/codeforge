@@ -89,20 +89,24 @@ The mock CLI (`tests/mockcli/main.go`) supports special prompts:
 cmd/codeforge/          Application entry point
 internal/
   apperror/             Application error types
-  cli/                  CLI runner interface + implementations
   config/               Configuration loading (koanf)
   crypto/               AES-256-GCM encryption
-  git/                  Git operations (clone, branch, PR)
+  database/             SQLite wrapper + migrations
   keys/                 Access key registry + resolver
   logger/               Structured logging (slog)
-  mcp/                  MCP server registry + installer
   metrics/              Prometheus metric definitions
   redisclient/          Redis client wrapper
   server/               HTTP server + handlers + middleware
   task/                 Task model, service, state machine
+  prompt/               Prompt templates (embed FS) — see [Code Review Workflow](code-review-workflow.md)
+  tool/                 Tool subsystem namespace
+    git/                Git operations (clone, branch, PR)
+    runner/             CLI runner interface + implementations
+    mcp/                MCP server registry + installer
   tracing/              OpenTelemetry setup
   webhook/              Webhook sender with HMAC + retries
   worker/               Worker pool, executor, streamer
+  workflow/             Workflow orchestrator, step executors, templates
   workspace/            Workspace manager + cleanup
 api/                    OpenAPI specification
 deployments/            Docker, docker-compose files

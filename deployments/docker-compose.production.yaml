@@ -22,10 +22,11 @@ services:
       CODEFORGE_ENCRYPTION__KEY: ${CODEFORGE_ENCRYPTION_KEY:?Set CODEFORGE_ENCRYPTION_KEY}
       CODEFORGE_WEBHOOKS__HMAC_SECRET: ${CODEFORGE_WEBHOOKS__HMAC_SECRET:-}
       CODEFORGE_WORKERS__CONCURRENCY: ${CODEFORGE_WORKERS__CONCURRENCY:-3}
+      CODEFORGE_SQLITE__PATH: /data/codeforge.db
       CODEFORGE_LOGGING__LEVEL: info
       CODEFORGE_LOGGING__FORMAT: json
     volumes:
-      - workspaces:/data/workspaces
+      - codeforge-data:/data
     depends_on:
       redis:
         condition: service_healthy
@@ -52,5 +53,5 @@ services:
       retries: 3
 
 volumes:
-  workspaces:
+  codeforge-data:
   redis-data:

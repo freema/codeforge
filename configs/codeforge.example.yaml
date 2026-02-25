@@ -10,6 +10,9 @@ redis:
   url: "redis://localhost:6379"
   prefix: "codeforge:"
 
+sqlite:
+  path: "/data/codeforge.db"
+
 workers:
   concurrency: 3
   queue_name: "queue:tasks"
@@ -29,6 +32,9 @@ cli:
   claude_code:
     path: "claude"
     default_model: "claude-sonnet-4-20250514"
+  codex:
+    path: "codex"
+    default_model: ""  # empty = Codex CLI picks its own default; or set e.g. "o4-mini", "gpt-5.3-codex"
 
 git:
   branch_prefix: "codeforge/"
@@ -43,6 +49,10 @@ webhooks:
   hmac_secret: "${CODEFORGE_WEBHOOKS__HMAC_SECRET}"
   retry_count: 3
   retry_delay: 5s
+
+workflow:
+  context_ttl_hours: 24     # TTL for workflow context in Redis
+  max_run_duration_sec: 7200 # 2 hours max per workflow run
 
 rate_limit:
   enabled: true

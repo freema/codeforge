@@ -7,18 +7,18 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/freema/codeforge/internal/mcp"
+	"github.com/freema/codeforge/internal/tool/mcp"
 )
 
 var validName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // MCPHandler handles MCP server configuration endpoints.
 type MCPHandler struct {
-	registry *mcp.Registry
+	registry mcp.Registry
 }
 
 // NewMCPHandler creates a new MCP handler.
-func NewMCPHandler(registry *mcp.Registry) *MCPHandler {
+func NewMCPHandler(registry mcp.Registry) *MCPHandler {
 	return &MCPHandler{registry: registry}
 }
 

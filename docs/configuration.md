@@ -20,6 +20,12 @@ Set `CODEFORGE_CONFIG` to specify a YAML config file path, or use environment va
 | `CODEFORGE_REDIS__URL` | (required) | Redis connection URL |
 | `CODEFORGE_REDIS__PREFIX` | `codeforge:` | Redis key prefix |
 
+### SQLite
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CODEFORGE_SQLITE__PATH` | `/data/codeforge.db` | SQLite database file path |
+
 ### Encryption
 
 | Variable | Default | Description |
@@ -42,6 +48,9 @@ Set `CODEFORGE_CONFIG` to specify a YAML config file path, or use environment va
 | `CODEFORGE_TASKS__WORKSPACE_BASE` | `/data/workspaces` | Workspace directory |
 | `CODEFORGE_TASKS__WORKSPACE_TTL` | `86400` | Workspace TTL (seconds) |
 | `CODEFORGE_TASKS__STATE_TTL` | `604800` | Task state TTL (seconds) |
+| `CODEFORGE_TASKS__RESULT_TTL` | `604800` | Task result TTL (seconds) |
+| `CODEFORGE_TASKS__DISK_WARNING_THRESHOLD_GB` | `10` | Disk usage warning threshold (GB) |
+| `CODEFORGE_TASKS__DISK_CRITICAL_THRESHOLD_GB` | `20` | Disk usage critical threshold (GB) |
 
 ### CLI
 
@@ -57,6 +66,8 @@ Set `CODEFORGE_CONFIG` to specify a YAML config file path, or use environment va
 |----------|---------|-------------|
 | `CODEFORGE_GIT__BRANCH_PREFIX` | `codeforge/` | PR branch prefix |
 | `CODEFORGE_GIT__COMMIT_AUTHOR` | `CodeForge Bot` | Git commit author |
+| `CODEFORGE_GIT__COMMIT_EMAIL` | `codeforge@noreply` | Git commit email |
+| `CODEFORGE_GIT__PROVIDER_DOMAINS` | `{}` | Custom domain→provider mapping (e.g., `{"git.company.com": "gitlab"}`) |
 
 ### Webhooks
 
@@ -64,6 +75,7 @@ Set `CODEFORGE_CONFIG` to specify a YAML config file path, or use environment va
 |----------|---------|-------------|
 | `CODEFORGE_WEBHOOKS__HMAC_SECRET` | | HMAC secret for webhook signatures |
 | `CODEFORGE_WEBHOOKS__RETRY_COUNT` | `3` | Webhook retry attempts |
+| `CODEFORGE_WEBHOOKS__RETRY_DELAY` | `5s` | Delay between retries |
 
 ### Rate Limiting
 
@@ -72,11 +84,19 @@ Set `CODEFORGE_CONFIG` to specify a YAML config file path, or use environment va
 | `CODEFORGE_RATE_LIMIT__ENABLED` | `true` | Enable rate limiting |
 | `CODEFORGE_RATE_LIMIT__TASKS_PER_MINUTE` | `10` | Rate limit per token |
 
+### Workflow
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CODEFORGE_WORKFLOW__CONTEXT_TTL_HOURS` | `24` | TTL for workflow context in Redis (hours) |
+| `CODEFORGE_WORKFLOW__MAX_RUN_DURATION_SEC` | `7200` | Max workflow run duration (seconds) |
+
 ### Tracing
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CODEFORGE_TRACING__ENABLED` | `false` | Enable OpenTelemetry tracing |
+| `CODEFORGE_TRACING__EXPORTER` | `otlp` | Trace exporter type |
 | `CODEFORGE_TRACING__ENDPOINT` | | OTLP collector endpoint |
 | `CODEFORGE_TRACING__SAMPLING_RATE` | `0.1` | Trace sampling rate (0-1) |
 
@@ -100,6 +120,9 @@ redis:
   url: "redis://localhost:6379"
   prefix: "codeforge:"
 
+sqlite:
+  path: "/data/codeforge.db"
+
 encryption:
   key: "base64-encoded-32-byte-key"
 
@@ -116,6 +139,10 @@ cli:
   claude_code:
     path: "claude"
     default_model: "claude-sonnet-4-20250514"
+
+workflow:
+  context_ttl_hours: 24
+  max_run_duration_sec: 7200
 
 logging:
   level: "info"

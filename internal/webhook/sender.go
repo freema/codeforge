@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"time"
 
-	gitpkg "github.com/freema/codeforge/internal/git"
+	gitpkg "github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/metrics"
 	"github.com/freema/codeforge/internal/task"
 )

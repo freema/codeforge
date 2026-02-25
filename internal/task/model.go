@@ -4,7 +4,8 @@ import (
 	"encoding/json"
 	"time"
 
-	gitpkg "github.com/freema/codeforge/internal/git"
+	gitpkg "github.com/freema/codeforge/internal/tool/git"
+	"github.com/freema/codeforge/internal/tools"
 )
 
 // TaskStatus represents the current state of a task.
@@ -66,14 +67,17 @@ type UsageInfo struct {
 
 // TaskConfig holds per-task configuration overrides.
 type TaskConfig struct {
-	TimeoutSeconds int         `json:"timeout_seconds,omitempty"`
-	CLI            string      `json:"cli,omitempty"`
-	AIModel        string      `json:"ai_model,omitempty"`
-	AIApiKey       string      `json:"-"` // NEVER in responses (custom UnmarshalJSON accepts it)
-	MaxTurns       int         `json:"max_turns,omitempty"`
-	TargetBranch   string      `json:"target_branch,omitempty"`
-	MaxBudgetUSD   float64     `json:"max_budget_usd,omitempty"`
-	MCPServers     []MCPServer `json:"mcp_servers,omitempty"`
+	TimeoutSeconds  int         `json:"timeout_seconds,omitempty"`
+	CLI             string      `json:"cli,omitempty"`
+	AIModel         string      `json:"ai_model,omitempty"`
+	AIApiKey        string      `json:"-"` // NEVER in responses (custom UnmarshalJSON accepts it)
+	MaxTurns        int         `json:"max_turns,omitempty"`
+	SourceBranch    string      `json:"source_branch,omitempty"` // branch to clone/checkout
+	TargetBranch    string      `json:"target_branch,omitempty"`
+	MaxBudgetUSD    float64     `json:"max_budget_usd,omitempty"`
+	MCPServers      []MCPServer    `json:"mcp_servers,omitempty"`
+	Tools           []tools.TaskTool `json:"tools,omitempty"`
+	WorkspaceTaskID string           `json:"workspace_task_id,omitempty"` // reuse workspace from another task
 }
 
 // UnmarshalJSON accepts ai_api_key from JSON input while json:"-" keeps it hidden in output.
