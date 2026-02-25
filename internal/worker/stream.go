@@ -6,6 +6,7 @@ import (
 	"time"
 
 	gitpkg "github.com/freema/codeforge/internal/tool/git"
+	"github.com/freema/codeforge/internal/tool/runner"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/task"
 )
@@ -59,6 +60,16 @@ func (s *Streamer) EmitSystem(ctx context.Context, taskID, event string, data in
 // EmitGit publishes a git event.
 func (s *Streamer) EmitGit(ctx context.Context, taskID, event string, data interface{}) error {
 	return s.emitTyped(ctx, taskID, "git", event, data)
+}
+
+// EmitNormalized publishes a normalized CLI event.
+func (s *Streamer) EmitNormalized(ctx context.Context, taskID string, evt *runner.NormalizedEvent) error {
+	raw, _ := json.Marshal(evt)
+	return s.Emit(ctx, taskID, StreamEvent{
+		Type:  "stream",
+		Event: string(evt.Type),
+		Data:  raw,
+	})
 }
 
 // EmitCLIOutput forwards a raw Claude Code stream-json line.

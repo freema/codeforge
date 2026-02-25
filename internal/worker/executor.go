@@ -411,6 +411,15 @@ func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, lo
 	}
 	span.SetAttributes(attribute.String("cli.name", resolvedCLI))
 
+	// Select stream normalizer for the resolved CLI
+	var normalizer runner.StreamNormalizer
+	switch resolvedCLI {
+	case "claude-code":
+		normalizer = runner.NewClaudeNormalizer()
+	case "codex":
+		normalizer = runner.NewCodexNormalizer()
+	}
+
 	_ = e.streamer.EmitSystem(ctx, t.ID, "cli_started", map[string]string{
 		"cli":       resolvedCLI,
 		"iteration": fmt.Sprintf("%d", t.Iteration),
@@ -441,6 +450,12 @@ func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, lo
 		MaxTurns:     maxTurns,
 		MaxBudgetUSD: maxBudget,
 		OnEvent: func(event json.RawMessage) {
+			if normalizer != nil {
+				if normalized := normalizer.Normalize(event); normalized != nil {
+					_ = e.streamer.EmitNormalized(ctx, t.ID, normalized)
+					return
+				}
+			}
 			_ = e.streamer.EmitCLIOutput(ctx, t.ID, event)
 		},
 	})
