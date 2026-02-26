@@ -22,6 +22,8 @@ import (
 	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/metrics"
+	"github.com/freema/codeforge/internal/prompt"
+	"github.com/freema/codeforge/internal/review"
 	"github.com/freema/codeforge/internal/task"
 	"github.com/freema/codeforge/internal/tools"
 	"github.com/freema/codeforge/internal/tracing"
@@ -248,6 +250,19 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 	// Store result
 	if err := e.taskService.SetResult(ctx, t.ID, result.Output, changes, usage); err != nil {
 		log.Error("failed to store result", "error", err)
+	}
+
+	// Run code review if enabled
+	if t.Config != nil && t.Config.Review != nil && t.Config.Review.Enabled {
+		if err := e.taskService.UpdateStatus(ctx, t.ID, task.StatusReviewing); err != nil {
+			log.Error("failed to transition to reviewing", "error", err)
+		} else {
+			reviewResult := e.reviewStep(ctx, t, workDir, log)
+			if err := e.taskService.SetReviewResult(ctx, t.ID, reviewResult); err != nil {
+				log.Error("failed to store review result", "error", err)
+			}
+			t.ReviewResult = reviewResult
+		}
 	}
 
 	// Transition to completed
@@ -509,6 +524,99 @@ func (e *Executor) buildPrompt(ctx context.Context, t *task.Task) string {
 	ctx2.WriteString(currentPrompt)
 
 	return ctx2.String()
+}
+
+// reviewStep runs a code review CLI against the workspace and returns the parsed result.
+func (e *Executor) reviewStep(ctx context.Context, t *task.Task, workDir string, log *slog.Logger) *review.ReviewResult {
+	startTime := time.Now()
+
+	_ = e.streamer.EmitSystem(ctx, t.ID, "review_started", nil)
+
+	// Resolve review CLI: task review config → task CLI → default "claude-code"
+	resolvedCLI := "claude-code"
+	if t.Config != nil && t.Config.Review != nil && t.Config.Review.CLI != "" {
+		resolvedCLI = t.Config.Review.CLI
+	} else if t.Config != nil && t.Config.CLI != "" {
+		resolvedCLI = t.Config.CLI
+	}
+
+	cliRunner, err := e.cliRegistry.Get(resolvedCLI)
+	if err != nil {
+		log.Error("review: failed to resolve CLI", "cli", resolvedCLI, "error", err)
+		return &review.ReviewResult{
+			Verdict:    review.VerdictComment,
+			Summary:    fmt.Sprintf("Review failed: could not resolve CLI %q", resolvedCLI),
+			ReviewedBy: resolvedCLI,
+		}
+	}
+
+	// Resolve review model
+	model := e.cfg.DefaultModels[resolvedCLI]
+	if t.Config != nil && t.Config.Review != nil && t.Config.Review.Model != "" {
+		model = t.Config.Review.Model
+	}
+
+	// Build review prompt from template
+	reviewPrompt, err := prompt.Render("code_review", prompt.CodeReviewData{
+		OriginalPrompt: t.Prompt,
+	})
+	if err != nil {
+		log.Error("review: failed to render prompt", "error", err)
+		return &review.ReviewResult{
+			Verdict:    review.VerdictComment,
+			Summary:    fmt.Sprintf("Review failed: prompt render error: %v", err),
+			ReviewedBy: resolvedCLI + ":" + model,
+		}
+	}
+
+	apiKey := ""
+	if t.Config != nil {
+		apiKey = t.Config.AIApiKey
+	}
+
+	result, err := cliRunner.Run(ctx, runner.RunOptions{
+		Prompt:  reviewPrompt,
+		WorkDir: workDir,
+		Model:   model,
+		APIKey:  apiKey,
+	})
+	if err != nil {
+		log.Error("review: CLI execution failed", "error", err)
+		return &review.ReviewResult{
+			Verdict:         review.VerdictComment,
+			Summary:         fmt.Sprintf("Review failed: CLI error: %v", err),
+			ReviewedBy:      resolvedCLI + ":" + model,
+			DurationSeconds: time.Since(startTime).Seconds(),
+		}
+	}
+
+	// Parse review output
+	reviewResult, err := review.ParseReviewOutput(result.Output)
+	if err != nil {
+		log.Warn("review: parse error", "error", err)
+		reviewResult = &review.ReviewResult{
+			Verdict: review.VerdictComment,
+			Summary: truncate(result.Output, 500),
+		}
+	}
+
+	reviewResult.ReviewedBy = resolvedCLI + ":" + model
+	reviewResult.DurationSeconds = time.Since(startTime).Seconds()
+
+	_ = e.streamer.EmitSystem(ctx, t.ID, "review_completed", map[string]interface{}{
+		"verdict":      reviewResult.Verdict,
+		"score":        reviewResult.Score,
+		"issues_count": len(reviewResult.Issues),
+	})
+
+	log.Info("review completed",
+		"verdict", reviewResult.Verdict,
+		"score", reviewResult.Score,
+		"issues", len(reviewResult.Issues),
+		"duration", reviewResult.DurationSeconds,
+	)
+
+	return reviewResult
 }
 
 func (e *Executor) failTask(ctx context.Context, t *task.Task, errMsg string, startTime time.Time, log *slog.Logger) {

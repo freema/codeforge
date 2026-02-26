@@ -14,6 +14,7 @@ import (
 
 	"github.com/freema/codeforge/internal/apperror"
 	"github.com/freema/codeforge/internal/crypto"
+	"github.com/freema/codeforge/internal/review"
 	gitpkg "github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/redisclient"
 )
@@ -495,6 +496,20 @@ func sortTasksByCreatedDesc(tasks []TaskSummary) {
 	}
 }
 
+// SetReviewResult stores the review result on a task.
+func (s *Service) SetReviewResult(ctx context.Context, taskID string, result *review.ReviewResult) error {
+	stateKey := s.redis.Key("task", taskID, "state")
+	if err := s.redis.Unwrap().HSet(ctx, stateKey, "review_result", review.MarshalReviewResult(result)).Err(); err != nil {
+		return fmt.Errorf("setting review result: %w", err)
+	}
+
+	s.persistToSQLite(func() error {
+		return s.sqlite.UpdateReviewResult(ctx, taskID, result)
+	})
+
+	return nil
+}
+
 // SetError stores an error message on the task.
 func (s *Service) SetError(ctx context.Context, taskID string, errMsg string) error {
 	stateKey := s.redis.Key("task", taskID, "state")
@@ -575,6 +590,7 @@ func (s *Service) hashToTask(fields map[string]string) *Task {
 	t.Config = UnmarshalConfig(fields["config"])
 	t.ChangesSummary = UnmarshalChangesSummary(fields["changes_summary"])
 	t.Usage = UnmarshalUsageInfo(fields["usage"])
+	t.ReviewResult = review.UnmarshalReviewResult(fields["review_result"])
 
 	return t
 }

@@ -1143,6 +1143,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TaskMCPServer"
+        review:
+          $ref: "#/components/schemas/ReviewConfig"
 
     TaskMCPServer:
       type: object
@@ -1170,7 +1172,7 @@ components:
           format: uuid
         status:
           type: string
-          enum: [pending, cloning, running, completed, failed, awaiting_instruction, creating_pr, pr_created]
+          enum: [pending, cloning, running, reviewing, completed, failed, awaiting_instruction, creating_pr, pr_created]
         repo_url:
           type: string
         provider_key:
@@ -1190,6 +1192,8 @@ components:
           $ref: "#/components/schemas/ChangesSummary"
         usage:
           $ref: "#/components/schemas/UsageInfo"
+        review_result:
+          $ref: "#/components/schemas/ReviewResult"
         iteration:
           type: integer
         current_prompt:
@@ -1626,3 +1630,62 @@ components:
           type: array
           items:
             type: string
+
+    ReviewConfig:
+      type: object
+      description: Configuration for automatic code review after task completion
+      properties:
+        enabled:
+          type: boolean
+          description: Whether to run code review after task completion
+        cli:
+          type: string
+          description: CLI tool to use for review (defaults to task CLI)
+        model:
+          type: string
+          description: AI model override for the review
+        min_score:
+          type: integer
+          description: Minimum acceptable score (informational only)
+          minimum: 1
+          maximum: 10
+
+    ReviewResult:
+      type: object
+      description: Structured output from code review
+      properties:
+        verdict:
+          type: string
+          enum: [approve, request_changes, comment]
+        score:
+          type: integer
+          minimum: 1
+          maximum: 10
+        summary:
+          type: string
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewIssue"
+        auto_fixable:
+          type: boolean
+        reviewed_by:
+          type: string
+          description: "CLI and model used for review (e.g. claude-code:claude-sonnet-4-6)"
+        duration_seconds:
+          type: number
+
+    ReviewIssue:
+      type: object
+      properties:
+        severity:
+          type: string
+          enum: [critical, major, minor, suggestion]
+        file:
+          type: string
+        line:
+          type: integer
+        description:
+          type: string
+        suggestion:
+          type: string

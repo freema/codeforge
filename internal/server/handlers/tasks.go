@@ -101,6 +101,17 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Validate review CLI name against registry
+	if req.Config != nil && req.Config.Review != nil && req.Config.Review.CLI != "" {
+		if _, err := h.cliRegistry.Get(req.Config.Review.CLI); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"error":  "validation_error",
+				"fields": map[string]string{"review.cli": fmt.Sprintf("unknown CLI: %s", req.Config.Review.CLI)},
+			})
+			return
+		}
+	}
+
 	t, err := h.service.Create(r.Context(), req)
 	if err != nil {
 		writeAppError(w, err)

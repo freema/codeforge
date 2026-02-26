@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/freema/codeforge/internal/review"
 	gitpkg "github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/tools"
 )
@@ -18,6 +19,7 @@ const (
 	StatusCompleted           TaskStatus = "completed"
 	StatusFailed              TaskStatus = "failed"
 	StatusAwaitingInstruction TaskStatus = "awaiting_instruction"
+	StatusReviewing           TaskStatus = "reviewing"
 	StatusCreatingPR          TaskStatus = "creating_pr"
 	StatusPRCreated           TaskStatus = "pr_created"
 )
@@ -34,10 +36,11 @@ type Task struct {
 	Config      *TaskConfig `json:"config,omitempty"`
 
 	// Result fields
-	Result         string          `json:"result,omitempty"`
-	Error          string          `json:"error,omitempty"`
+	Result         string                 `json:"result,omitempty"`
+	Error          string                 `json:"error,omitempty"`
 	ChangesSummary *gitpkg.ChangesSummary `json:"changes_summary,omitempty"`
-	Usage          *UsageInfo      `json:"usage,omitempty"`
+	Usage          *UsageInfo             `json:"usage,omitempty"`
+	ReviewResult   *review.ReviewResult   `json:"review_result,omitempty"`
 
 	// Iteration tracking (Phase 3)
 	Iteration     int         `json:"iteration"`
@@ -76,8 +79,9 @@ type TaskConfig struct {
 	TargetBranch    string      `json:"target_branch,omitempty"`
 	MaxBudgetUSD    float64     `json:"max_budget_usd,omitempty"`
 	MCPServers      []MCPServer    `json:"mcp_servers,omitempty"`
-	Tools           []tools.TaskTool `json:"tools,omitempty"`
-	WorkspaceTaskID string           `json:"workspace_task_id,omitempty"` // reuse workspace from another task
+	Tools           []tools.TaskTool    `json:"tools,omitempty"`
+	WorkspaceTaskID string              `json:"workspace_task_id,omitempty"` // reuse workspace from another task
+	Review          *review.ReviewConfig `json:"review,omitempty"`
 }
 
 // UnmarshalJSON accepts ai_api_key from JSON input while json:"-" keeps it hidden in output.

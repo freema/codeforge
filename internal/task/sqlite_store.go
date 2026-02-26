@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/freema/codeforge/internal/apperror"
+	"github.com/freema/codeforge/internal/review"
 	gitpkg "github.com/freema/codeforge/internal/tool/git"
 )
 
@@ -116,6 +117,21 @@ func (s *SQLiteStore) UpdatePR(ctx context.Context, taskID string, branch, prURL
 	return nil
 }
 
+// UpdateReviewResult stores the review result JSON in SQLite.
+func (s *SQLiteStore) UpdateReviewResult(ctx context.Context, taskID string, result *review.ReviewResult) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	reviewJSON := marshalJSON(result)
+
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE tasks SET review_result_json = ?, updated_at = ? WHERE id = ?`,
+		reviewJSON, now, taskID,
+	)
+	if err != nil {
+		return fmt.Errorf("updating review result in sqlite: %w", err)
+	}
+	return nil
+}
+
 // UpdateError stores an error message in SQLite.
 func (s *SQLiteStore) UpdateError(ctx context.Context, taskID string, errMsg string) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
@@ -167,6 +183,7 @@ func (s *SQLiteStore) SaveIteration(ctx context.Context, taskID string, iter Ite
 func (s *SQLiteStore) Get(ctx context.Context, taskID string) (*Task, error) {
 	var t Task
 	var statusStr, configJSON, changesJSON, usageJSON, createdAt, updatedAt string
+	var reviewJSON sql.NullString
 	var startedAt, finishedAt sql.NullString
 
 	err := s.db.QueryRowContext(ctx,
@@ -174,7 +191,8 @@ func (s *SQLiteStore) Get(ctx context.Context, taskID string) (*Task, error) {
 			result, error, changes_json, usage_json,
 			iteration, current_prompt,
 			branch, pr_number, pr_url,
-			trace_id, created_at, started_at, finished_at, updated_at
+			trace_id, created_at, started_at, finished_at, updated_at,
+			review_result_json
 		 FROM tasks WHERE id = ?`,
 		taskID,
 	).Scan(
@@ -183,6 +201,7 @@ func (s *SQLiteStore) Get(ctx context.Context, taskID string) (*Task, error) {
 		&t.Iteration, &t.CurrentPrompt,
 		&t.Branch, &t.PRNumber, &t.PRURL,
 		&t.TraceID, &createdAt, &startedAt, &finishedAt, &updatedAt,
+		&reviewJSON,
 	)
 	if err == sql.ErrNoRows {
 		return nil, apperror.NotFound("task %s not found", taskID)
@@ -195,6 +214,9 @@ func (s *SQLiteStore) Get(ctx context.Context, taskID string) (*Task, error) {
 	t.Config = UnmarshalConfig(configJSON)
 	t.ChangesSummary = UnmarshalChangesSummary(changesJSON)
 	t.Usage = UnmarshalUsageInfo(usageJSON)
+	if reviewJSON.Valid {
+		t.ReviewResult = review.UnmarshalReviewResult(reviewJSON.String)
+	}
 	t.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
 	if startedAt.Valid {
 		ts, _ := time.Parse(time.RFC3339Nano, startedAt.String)

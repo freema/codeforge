@@ -43,7 +43,8 @@ func openTestDB(t *testing.T) *sql.DB {
 			created_at      TEXT NOT NULL,
 			started_at      TEXT,
 			finished_at     TEXT,
-			updated_at      TEXT NOT NULL
+			updated_at      TEXT NOT NULL,
+			review_result_json TEXT NOT NULL DEFAULT '{}'
 		);
 		CREATE TABLE task_iterations (
 			id          INTEGER PRIMARY KEY AUTOINCREMENT,

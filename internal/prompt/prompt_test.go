@@ -26,9 +26,9 @@ func TestRender_CodeReview(t *testing.T) {
 		"Correctness",
 		"Security",
 		"Performance",
-		"PASS",
-		"WARN",
-		"FAIL",
+		`"verdict"`,
+		`"approve"`,
+		`"request_changes"`,
 		"Do NOT modify any files",
 	} {
 		if !strings.Contains(result, want) {

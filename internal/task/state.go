@@ -10,7 +10,8 @@ import (
 var validTransitions = map[TaskStatus][]TaskStatus{
 	StatusPending:             {StatusCloning, StatusFailed},
 	StatusCloning:             {StatusRunning, StatusFailed},
-	StatusRunning:             {StatusCompleted, StatusFailed},
+	StatusRunning:             {StatusCompleted, StatusReviewing, StatusFailed},
+	StatusReviewing:           {StatusCompleted, StatusFailed},
 	StatusCompleted:           {StatusAwaitingInstruction, StatusCreatingPR},
 	StatusFailed:              {}, // terminal for this iteration
 	StatusAwaitingInstruction: {StatusRunning, StatusFailed},
@@ -55,6 +56,7 @@ func ValidStatuses() []TaskStatus {
 		StatusRunning,
 		StatusCompleted,
 		StatusFailed,
+		StatusReviewing,
 		StatusAwaitingInstruction,
 		StatusCreatingPR,
 		StatusPRCreated,
