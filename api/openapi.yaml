@@ -817,6 +817,168 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v1/cli:
+    get:
+      summary: List registered CLI tools
+      operationId: listCLI
+      tags: [CLI]
+      responses:
+        "200":
+          description: List of CLI tools
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cli:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CLIEntry"
+
+  /api/v1/cli/health:
+    get:
+      summary: Check default CLI availability
+      operationId: cliHealth
+      tags: [CLI]
+      responses:
+        "200":
+          description: CLI is available
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  cli:
+                    type: string
+                    example: claude-code
+                  binary:
+                    type: string
+                    example: /usr/local/bin/claude
+        "503":
+          description: CLI is unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: unavailable
+                  cli:
+                    type: string
+                  binary:
+                    type: string
+                  message:
+                    type: string
+
+  /api/v1/tools:
+    post:
+      summary: Register a tool definition
+      operationId: createTool
+      tags: [Tools]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateToolRequest"
+      responses:
+        "201":
+          description: Tool registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  message:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    get:
+      summary: List all registered tools
+      operationId: listTools
+      tags: [Tools]
+      responses:
+        "200":
+          description: List of tools
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ToolDefinition"
+
+  /api/v1/tools/catalog:
+    get:
+      summary: List built-in tool catalog
+      operationId: toolCatalog
+      tags: [Tools]
+      responses:
+        "200":
+          description: Built-in tools
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ToolDefinition"
+
+  /api/v1/tools/{name}:
+    get:
+      summary: Get a tool by name
+      operationId: getTool
+      tags: [Tools]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tool definition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolDefinition"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      summary: Delete a tool
+      operationId: deleteTool
+      tags: [Tools]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tool deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v1/workspaces:
     get:
       summary: List active workspaces
@@ -1361,3 +1523,106 @@ components:
         finished_at:
           type: string
           format: date-time
+
+    CLIEntry:
+      type: object
+      properties:
+        name:
+          type: string
+          example: claude-code
+        binary_path:
+          type: string
+          example: /usr/local/bin/claude
+        default_model:
+          type: string
+        available:
+          type: boolean
+        is_default:
+          type: boolean
+
+    ToolDefinition:
+      type: object
+      properties:
+        name:
+          type: string
+          example: sentry
+        type:
+          type: string
+          enum: [mcp, builtin, custom]
+        description:
+          type: string
+        version:
+          type: string
+        mcp_package:
+          type: string
+        mcp_command:
+          type: string
+        mcp_args:
+          type: array
+          items:
+            type: string
+        required_config:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigField"
+        optional_config:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigField"
+        capabilities:
+          type: array
+          items:
+            type: string
+        builtin:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    ConfigField:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+        env_var:
+          type: string
+        sensitive:
+          type: boolean
+
+    CreateToolRequest:
+      type: object
+      required: [name, type]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [mcp, builtin, custom]
+        description:
+          type: string
+        version:
+          type: string
+        mcp_package:
+          type: string
+        mcp_command:
+          type: string
+        mcp_args:
+          type: array
+          items:
+            type: string
+        required_config:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigField"
+        optional_config:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigField"
+        capabilities:
+          type: array
+          items:
+            type: string

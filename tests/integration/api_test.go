@@ -232,6 +232,15 @@ func TestCreateTaskValidation(t *testing.T) {
 			},
 			code: http.StatusBadRequest,
 		},
+		{
+			name: "unknown CLI",
+			body: map[string]interface{}{
+				"repo_url": "https://github.com/user/repo.git",
+				"prompt":   "do something",
+				"config":   map[string]interface{}{"cli": "nonexistent-cli"},
+			},
+			code: http.StatusBadRequest,
+		},
 	}
 
 	for _, tt := range tests {
@@ -369,6 +378,165 @@ func TestWorkspaceList(t *testing.T) {
 	}
 	if _, ok := result["total_count"]; !ok {
 		t.Error("expected total_count key in response")
+	}
+}
+
+func TestCLIList(t *testing.T) {
+	resp := apiRequest(t, "GET", "/api/v1/cli", nil)
+	var result map[string]interface{}
+	decodeJSON(t, resp, &result)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	cliList, ok := result["cli"].([]interface{})
+	if !ok {
+		t.Fatal("expected cli array in response")
+	}
+	if len(cliList) == 0 {
+		t.Fatal("expected at least 1 CLI entry")
+	}
+
+	hasDefault := false
+	for _, c := range cliList {
+		entry, _ := c.(map[string]interface{})
+		if _, ok := entry["name"]; !ok {
+			t.Error("CLI entry missing name")
+		}
+		if _, ok := entry["binary_path"]; !ok {
+			t.Error("CLI entry missing binary_path")
+		}
+		if _, ok := entry["available"]; !ok {
+			t.Error("CLI entry missing available")
+		}
+		if isDefault, _ := entry["is_default"].(bool); isDefault {
+			hasDefault = true
+		}
+	}
+	if !hasDefault {
+		t.Error("expected at least one CLI with is_default=true")
+	}
+}
+
+func TestCLIHealth(t *testing.T) {
+	resp := apiRequest(t, "GET", "/api/v1/cli/health", nil)
+	var result map[string]interface{}
+	decodeJSON(t, resp, &result)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	if result["status"] != "ok" {
+		t.Errorf("expected status ok, got %v", result["status"])
+	}
+	if _, ok := result["cli"]; !ok {
+		t.Error("expected cli field in response")
+	}
+}
+
+func TestToolCRUD(t *testing.T) {
+	toolName := fmt.Sprintf("test-tool-%d", time.Now().UnixNano())
+
+	// Create
+	resp := apiRequest(t, "POST", "/api/v1/tools", map[string]interface{}{
+		"name":        toolName,
+		"type":        "custom",
+		"description": "Integration test tool",
+		"mcp_package": "@test/tool-server",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create tool: expected 201, got %d: %s", resp.StatusCode, body)
+	}
+	resp.Body.Close()
+
+	// List
+	resp = apiRequest(t, "GET", "/api/v1/tools", nil)
+	var listResult map[string]interface{}
+	decodeJSON(t, resp, &listResult)
+
+	tools, ok := listResult["tools"].([]interface{})
+	if !ok {
+		t.Fatal("expected tools array in response")
+	}
+
+	found := false
+	for _, tool := range tools {
+		tm, _ := tool.(map[string]interface{})
+		if tm["name"] == toolName {
+			found = true
+			if tm["type"] != "custom" {
+				t.Errorf("expected type custom, got %v", tm["type"])
+			}
+			break
+		}
+	}
+	if !found {
+		t.Errorf("created tool %s not found in list", toolName)
+	}
+
+	// Get by name
+	resp = apiRequest(t, "GET", "/api/v1/tools/"+toolName, nil)
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("get tool: expected 200, got %d: %s", resp.StatusCode, body)
+	}
+	var getResult map[string]interface{}
+	decodeJSON(t, resp, &getResult)
+	if getResult["name"] != toolName {
+		t.Errorf("expected name %s, got %v", toolName, getResult["name"])
+	}
+
+	// Delete
+	resp = apiRequest(t, "DELETE", "/api/v1/tools/"+toolName, nil)
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Errorf("delete tool: expected 200, got %d: %s", resp.StatusCode, body)
+	}
+	resp.Body.Close()
+
+	// Verify 404 after delete
+	resp = apiRequest(t, "GET", "/api/v1/tools/"+toolName, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404 after delete, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestToolCatalog(t *testing.T) {
+	resp := apiRequest(t, "GET", "/api/v1/tools/catalog", nil)
+	var result map[string]interface{}
+	decodeJSON(t, resp, &result)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	tools, ok := result["tools"].([]interface{})
+	if !ok {
+		t.Fatal("expected tools array in response")
+	}
+
+	if len(tools) < 5 {
+		t.Errorf("expected at least 5 built-in tools, got %d", len(tools))
+	}
+
+	// Verify known built-in tools exist
+	names := make(map[string]bool)
+	for _, tool := range tools {
+		tm, _ := tool.(map[string]interface{})
+		if name, ok := tm["name"].(string); ok {
+			names[name] = true
+		}
+	}
+
+	expected := []string{"sentry", "jira", "git", "github", "playwright"}
+	for _, name := range expected {
+		if !names[name] {
+			t.Errorf("expected built-in tool %s in catalog", name)
+		}
 	}
 }
 

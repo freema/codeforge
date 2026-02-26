@@ -354,6 +354,33 @@ func TestE2ECloneFailure(t *testing.T) {
 	t.Log("clone failure test passed")
 }
 
+func TestE2ETaskWithCLI(t *testing.T) {
+	repoDir := createTestRepo(t, "with-cli")
+
+	taskID := createTask(t, map[string]interface{}{
+		"repo_url": "file://" + repoDir,
+		"prompt":   "Add a hello world function",
+		"config": map[string]interface{}{
+			"cli": "claude-code",
+		},
+	})
+	t.Logf("task created with explicit CLI: %s", taskID)
+
+	result := waitForTerminal(t, taskID, 60*time.Second)
+	status := result["status"].(string)
+	t.Logf("final status: %s", status)
+
+	if status != "completed" {
+		t.Fatalf("expected completed, got %s (error: %v)", status, result["error"])
+	}
+
+	if result["result"] == nil || result["result"] == "" {
+		t.Error("expected non-empty result")
+	}
+
+	t.Log("SUCCESS: task with explicit CLI parameter completed")
+}
+
 func TestE2ECodeReviewWorkflow(t *testing.T) {
 	repoDir := createTestRepo(t, "code-review")
 
