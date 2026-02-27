@@ -37,9 +37,25 @@ func (i *Installer) Setup(ctx context.Context, workDir string, projectID string,
 func WriteMCPConfig(workDir string, servers []Server) error {
 	mcpServers := make(map[string]interface{})
 	for _, srv := range servers {
+		command := srv.Command
+		if command == "" {
+			command = "npx"
+		}
+
+		// Build args based on command type
+		var args []string
+		switch command {
+		case "npx":
+			args = append([]string{"-y", srv.Package}, srv.Args...)
+		case "docker":
+			args = append([]string{"run", "-i", "--rm", srv.Package}, srv.Args...)
+		default:
+			args = append([]string{srv.Package}, srv.Args...)
+		}
+
 		entry := map[string]interface{}{
-			"command": "npx",
-			"args":    append([]string{"-y", srv.Package}, srv.Args...),
+			"command": command,
+			"args":    args,
 		}
 		if len(srv.Env) > 0 {
 			entry["env"] = srv.Env

@@ -22,7 +22,7 @@ func NewAnalyzer() *Analyzer {
 }
 
 // Analyze generates branch slug, PR title, and description from task prompt.
-func (a *Analyzer) Analyze(_ context.Context, prompt, _ string, taskID string) *AnalysisResult {
+func (a *Analyzer) Analyze(_ context.Context, prompt string, taskID string) *AnalysisResult {
 	title := truncateStr(prompt, 60)
 	if len(prompt) > 60 {
 		title += "..."

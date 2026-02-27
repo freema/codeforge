@@ -274,14 +274,3 @@ func extractStreamData(line []byte) (resultText, assistantText string, inputToke
 
 	return resultText, assistantText, inputTokens, outputTokens
 }
-
-// KillProcessGroup sends SIGKILL to the entire process group.
-func KillProcessGroup(cmd *exec.Cmd) {
-	if cmd.Process == nil {
-		return
-	}
-	pgid, err := syscall.Getpgid(cmd.Process.Pid)
-	if err == nil {
-		_ = syscall.Kill(-pgid, syscall.SIGKILL)
-	}
-}

@@ -25,6 +25,7 @@ func ToMCPServers(instances []ToolInstance) []mcp.Server {
 
 		srv := mcp.Server{
 			Name:    def.Name,
+			Command: def.MCPCommand,
 			Package: def.MCPPackage,
 			Args:    def.MCPArgs,
 		}

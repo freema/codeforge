@@ -129,11 +129,7 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 	var branchSlug string
 
 	if title == "" || description == "" {
-		diffStats := ""
-		if t.ChangesSummary != nil {
-			diffStats = t.ChangesSummary.DiffStats
-		}
-		analysis := s.analyzer.Analyze(ctx, t.Prompt, diffStats, taskID)
+		analysis := s.analyzer.Analyze(ctx, t.Prompt, taskID)
 		if title == "" {
 			title = analysis.PRTitle
 		}

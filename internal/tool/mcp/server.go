@@ -8,6 +8,7 @@ import (
 // Server defines an MCP server configuration.
 type Server struct {
 	Name      string            `json:"name"`
+	Command   string            `json:"command,omitempty"` // e.g. "npx", "uvx", "docker"; defaults to "npx"
 	Package   string            `json:"package"`
 	Args      []string          `json:"args,omitempty"`
 	Env       map[string]string `json:"env,omitempty"`
