@@ -17,6 +17,7 @@ import (
 	"github.com/freema/codeforge/internal/database"
 	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/logger"
+	"github.com/freema/codeforge/internal/review"
 	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/server"
@@ -236,7 +237,16 @@ func run() error {
 		},
 	)
 
-	srv := server.New(cfg, rdb, sqliteDB, taskService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowRunStore, orchestrator, cliRegistry, cliConfigs, version)
+	// Initialize reviewer
+	reviewAdapter := &reviewTaskAdapter{service: taskService, workspaceMgr: workspaceMgr, workspaceBase: cfg.Tasks.WorkspaceBase}
+	reviewer := review.NewReviewer(reviewAdapter, cliRegistry, streamer, review.ReviewerConfig{
+		DefaultModels: map[string]string{
+			"claude-code": cfg.CLI.ClaudeCode.DefaultModel,
+			"codex":       cfg.CLI.Codex.DefaultModel,
+		},
+	})
+
+	srv := server.New(cfg, rdb, sqliteDB, taskService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowRunStore, orchestrator, cliRegistry, cliConfigs, reviewer, version)
 
 	// Start background services
 	appCtx, appCancel := context.WithCancel(context.Background())

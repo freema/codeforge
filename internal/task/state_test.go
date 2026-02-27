@@ -19,7 +19,11 @@ func TestValidTransitions(t *testing.T) {
 		{StatusRunning, StatusFailed},
 		{StatusCompleted, StatusAwaitingInstruction},
 		{StatusCompleted, StatusCreatingPR},
+		{StatusCompleted, StatusReviewing},
+		{StatusReviewing, StatusCompleted},
+		{StatusReviewing, StatusFailed},
 		{StatusAwaitingInstruction, StatusRunning},
+		{StatusAwaitingInstruction, StatusReviewing},
 		{StatusAwaitingInstruction, StatusFailed},
 		{StatusCreatingPR, StatusPRCreated},
 		{StatusCreatingPR, StatusFailed},
@@ -44,6 +48,7 @@ func TestInvalidTransitions(t *testing.T) {
 		{StatusCloning, StatusCompleted},
 		{StatusRunning, StatusCloning},
 		{StatusRunning, StatusPending},
+		{StatusRunning, StatusReviewing},
 		{StatusFailed, StatusPending},
 		{StatusFailed, StatusRunning},
 		{StatusFailed, StatusCompleted},
@@ -70,7 +75,7 @@ func TestIsFinished(t *testing.T) {
 		}
 	}
 
-	notFinished := []TaskStatus{StatusPending, StatusCloning, StatusRunning, StatusAwaitingInstruction, StatusCreatingPR}
+	notFinished := []TaskStatus{StatusPending, StatusCloning, StatusRunning, StatusReviewing, StatusAwaitingInstruction, StatusCreatingPR}
 	for _, s := range notFinished {
 		if IsFinished(s) {
 			t.Errorf("%s should not be finished", s)

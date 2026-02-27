@@ -241,20 +241,6 @@ func TestCreateTaskValidation(t *testing.T) {
 			},
 			code: http.StatusBadRequest,
 		},
-		{
-			name: "unknown review CLI",
-			body: map[string]interface{}{
-				"repo_url": "https://github.com/user/repo.git",
-				"prompt":   "do something",
-				"config": map[string]interface{}{
-					"review": map[string]interface{}{
-						"enabled": true,
-						"cli":     "nonexistent-review-cli",
-					},
-				},
-			},
-			code: http.StatusBadRequest,
-		},
 	}
 
 	for _, tt := range tests {
@@ -266,34 +252,6 @@ func TestCreateTaskValidation(t *testing.T) {
 				t.Errorf("expected %d, got %d: %s", tt.code, resp.StatusCode, body)
 			}
 		})
-	}
-}
-
-func TestCreateTaskWithReview(t *testing.T) {
-	resp := apiRequest(t, "POST", "/api/v1/tasks", map[string]interface{}{
-		"repo_url": "https://github.com/user/repo.git",
-		"prompt":   "fix the bug",
-		"config": map[string]interface{}{
-			"review": map[string]interface{}{
-				"enabled": true,
-			},
-		},
-	})
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected 201, got %d: %s", resp.StatusCode, body)
-	}
-
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-
-	if result["id"] == nil {
-		t.Error("expected task ID in response")
-	}
-	if result["status"] != "pending" {
-		t.Errorf("expected status pending, got %v", result["status"])
 	}
 }
 
@@ -579,6 +537,27 @@ func TestToolCatalog(t *testing.T) {
 		if !names[name] {
 			t.Errorf("expected built-in tool %s in catalog", name)
 		}
+	}
+}
+
+func TestReviewNonExistentTask(t *testing.T) {
+	resp := apiRequest(t, "POST", "/api/v1/tasks/nonexistent/review", nil)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestReviewWithUnknownCLI(t *testing.T) {
+	resp := apiRequest(t, "POST", "/api/v1/tasks/nonexistent/review", map[string]interface{}{
+		"cli": "nonexistent-cli",
+	})
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		t.Errorf("expected 400, got %d: %s", resp.StatusCode, body)
 	}
 }
 

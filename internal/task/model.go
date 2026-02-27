@@ -81,7 +81,6 @@ type TaskConfig struct {
 	MCPServers      []MCPServer    `json:"mcp_servers,omitempty"`
 	Tools           []tools.TaskTool    `json:"tools,omitempty"`
 	WorkspaceTaskID string              `json:"workspace_task_id,omitempty"` // reuse workspace from another task
-	Review          *review.ReviewConfig `json:"review,omitempty"`
 }
 
 // UnmarshalJSON accepts ai_api_key from JSON input while json:"-" keeps it hidden in output.

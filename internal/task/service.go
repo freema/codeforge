@@ -496,6 +496,44 @@ func sortTasksByCreatedDesc(tasks []TaskSummary) {
 	}
 }
 
+// StartReview transitions a task to the reviewing state.
+// Valid from: completed, awaiting_instruction.
+func (s *Service) StartReview(ctx context.Context, taskID string) error {
+	t, err := s.Get(ctx, taskID)
+	if err != nil {
+		return err
+	}
+
+	switch t.Status {
+	case StatusCompleted, StatusAwaitingInstruction:
+		// ok
+	case StatusRunning, StatusCloning, StatusCreatingPR, StatusReviewing:
+		return apperror.Conflict("task is currently %s, cannot start review", t.Status)
+	case StatusFailed:
+		return apperror.Validation("task has failed, create a new task instead")
+	default:
+		return apperror.Conflict("task in status %s cannot be reviewed", t.Status)
+	}
+
+	if err := s.UpdateStatus(ctx, taskID, StatusReviewing); err != nil {
+		return err
+	}
+
+	// Remove TTL while review is running
+	stateKey := s.redis.Key("task", taskID, "state")
+	s.redis.Unwrap().Persist(ctx, stateKey)
+
+	return nil
+}
+
+// CompleteReview stores the review result and transitions the task back to completed.
+func (s *Service) CompleteReview(ctx context.Context, taskID string, result *review.ReviewResult) error {
+	if err := s.SetReviewResult(ctx, taskID, result); err != nil {
+		return err
+	}
+	return s.UpdateStatus(ctx, taskID, StatusCompleted)
+}
+
 // SetReviewResult stores the review result on a task.
 func (s *Service) SetReviewResult(ctx context.Context, taskID string, result *review.ReviewResult) error {
 	stateKey := s.redis.Key("task", taskID, "state")

@@ -10,11 +10,11 @@ import (
 var validTransitions = map[TaskStatus][]TaskStatus{
 	StatusPending:             {StatusCloning, StatusFailed},
 	StatusCloning:             {StatusRunning, StatusFailed},
-	StatusRunning:             {StatusCompleted, StatusReviewing, StatusFailed},
+	StatusRunning:             {StatusCompleted, StatusFailed},
 	StatusReviewing:           {StatusCompleted, StatusFailed},
-	StatusCompleted:           {StatusAwaitingInstruction, StatusCreatingPR},
+	StatusCompleted:           {StatusAwaitingInstruction, StatusCreatingPR, StatusReviewing},
 	StatusFailed:              {}, // terminal for this iteration
-	StatusAwaitingInstruction: {StatusRunning, StatusFailed},
+	StatusAwaitingInstruction: {StatusRunning, StatusReviewing, StatusFailed},
 	StatusCreatingPR:          {StatusPRCreated, StatusFailed},
 	StatusPRCreated:           {StatusAwaitingInstruction, StatusCompleted},
 }

@@ -2,14 +2,6 @@ package review
 
 import "encoding/json"
 
-// ReviewConfig controls whether and how code review runs after task completion.
-type ReviewConfig struct {
-	Enabled  bool   `json:"enabled"`
-	CLI      string `json:"cli,omitempty"`
-	Model    string `json:"model,omitempty"`
-	MinScore int    `json:"min_score,omitempty"` // informational only (no auto-fix)
-}
-
 // Verdict represents the review outcome.
 type Verdict string
 

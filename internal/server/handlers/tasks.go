@@ -12,6 +12,7 @@ import (
 	"github.com/go-playground/validator/v10"
 
 	"github.com/freema/codeforge/internal/apperror"
+	"github.com/freema/codeforge/internal/review"
 	"github.com/freema/codeforge/internal/task"
 	"github.com/freema/codeforge/internal/tool/runner"
 )
@@ -29,11 +30,12 @@ type TaskHandler struct {
 	prService   *task.PRService
 	canceller   Canceller
 	cliRegistry *runner.Registry
+	reviewer    *review.Reviewer
 }
 
 // NewTaskHandler creates a new task handler.
-func NewTaskHandler(service *task.Service, prService *task.PRService, canceller Canceller, cliRegistry *runner.Registry) *TaskHandler {
-	return &TaskHandler{service: service, prService: prService, canceller: canceller, cliRegistry: cliRegistry}
+func NewTaskHandler(service *task.Service, prService *task.PRService, canceller Canceller, cliRegistry *runner.Registry, reviewer *review.Reviewer) *TaskHandler {
+	return &TaskHandler{service: service, prService: prService, canceller: canceller, cliRegistry: cliRegistry, reviewer: reviewer}
 }
 
 // List handles GET /api/v1/tasks.
@@ -96,17 +98,6 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 				"error":  "validation_error",
 				"fields": map[string]string{"cli": fmt.Sprintf("unknown CLI: %s", req.Config.CLI)},
-			})
-			return
-		}
-	}
-
-	// Validate review CLI name against registry
-	if req.Config != nil && req.Config.Review != nil && req.Config.Review.CLI != "" {
-		if _, err := h.cliRegistry.Get(req.Config.Review.CLI); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
-				"error":  "validation_error",
-				"fields": map[string]string{"review.cli": fmt.Sprintf("unknown CLI: %s", req.Config.Review.CLI)},
 			})
 			return
 		}
@@ -248,6 +239,45 @@ func (h *TaskHandler) CreatePR(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeError(w, http.StatusInternalServerError, errMsg)
 		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// Review handles POST /api/v1/tasks/{taskID}/review.
+func (h *TaskHandler) Review(w http.ResponseWriter, r *http.Request) {
+	taskID := chi.URLParam(r, "taskID")
+	if taskID == "" {
+		writeError(w, http.StatusBadRequest, "task ID is required")
+		return
+	}
+
+	var req struct {
+		CLI   string `json:"cli,omitempty"`
+		Model string `json:"model,omitempty"`
+	}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+	}
+
+	// Validate CLI name if provided
+	if req.CLI != "" {
+		if _, err := h.cliRegistry.Get(req.CLI); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"error":  "validation_error",
+				"fields": map[string]string{"cli": fmt.Sprintf("unknown CLI: %s", req.CLI)},
+			})
+			return
+		}
+	}
+
+	result, err := h.reviewer.Review(r.Context(), taskID, req.CLI, req.Model)
+	if err != nil {
+		writeAppError(w, err)
 		return
 	}
 
