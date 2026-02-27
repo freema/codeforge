@@ -2,7 +2,7 @@
 
 ## System Overview
 
-CodeForge is a Go HTTP server that orchestrates AI-powered code tasks. It receives task requests via REST API, clones repositories, runs AI CLI tools against them, and optionally creates pull requests with the changes.
+CodeForge is a Go HTTP server that orchestrates AI-powered code tasks. It receives task requests via REST API, clones repositories, runs AI CLI tools against them, and optionally creates pull requests with the changes. It supports multiple CLI runners (Claude Code, Codex), code review as a user action, and a tool system for extending AI capabilities.
 
 ```
 Client (ScopeBot / curl)
@@ -22,25 +22,27 @@ Client (ScopeBot / curl)
              │  (stream.go) │             ▼               ▼               ▼
              └──────────────┘       ┌──────────┐   ┌──────────┐   ┌──────────┐
                                     │ Git Clone│   │ CLI Run  │   │ Webhook  │
-                                    │          │   │ (Claude) │   │ Callback │
-                                    └──────────┘   └──────────┘   └──────────┘
+                                    │          │   │(Claude/  │   │ Callback │
+                                    └──────────┘   │ Codex)   │   └──────────┘
+                                                   └──────────┘
 ```
 
 ## Key Components
 
 ### HTTP Server (`internal/server/`)
 - Chi router with middleware (auth, logging, rate limiting, metrics, tracing)
-- Handlers for tasks, keys, MCP servers, workspaces, and SSE streams
+- Handlers for tasks, keys, MCP servers, tools, workspaces, workflows, and SSE streams
 - Swagger UI at `/api/docs` with embedded OpenAPI spec
 - Prometheus `/metrics` and health endpoints (no auth required)
 - SSE stream endpoint bypasses `otelhttp` and request timeout middleware (see Streaming below)
 
 ### Task Service (`internal/task/`)
 - CRUD operations on task state stored in Redis hashes
-- State machine with validated transitions
+- State machine with validated transitions (see Task Lifecycle below)
 - FIFO queue via `RPUSH`/`BLPOP`
 - Iteration tracking for multi-turn conversations
 - PR service for commit/push/PR creation flow
+- Review lifecycle methods (`StartReview`, `CompleteReview`)
 
 ### Worker Pool (`internal/worker/`)
 - Configurable concurrency (N goroutines)
@@ -50,10 +52,17 @@ Client (ScopeBot / curl)
 
 ### CLI Runner (`internal/tool/runner/`)
 - `Runner` interface for pluggable AI tools
-- `ClaudeRunner` implements `--output-format stream-json` parsing
+- **Claude Code** runner: `--output-format stream-json` parsing, supports MaxTurns and MaxBudgetUSD
+- **Codex** runner: JSONL stream parsing (`--json --full-auto`), `CODEX_API_KEY` env var
 - Registry maps CLI names to Runner implementations
-- Selected per-task via `config.cli` field
-- Result extraction: prefers the `type: "result"` event text; falls back to the last `type: "assistant"` message text (handles cases where result has `subtype: "error_during_execution"` with an empty result field)
+- Selected per-task via `config.cli` field (default: `claude-code`)
+- Result extraction: prefers the `type: "result"` event text; falls back to the last `type: "assistant"` message text
+
+### Stream Normalization (`internal/worker/normalizer.go`)
+- Converts CLI-specific events into a common stream format
+- Normalized event types: `thinking`, `text`, `tool_use`, `tool_result`, `result`, `error`, `system`
+- Both Claude Code and Codex output gets normalized before being sent to SSE clients
+- FE consumers only need to handle normalized event types
 
 ### Streaming
 
@@ -78,6 +87,23 @@ Client (ScopeBot / curl)
 - The PrometheusMetrics middleware's `responseWriter` implements `Flush()` (delegates to underlying writer) and `Unwrap()` (for `http.ResponseController` compatibility)
 - Global `http.Server.WriteTimeout` is set to `0` (disabled) — SSE handler manages its own deadlines
 
+### Review System (`internal/review/`)
+- **User-triggered action**, NOT an automatic step — user calls `POST /tasks/:id/review`
+- `Reviewer` service orchestrates: validate state -> run CLI review -> parse output -> store result
+- `TaskProvider` interface abstracts task service + workspace resolution
+- Multi-strategy parser: direct JSON, markdown code block, heuristic brace matching, fallback
+- Review result stored on `Task.ReviewResult` field in Redis
+- Supports different CLI for review (e.g. Codex reviews Claude Code's output)
+
+### Tool System (`internal/tools/`)
+- High-level abstraction over MCP servers — users request tools by name, system handles MCP wiring
+- **Registry** — SQLite-backed storage with scope (global / project-level)
+- **Catalog** — 5 built-in tools: sentry, jira, git, github, playwright
+- **Resolver** — lookup chain: project scope -> global scope -> built-in catalog
+- **Bridge** — converts resolved tools to MCP server configs for `.mcp.json` generation
+- **Validator** — checks required config fields before task execution
+- Per-task tool requests via `TaskConfig.Tools` field
+
 ### Workflow System (`internal/workflow/`)
 - Multi-step workflow orchestrator consuming from Redis FIFO queue (`BLPOP queue:workflows`)
 - Three step types:
@@ -100,7 +126,7 @@ pending ──▶ running ──▶ completed
 ```
 
 ### SQLite (`internal/database/`)
-- Embedded SQLite database for persistent storage of workflow definitions, workflow runs, keys, and MCP server configs
+- Embedded SQLite database for persistent storage of workflow definitions, workflow runs, keys, tools, and MCP server configs
 - Auto-migration on startup
 - Default path: `/data/codeforge.db` (configurable via `CODEFORGE_SQLITE__PATH`)
 
@@ -153,22 +179,45 @@ All keys use configurable prefix (default: `codeforge:`).
 
 ```
 pending ──▶ cloning ──▶ running ──▶ completed ──▶ creating_pr ──▶ pr_created
-   │           │           │           │                              │
-   │           │           │           ▼                              │
-   │           │           │    awaiting_instruction ◀────────────────┘
-   │           │           │           │
-   ▼           ▼           ▼           ▼
- failed      failed      failed      failed
+   │           │           │           │  ▲                           │
+   │           │           │           │  │                           │
+   │           │           │           ▼  │                           │
+   │           │           │       reviewing                         │
+   │           │           │                                         │
+   │           │           │      awaiting_instruction ◀─────────────┘
+   │           │           │           │  ▲
+   │           │           │           │  │
+   │           │           │           ▼  │
+   │           │           │        running (iteration N)
+   │           │           │
+   ▼           ▼           ▼
+ failed      failed      failed
 ```
+
+### States
 
 - **pending**: Task created, queued for processing
 - **cloning**: Git repository being cloned
 - **running**: AI CLI executing the prompt
-- **completed**: CLI finished, results available
+- **completed**: CLI finished, results available — user can now review, instruct, or create PR
+- **reviewing**: Code review in progress (user-triggered via `POST /tasks/:id/review`)
 - **failed**: Terminal state (clone/run/timeout/cancel failure)
-- **awaiting_instruction**: Waiting for follow-up prompt
+- **awaiting_instruction**: Waiting for follow-up prompt (after `POST /tasks/:id/instruct`)
 - **creating_pr**: PR/MR being created
 - **pr_created**: PR/MR created successfully
+
+### Valid Transitions
+
+| From | To |
+|------|----|
+| pending | cloning, failed |
+| cloning | running, failed |
+| running | completed, failed |
+| completed | awaiting_instruction, creating_pr, reviewing |
+| reviewing | completed, failed |
+| awaiting_instruction | running, reviewing, failed |
+| creating_pr | pr_created, failed |
+| pr_created | awaiting_instruction, completed |
 
 ## Observability
 
@@ -191,7 +240,7 @@ pending ──▶ cloning ──▶ running ──▶ completed ──▶ creati
 ## Directory Structure
 
 ```
-cmd/codeforge/          # Application entrypoint
+cmd/codeforge/          # Application entrypoint + review adapter
 internal/
   apperror/             # Application error types
   config/               # Configuration loading (koanf)
@@ -200,16 +249,19 @@ internal/
   keys/                 # Access key registry + resolver
   logger/               # Structured logging (slog)
   metrics/              # Prometheus metric definitions
+  prompt/               # Prompt templates (embed FS, code review)
   redisclient/          # Redis client wrapper
+  review/               # Code review service (reviewer, parser, models)
   server/               # HTTP server + handlers + middleware
   task/                 # Task model, service, state machine
-  tool/                 # Tool subsystem namespace
+  tool/                 # Tool subsystem namespace (low-level)
     git/                # Git operations (clone, branch, PR)
-    runner/             # CLI runner interface + implementations
+    runner/             # CLI runner interface + implementations (Claude, Codex)
     mcp/                # MCP server registry + installer
+  tools/                # Tool system (high-level: catalog, registry, resolver, bridge)
   tracing/              # OpenTelemetry setup
   webhook/              # Webhook sender with HMAC + retries
-  worker/               # Worker pool, executor, streamer
+  worker/               # Worker pool, executor, streamer, normalizer
   workflow/             # Workflow orchestrator, step executors, templates
   workspace/            # Workspace manager + cleanup
 api/                    # OpenAPI specification

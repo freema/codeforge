@@ -86,35 +86,41 @@ The mock CLI (`tests/mockcli/main.go`) supports special prompts:
 ## Project Structure
 
 ```
-cmd/codeforge/          Application entry point
+cmd/codeforge/          Application entry point + review adapter
 internal/
-  apperror/             Application error types
-  config/               Configuration loading (koanf)
+  apperror/             Application error types (NotFound, Validation, Conflict, etc.)
+  config/               Configuration loading (koanf, YAML + env vars)
   crypto/               AES-256-GCM encryption
-  database/             SQLite wrapper + migrations
-  keys/                 Access key registry + resolver
+  database/             SQLite wrapper + auto-migrations
+  keys/                 Access key registry + 3-tier resolver
   logger/               Structured logging (slog)
   metrics/              Prometheus metric definitions
+  prompt/               Prompt templates (embed FS, code review template)
   redisclient/          Redis client wrapper
+  review/               Code review service (reviewer, parser, models)
   server/               HTTP server + handlers + middleware
-  task/                 Task model, service, state machine
-  prompt/               Prompt templates (embed FS) — see [Code Review Workflow](code-review-workflow.md)
-  tool/                 Tool subsystem namespace
-    git/                Git operations (clone, branch, PR)
-    runner/             CLI runner interface + implementations
+    handlers/           Request handlers (tasks, keys, tools, workflows, stream, etc.)
+    middleware/         Auth, logging, recovery, rate limit, metrics, tracing
+  task/                 Task model, service, state machine, PR service
+  tool/                 Tool subsystem namespace (low-level)
+    git/                Git operations (clone, branch, PR creation)
+    runner/             CLI runner interface + implementations (Claude Code, Codex)
     mcp/                MCP server registry + installer
+  tools/                Tool system (high-level: catalog, registry, resolver, bridge)
   tracing/              OpenTelemetry setup
-  webhook/              Webhook sender with HMAC + retries
-  worker/               Worker pool, executor, streamer
+  webhook/              Webhook sender with HMAC signatures + retries
+  worker/               Worker pool, executor, streamer, stream normalizer
   workflow/             Workflow orchestrator, step executors, templates
   workspace/            Workspace manager + cleanup
-api/                    OpenAPI specification
-deployments/            Docker, docker-compose files
+api/                    OpenAPI specification (openapi.yaml)
+configs/                Example configuration files
+deployments/            Docker, docker-compose files, .env
 tests/
   integration/          Integration tests (HTTP API)
   e2e/                  E2E tests (full task lifecycle)
-  mockcli/              Mock Claude Code CLI
+  mockcli/              Mock Claude Code CLI for testing
 docs/                   Documentation
+tasks/                  Planning documents (not code)
 ```
 
 ## Conventions
@@ -125,3 +131,6 @@ docs/                   Documentation
 - **Testing**: table-driven tests, `_test.go` next to source files
 - **No shell injection**: all CLI invocations via `exec.Command` with explicit args
 - **Git auth**: `GIT_ASKPASS` helper, never URL-embedded tokens
+- **Sensitive fields**: encrypted in Redis (AES-256-GCM), never in API responses (`json:"-"`)
+- **Multi-CLI**: tasks can specify `cli: "claude-code"` or `cli: "codex"` — registry resolves to runner
+- **Review as action**: code review is triggered by user via endpoint, not automatic in executor

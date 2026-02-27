@@ -56,9 +56,11 @@ Set `CODEFORGE_CONFIG` to specify a YAML config file path, or use environment va
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CODEFORGE_CLI__DEFAULT` | `claude-code` | Default CLI tool |
+| `CODEFORGE_CLI__DEFAULT` | `claude-code` | Default CLI tool (`claude-code` or `codex`) |
 | `CODEFORGE_CLI__CLAUDE_CODE__PATH` | `claude` | Claude Code binary path |
-| `CODEFORGE_CLI__CLAUDE_CODE__DEFAULT_MODEL` | `claude-sonnet-4-20250514` | Default AI model |
+| `CODEFORGE_CLI__CLAUDE_CODE__DEFAULT_MODEL` | `claude-sonnet-4-20250514` | Default AI model for Claude Code |
+| `CODEFORGE_CLI__CODEX__PATH` | `codex` | Codex CLI binary path |
+| `CODEFORGE_CLI__CODEX__DEFAULT_MODEL` | *(empty)* | Default AI model for Codex (empty = use Codex built-in default) |
 
 ### Git
 
@@ -67,7 +69,7 @@ Set `CODEFORGE_CONFIG` to specify a YAML config file path, or use environment va
 | `CODEFORGE_GIT__BRANCH_PREFIX` | `codeforge/` | PR branch prefix |
 | `CODEFORGE_GIT__COMMIT_AUTHOR` | `CodeForge Bot` | Git commit author |
 | `CODEFORGE_GIT__COMMIT_EMAIL` | `codeforge@noreply` | Git commit email |
-| `CODEFORGE_GIT__PROVIDER_DOMAINS` | `{}` | Custom domain→provider mapping (e.g., `{"git.company.com": "gitlab"}`) |
+| `CODEFORGE_GIT__PROVIDER_DOMAINS` | `{}` | Custom domain->provider mapping (e.g., `{"git.company.com": "gitlab"}`) |
 
 ### Webhooks
 
@@ -139,6 +141,14 @@ cli:
   claude_code:
     path: "claude"
     default_model: "claude-sonnet-4-20250514"
+  codex:
+    path: "codex"
+    default_model: ""   # empty = use Codex CLI's built-in default
+
+git:
+  branch_prefix: "codeforge/"
+  commit_author: "CodeForge Bot"
+  commit_email: "codeforge@noreply"
 
 workflow:
   context_ttl_hours: 24
