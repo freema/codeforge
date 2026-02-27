@@ -32,6 +32,7 @@ type Task struct {
 	ProviderKey string     `json:"provider_key,omitempty"`
 	AccessToken string     `json:"-"` // NEVER in API responses
 	Prompt      string     `json:"prompt"`
+	TaskType    string     `json:"task_type,omitempty"`
 	CallbackURL string     `json:"callback_url,omitempty"`
 	Config      *TaskConfig `json:"config,omitempty"`
 

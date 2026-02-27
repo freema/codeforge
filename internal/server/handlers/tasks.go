@@ -12,6 +12,7 @@ import (
 	"github.com/go-playground/validator/v10"
 
 	"github.com/freema/codeforge/internal/apperror"
+	"github.com/freema/codeforge/internal/prompt"
 	"github.com/freema/codeforge/internal/review"
 	"github.com/freema/codeforge/internal/task"
 	"github.com/freema/codeforge/internal/tool/runner"
@@ -90,6 +91,17 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, http.StatusBadRequest, "validation failed")
 		return
+	}
+
+	// Validate task_type
+	if req.TaskType != "" {
+		if !prompt.ValidTaskType(req.TaskType) {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"error":  "validation_error",
+				"fields": map[string]string{"task_type": fmt.Sprintf("unknown task type: %s", req.TaskType)},
+			})
+			return
+		}
 	}
 
 	// Validate CLI name against registry
@@ -282,6 +294,13 @@ func (h *TaskHandler) Review(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+// ListTaskTypes handles GET /api/v1/task-types.
+func (h *TaskHandler) ListTaskTypes(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"task_types": prompt.TaskTypes(),
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {

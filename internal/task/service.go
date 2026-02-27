@@ -57,6 +57,11 @@ func (s *Service) persistToSQLite(fn func() error) {
 
 // Create creates a new task in Redis and enqueues it for processing.
 func (s *Service) Create(ctx context.Context, req CreateTaskRequest) (*Task, error) {
+	taskType := req.TaskType
+	if taskType == "" {
+		taskType = "code"
+	}
+
 	t := &Task{
 		ID:          uuid.New().String(),
 		Status:      StatusPending,
@@ -64,6 +69,7 @@ func (s *Service) Create(ctx context.Context, req CreateTaskRequest) (*Task, err
 		ProviderKey: req.ProviderKey,
 		AccessToken: req.AccessToken,
 		Prompt:      req.Prompt,
+		TaskType:    taskType,
 		CallbackURL: req.CallbackURL,
 		Config:      req.Config,
 		Iteration:   1,
@@ -360,6 +366,7 @@ type TaskSummary struct {
 	Status     TaskStatus `json:"status"`
 	RepoURL    string     `json:"repo_url"`
 	Prompt     string     `json:"prompt"`
+	TaskType   string     `json:"task_type,omitempty"`
 	Iteration  int        `json:"iteration"`
 	Error      string     `json:"error,omitempty"`
 	Branch     string     `json:"branch,omitempty"`
@@ -438,6 +445,7 @@ func (s *Service) List(ctx context.Context, opts ListOptions) ([]TaskSummary, in
 			Status:     t.Status,
 			RepoURL:    t.RepoURL,
 			Prompt:     truncatePrompt(t.Prompt, 200),
+			TaskType:   t.TaskType,
 			Iteration:  t.Iteration,
 			Error:      t.Error,
 			Branch:     t.Branch,
@@ -569,6 +577,7 @@ func (s *Service) taskToHash(t *Task) map[string]interface{} {
 		"status":      string(t.Status),
 		"repo_url":    t.RepoURL,
 		"prompt":      t.Prompt,
+		"task_type":   t.TaskType,
 		"iteration":   t.Iteration,
 		"created_at":  t.CreatedAt.Format(time.RFC3339Nano),
 		"updated_at":  t.CreatedAt.Format(time.RFC3339Nano),
@@ -598,6 +607,7 @@ func (s *Service) hashToTask(fields map[string]string) *Task {
 		RepoURL:       fields["repo_url"],
 		ProviderKey:   fields["provider_key"],
 		Prompt:        fields["prompt"],
+		TaskType:      fields["task_type"],
 		CallbackURL:   fields["callback_url"],
 		CurrentPrompt: fields["current_prompt"],
 		Branch:        fields["branch"],
@@ -639,6 +649,7 @@ type CreateTaskRequest struct {
 	ProviderKey string      `json:"provider_key,omitempty"`
 	AccessToken string      `json:"access_token,omitempty"`
 	Prompt      string      `json:"prompt" validate:"required,max=102400"`
+	TaskType    string      `json:"task_type,omitempty"`
 	CallbackURL string      `json:"callback_url,omitempty" validate:"omitempty,url"`
 	Config      *TaskConfig `json:"config,omitempty"`
 }

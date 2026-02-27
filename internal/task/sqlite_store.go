@@ -31,12 +31,12 @@ func (s *SQLiteStore) Save(ctx context.Context, t *Task) error {
 	usageJSON := marshalJSON(t.Usage)
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO tasks (id, status, repo_url, provider_key, prompt, callback_url, config_json,
+		`INSERT INTO tasks (id, status, repo_url, provider_key, prompt, task_type, callback_url, config_json,
 			result, error, changes_json, usage_json,
 			iteration, current_prompt,
 			branch, pr_number, pr_url,
 			trace_id, created_at, started_at, finished_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?,
 			?, ?, ?, ?,
 			?, ?,
 			?, ?, ?,
@@ -46,6 +46,7 @@ func (s *SQLiteStore) Save(ctx context.Context, t *Task) error {
 			repo_url = excluded.repo_url,
 			provider_key = excluded.provider_key,
 			prompt = excluded.prompt,
+			task_type = excluded.task_type,
 			callback_url = excluded.callback_url,
 			config_json = excluded.config_json,
 			result = excluded.result,
@@ -61,7 +62,7 @@ func (s *SQLiteStore) Save(ctx context.Context, t *Task) error {
 			started_at = excluded.started_at,
 			finished_at = excluded.finished_at,
 			updated_at = excluded.updated_at`,
-		t.ID, string(t.Status), t.RepoURL, t.ProviderKey, t.Prompt, t.CallbackURL, configJSON,
+		t.ID, string(t.Status), t.RepoURL, t.ProviderKey, t.Prompt, t.TaskType, t.CallbackURL, configJSON,
 		t.Result, t.Error, changesJSON, usageJSON,
 		t.Iteration, t.CurrentPrompt,
 		t.Branch, t.PRNumber, t.PRURL,
@@ -187,7 +188,7 @@ func (s *SQLiteStore) Get(ctx context.Context, taskID string) (*Task, error) {
 	var startedAt, finishedAt sql.NullString
 
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, status, repo_url, provider_key, prompt, callback_url, config_json,
+		`SELECT id, status, repo_url, provider_key, prompt, task_type, callback_url, config_json,
 			result, error, changes_json, usage_json,
 			iteration, current_prompt,
 			branch, pr_number, pr_url,
@@ -196,7 +197,7 @@ func (s *SQLiteStore) Get(ctx context.Context, taskID string) (*Task, error) {
 		 FROM tasks WHERE id = ?`,
 		taskID,
 	).Scan(
-		&t.ID, &statusStr, &t.RepoURL, &t.ProviderKey, &t.Prompt, &t.CallbackURL, &configJSON,
+		&t.ID, &statusStr, &t.RepoURL, &t.ProviderKey, &t.Prompt, &t.TaskType, &t.CallbackURL, &configJSON,
 		&t.Result, &t.Error, &changesJSON, &usageJSON,
 		&t.Iteration, &t.CurrentPrompt,
 		&t.Branch, &t.PRNumber, &t.PRURL,
@@ -296,11 +297,11 @@ func (s *SQLiteStore) List(ctx context.Context, opts ListOptions) ([]TaskSummary
 	var query string
 	var args []interface{}
 	if opts.Status != "" {
-		query = `SELECT id, status, repo_url, prompt, iteration, error, branch, pr_url, created_at, started_at, finished_at
+		query = `SELECT id, status, repo_url, prompt, task_type, iteration, error, branch, pr_url, created_at, started_at, finished_at
 			FROM tasks WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
 		args = []interface{}{opts.Status, limit, opts.Offset}
 	} else {
-		query = `SELECT id, status, repo_url, prompt, iteration, error, branch, pr_url, created_at, started_at, finished_at
+		query = `SELECT id, status, repo_url, prompt, task_type, iteration, error, branch, pr_url, created_at, started_at, finished_at
 			FROM tasks ORDER BY created_at DESC LIMIT ? OFFSET ?`
 		args = []interface{}{limit, opts.Offset}
 	}
@@ -317,7 +318,7 @@ func (s *SQLiteStore) List(ctx context.Context, opts ListOptions) ([]TaskSummary
 		var statusStr, prompt, createdAt string
 		var startedAt, finishedAt sql.NullString
 
-		if err := rows.Scan(&ts.ID, &statusStr, &ts.RepoURL, &prompt, &ts.Iteration,
+		if err := rows.Scan(&ts.ID, &statusStr, &ts.RepoURL, &prompt, &ts.TaskType, &ts.Iteration,
 			&ts.Error, &ts.Branch, &ts.PRURL, &createdAt, &startedAt, &finishedAt); err != nil {
 			return nil, 0, fmt.Errorf("scanning task: %w", err)
 		}

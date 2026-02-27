@@ -561,6 +561,103 @@ func TestReviewWithUnknownCLI(t *testing.T) {
 	}
 }
 
+func TestListTaskTypes(t *testing.T) {
+	resp := apiRequest(t, "GET", "/api/v1/task-types", nil)
+	var result map[string]interface{}
+	decodeJSON(t, resp, &result)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	taskTypes, ok := result["task_types"].([]interface{})
+	if !ok {
+		t.Fatal("expected task_types array in response")
+	}
+	if len(taskTypes) != 3 {
+		t.Fatalf("expected 3 task types, got %d", len(taskTypes))
+	}
+
+	names := make(map[string]bool)
+	for _, tt := range taskTypes {
+		tm, _ := tt.(map[string]interface{})
+		name, _ := tm["name"].(string)
+		names[name] = true
+		if _, ok := tm["label"]; !ok {
+			t.Errorf("task type %s missing label", name)
+		}
+		if _, ok := tm["description"]; !ok {
+			t.Errorf("task type %s missing description", name)
+		}
+	}
+
+	for _, expected := range []string{"code", "plan", "review"} {
+		if !names[expected] {
+			t.Errorf("expected task type %s in response", expected)
+		}
+	}
+}
+
+func TestCreateTaskWithTaskType(t *testing.T) {
+	tests := []struct {
+		name     string
+		taskType string
+		code     int
+	}{
+		{"valid plan type", "plan", http.StatusCreated},
+		{"valid review type", "review", http.StatusCreated},
+		{"valid code type", "code", http.StatusCreated},
+		{"invalid type", "invalid", http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := apiRequest(t, "POST", "/api/v1/tasks", map[string]interface{}{
+				"repo_url":  "https://github.com/user/repo.git",
+				"prompt":    "test prompt",
+				"task_type": tt.taskType,
+			})
+			defer resp.Body.Close()
+
+			if resp.StatusCode != tt.code {
+				body, _ := io.ReadAll(resp.Body)
+				t.Errorf("expected %d, got %d: %s", tt.code, resp.StatusCode, body)
+			}
+		})
+	}
+}
+
+func TestTaskTypePersistence(t *testing.T) {
+	// Create a task with plan type
+	resp := apiRequest(t, "POST", "/api/v1/tasks", map[string]interface{}{
+		"repo_url":  "https://github.com/user/repo.git",
+		"prompt":    "analyze the codebase",
+		"task_type": "plan",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create task: expected 201, got %d: %s", resp.StatusCode, body)
+	}
+
+	var createResult map[string]interface{}
+	decodeJSON(t, resp, &createResult)
+	taskID, _ := createResult["id"].(string)
+
+	// Get the task and verify task_type is persisted
+	resp = apiRequest(t, "GET", "/api/v1/tasks/"+taskID, nil)
+	var getResult map[string]interface{}
+	decodeJSON(t, resp, &getResult)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get task: expected 200, got %d", resp.StatusCode)
+	}
+
+	taskType, _ := getResult["task_type"].(string)
+	if taskType != "plan" {
+		t.Errorf("expected task_type 'plan', got %q", taskType)
+	}
+}
+
 func TestDeleteNonExistentWorkspace(t *testing.T) {
 	resp := apiRequest(t, "DELETE", "/api/v1/workspaces/nonexistent-id", nil)
 	defer resp.Body.Close()

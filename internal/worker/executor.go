@@ -22,6 +22,7 @@ import (
 	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/metrics"
+	"github.com/freema/codeforge/internal/prompt"
 	"github.com/freema/codeforge/internal/task"
 	"github.com/freema/codeforge/internal/tools"
 	"github.com/freema/codeforge/internal/tracing"
@@ -473,6 +474,17 @@ func (e *Executor) buildPrompt(ctx context.Context, t *task.Task) string {
 	currentPrompt := t.CurrentPrompt
 	if currentPrompt == "" {
 		currentPrompt = t.Prompt
+	}
+
+	// Apply task type template for first iteration only
+	if t.Iteration <= 1 && t.TaskType != "" && t.TaskType != "code" {
+		rendered, err := prompt.RenderTaskPrompt(t.TaskType, currentPrompt)
+		if err != nil {
+			slog.Warn("failed to render task type template, using raw prompt",
+				"task_type", t.TaskType, "error", err)
+		} else {
+			currentPrompt = rendered
+		}
 	}
 
 	// First iteration — no context needed

@@ -28,6 +28,7 @@ func openTestDB(t *testing.T) *sql.DB {
 			repo_url        TEXT NOT NULL,
 			provider_key    TEXT NOT NULL DEFAULT '',
 			prompt          TEXT NOT NULL,
+			task_type       TEXT NOT NULL DEFAULT 'code',
 			callback_url    TEXT NOT NULL DEFAULT '',
 			config_json     TEXT NOT NULL DEFAULT '{}',
 			result          TEXT NOT NULL DEFAULT '',

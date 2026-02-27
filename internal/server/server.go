@@ -107,6 +107,8 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, t
 				r.Post("/{taskID}/create-pr", taskHandler.CreatePR)
 			})
 
+			r.Get("/task-types", taskHandler.ListTaskTypes)
+
 			r.Route("/cli", func(r chi.Router) {
 				r.Get("/", cliHandler.List)
 				r.Get("/health", cliHandler.Health)

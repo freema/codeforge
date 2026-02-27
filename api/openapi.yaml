@@ -859,6 +859,29 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v1/task-types:
+    get:
+      summary: List available task types
+      operationId: listTaskTypes
+      tags: [Tasks]
+      description: |
+        Returns the list of available task types with their descriptions.
+        Use this to populate task type selectors in the UI.
+      responses:
+        "200":
+          description: List of task types
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task_types:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TaskTypeInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/v1/cli:
     get:
       summary: List registered CLI tools
@@ -1146,6 +1169,11 @@ components:
           description: Task instruction for the AI
           maxLength: 102400
           example: "Fix the failing tests in the auth module"
+        task_type:
+          type: string
+          description: "Type of task: code (default), plan, or review"
+          enum: [code, plan, review]
+          default: code
         callback_url:
           type: string
           format: uri
@@ -1204,6 +1232,22 @@ components:
             type: string
           description: Environment variables as key-value pairs
 
+    TaskTypeInfo:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Task type identifier
+          example: plan
+        label:
+          type: string
+          description: Human-readable label
+          example: Plan
+        description:
+          type: string
+          description: What this task type does
+          example: "Analyze the codebase and create an implementation plan without modifying files"
+
     Task:
       type: object
       properties:
@@ -1220,6 +1264,10 @@ components:
           description: Name of the registered key used for git auth
         prompt:
           type: string
+        task_type:
+          type: string
+          description: "Type of task: code, plan, or review"
+          enum: [code, plan, review]
         callback_url:
           type: string
         config:
