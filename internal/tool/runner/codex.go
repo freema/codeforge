@@ -36,10 +36,15 @@ func NewCodexRunner(binaryPath string) *CodexRunner {
 
 // Run executes Codex CLI with JSON output, calling OnEvent for each line.
 func (c *CodexRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
+	// --full-auto = --sandbox workspace-write + auto-approve on-request.
+	// We use danger-full-access instead because Codex's Landlock sandbox
+	// does not work inside Docker (missing kernel support / capabilities).
+	// The Docker container itself provides the isolation.
+	// danger-full-access implies no approval prompts, so no extra flag needed.
 	args := []string{
 		"exec",
 		"--json",
-		"--full-auto",
+		"--sandbox", "danger-full-access",
 		"--skip-git-repo-check",
 	}
 	if opts.WorkDir != "" {
