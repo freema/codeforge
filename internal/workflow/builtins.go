@@ -126,6 +126,53 @@ var BuiltinWorkflows = []WorkflowDefinition{
 		},
 	},
 	{
+		Name:        "gitlab-issue-fixer",
+		Description: "Fetches a GitLab issue, creates a task to fix it, then creates a merge request",
+		Builtin:     true,
+		Steps: []StepDefinition{
+			{
+				Name: "fetch_issue",
+				Type: StepTypeFetch,
+				Config: mustJSON(FetchConfig{
+					URL:     "{{repoHost .Params.repo_url}}/api/v4/projects/{{urlEncode (repoPath .Params.repo_url)}}/issues/{{.Params.issue_iid}}",
+					Method:  "GET",
+					KeyName: "{{.Params.key_name}}",
+					Outputs: map[string]string{
+						"title":       "$.title",
+						"description": "$.description",
+						"iid":         "$.iid",
+						"labels":      "$.labels",
+					},
+				}),
+			},
+			{
+				Name: "fix_issue",
+				Type: StepTypeTask,
+				Config: mustJSON(TaskStepConfig{
+					RepoURL:     "{{.Params.repo_url}}",
+					Prompt:       "Fix the following GitLab issue (!{{.Steps.fetch_issue.iid}}):\n\nTitle: {{.Steps.fetch_issue.title}}\n\n{{.Steps.fetch_issue.description}}\n\nAnalyze the codebase, understand the issue, and implement a fix.",
+					ProviderKey: "{{.Params.provider_key}}",
+				}),
+			},
+			{
+				Name: "create_mr",
+				Type: StepTypeAction,
+				Config: mustJSON(ActionConfig{
+					Kind:        ActionCreatePR,
+					TaskStepRef: "fix_issue",
+					Title:       "fix: {{.Steps.fetch_issue.title}} (#{{.Steps.fetch_issue.iid}})",
+					Description: "Closes #{{.Steps.fetch_issue.iid}}\n\n{{.Steps.fetch_issue.title}}",
+				}),
+			},
+		},
+		Parameters: []ParameterDefinition{
+			{Name: "repo_url", Required: true},
+			{Name: "issue_iid", Required: true},
+			{Name: "key_name", Required: true},
+			{Name: "provider_key", Required: false},
+		},
+	},
+	{
 		Name:        "code-review",
 		Description: "Executes a task then runs a code review on the changes in the same workspace",
 		Builtin:     true,

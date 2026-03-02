@@ -70,6 +70,51 @@ func TestRender_OutputLimit(t *testing.T) {
 	}
 }
 
+func TestRender_RepoHostHelper(t *testing.T) {
+	ctx := TemplateContext{
+		Params: map[string]string{"repo_url": "https://gitlab.example.com/group/project.git"},
+	}
+	result, err := Render(`{{repoHost .Params.repo_url}}`, ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "https://gitlab.example.com" {
+		t.Fatalf("expected https://gitlab.example.com, got: %s", result)
+	}
+}
+
+func TestRender_URLEncodeHelper(t *testing.T) {
+	ctx := TemplateContext{
+		Params: map[string]string{"repo_url": "https://gitlab.com/owner/repo.git"},
+	}
+	result, err := Render(`{{urlEncode (repoPath .Params.repo_url)}}`, ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "owner%2Frepo" {
+		t.Fatalf("expected owner%%2Frepo, got: %s", result)
+	}
+}
+
+func TestRepoHost(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"https://gitlab.com/group/project.git", "https://gitlab.com"},
+		{"https://gitlab.example.com/owner/repo", "https://gitlab.example.com"},
+		{"https://github.com/owner/repo.git", "https://github.com"},
+		{"git@gitlab.com:owner/repo.git", "https://gitlab.com"},
+	}
+
+	for _, tc := range tests {
+		got := repoHost(tc.input)
+		if got != tc.want {
+			t.Errorf("repoHost(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
 func TestRepoPath(t *testing.T) {
 	tests := []struct {
 		input string

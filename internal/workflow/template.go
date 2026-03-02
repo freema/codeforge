@@ -3,6 +3,7 @@ package workflow
 import (
 	"bytes"
 	"fmt"
+	"net/url"
 	"strings"
 	"text/template"
 )
@@ -24,6 +25,8 @@ func Render(tmpl string, ctx TemplateContext) (string, error) {
 
 	funcMap := template.FuncMap{
 		"repoPath": repoPath,
+		"repoHost": repoHost,
+		"urlEncode": url.PathEscape,
 	}
 
 	t, err := template.New("workflow").
@@ -44,6 +47,33 @@ func Render(tmpl string, ctx TemplateContext) (string, error) {
 	}
 
 	return buf.String(), nil
+}
+
+// repoHost extracts the base URL (scheme + host) from a repository URL.
+// e.g. "https://gitlab.example.com/owner/repo.git" → "https://gitlab.example.com"
+func repoHost(repoURL string) string {
+	u := strings.TrimSuffix(repoURL, ".git")
+	u = strings.TrimSuffix(u, "/")
+
+	if idx := strings.Index(u, "://"); idx != -1 {
+		scheme := u[:idx+3]
+		rest := u[idx+3:]
+		if slashIdx := strings.Index(rest, "/"); slashIdx != -1 {
+			return scheme + rest[:slashIdx]
+		}
+		return scheme + rest
+	}
+
+	// git@host:owner/repo → https://host
+	if idx := strings.Index(u, "@"); idx != -1 {
+		host := u[idx+1:]
+		if colonIdx := strings.Index(host, ":"); colonIdx != -1 {
+			host = host[:colonIdx]
+		}
+		return "https://" + host
+	}
+
+	return repoURL
 }
 
 // repoPath extracts "owner/repo" from a full repository URL.
