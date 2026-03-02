@@ -6,13 +6,29 @@ import (
 )
 
 // Server defines an MCP server configuration.
+// Transport determines the connection type:
+//   - "stdio" (default): launches a local process (command + package + args)
+//   - "http": connects to a remote HTTP endpoint (url + headers)
 type Server struct {
 	Name      string            `json:"name"`
-	Command   string            `json:"command,omitempty"` // e.g. "npx", "uvx", "docker"; defaults to "npx"
-	Package   string            `json:"package"`
-	Args      []string          `json:"args,omitempty"`
-	Env       map[string]string `json:"env,omitempty"`
-	CreatedAt time.Time         `json:"created_at,omitempty"`
+	Transport string            `json:"transport,omitempty"` // "stdio" (default) or "http"
+
+	// stdio fields
+	Command string   `json:"command,omitempty"` // e.g. "npx", "uvx", "docker"; defaults to "npx"
+	Package string   `json:"package,omitempty"`
+	Args    []string `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+
+	// http fields
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+
+	CreatedAt time.Time `json:"created_at,omitempty"`
+}
+
+// IsHTTP returns true if the server uses HTTP transport.
+func (s *Server) IsHTTP() bool {
+	return s.Transport == "http"
 }
 
 // Registry manages MCP server configurations.

@@ -13,13 +13,14 @@ type Runner interface {
 
 // RunOptions configures a CLI run.
 type RunOptions struct {
-	Prompt       string
-	WorkDir      string
-	Model        string
-	APIKey       string
-	MaxTurns     int
-	MaxBudgetUSD float64
-	OnEvent      func(event json.RawMessage)
+	Prompt        string
+	WorkDir       string
+	Model         string
+	APIKey        string
+	MaxTurns      int
+	MaxBudgetUSD  float64
+	MCPConfigPath string // path to .mcp.json (Claude Code --mcp-config)
+	OnEvent       func(event json.RawMessage)
 }
 
 // RunResult holds the output of a CLI run.

@@ -37,6 +37,19 @@ func (i *Installer) Setup(ctx context.Context, workDir string, projectID string,
 func WriteMCPConfig(workDir string, servers []Server) error {
 	mcpServers := make(map[string]interface{})
 	for _, srv := range servers {
+		if srv.IsHTTP() {
+			entry := map[string]interface{}{
+				"type": "http",
+				"url":  srv.URL,
+			}
+			if len(srv.Headers) > 0 {
+				entry["headers"] = srv.Headers
+			}
+			mcpServers[srv.Name] = entry
+			continue
+		}
+
+		// stdio transport
 		command := srv.Command
 		if command == "" {
 			command = "npx"

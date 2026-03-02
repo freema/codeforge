@@ -66,10 +66,18 @@ func (r *SQLiteRegistry) ResolveMCPServers(ctx context.Context, projectID string
 func (r *SQLiteRegistry) create(ctx context.Context, scope string, srv Server) error {
 	argsJSON, _ := json.Marshal(srv.Args)
 	envJSON, _ := json.Marshal(srv.Env)
+	headersJSON, _ := json.Marshal(srv.Headers)
+
+	transport := srv.Transport
+	if transport == "" {
+		transport = "stdio"
+	}
 
 	_, err := r.db.ExecContext(ctx,
-		"INSERT INTO mcp_servers (name, scope, package, args, env) VALUES (?, ?, ?, ?, ?)",
-		srv.Name, scope, srv.Package, string(argsJSON), string(envJSON),
+		`INSERT INTO mcp_servers (name, scope, transport, command, package, args, env, url, headers)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		srv.Name, scope, transport, srv.Command, srv.Package,
+		string(argsJSON), string(envJSON), srv.URL, string(headersJSON),
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
@@ -83,11 +91,13 @@ func (r *SQLiteRegistry) create(ctx context.Context, scope string, srv Server) e
 
 func (r *SQLiteRegistry) get(ctx context.Context, scope, name string) (*Server, error) {
 	var srv Server
-	var argsJSON, envJSON, createdAt string
+	var argsJSON, envJSON, headersJSON, createdAt string
 	err := r.db.QueryRowContext(ctx,
-		"SELECT name, package, args, env, created_at FROM mcp_servers WHERE scope = ? AND name = ?",
+		`SELECT name, transport, command, package, args, env, url, headers, created_at
+		 FROM mcp_servers WHERE scope = ? AND name = ?`,
 		scope, name,
-	).Scan(&srv.Name, &srv.Package, &argsJSON, &envJSON, &createdAt)
+	).Scan(&srv.Name, &srv.Transport, &srv.Command, &srv.Package,
+		&argsJSON, &envJSON, &srv.URL, &headersJSON, &createdAt)
 	if err == sql.ErrNoRows {
 		return nil, apperror.NotFound("MCP server not found")
 	}
@@ -97,6 +107,7 @@ func (r *SQLiteRegistry) get(ctx context.Context, scope, name string) (*Server, 
 
 	_ = json.Unmarshal([]byte(argsJSON), &srv.Args)
 	_ = json.Unmarshal([]byte(envJSON), &srv.Env)
+	_ = json.Unmarshal([]byte(headersJSON), &srv.Headers)
 	srv.CreatedAt, _ = time.Parse("2006-01-02T15:04:05.000", createdAt)
 
 	return &srv, nil
@@ -104,7 +115,8 @@ func (r *SQLiteRegistry) get(ctx context.Context, scope, name string) (*Server, 
 
 func (r *SQLiteRegistry) list(ctx context.Context, scope string) ([]Server, error) {
 	rows, err := r.db.QueryContext(ctx,
-		"SELECT name, package, args, env, created_at FROM mcp_servers WHERE scope = ? ORDER BY created_at",
+		`SELECT name, transport, command, package, args, env, url, headers, created_at
+		 FROM mcp_servers WHERE scope = ? ORDER BY created_at`,
 		scope,
 	)
 	if err != nil {
@@ -115,12 +127,14 @@ func (r *SQLiteRegistry) list(ctx context.Context, scope string) ([]Server, erro
 	servers := make([]Server, 0)
 	for rows.Next() {
 		var srv Server
-		var argsJSON, envJSON, createdAt string
-		if err := rows.Scan(&srv.Name, &srv.Package, &argsJSON, &envJSON, &createdAt); err != nil {
+		var argsJSON, envJSON, headersJSON, createdAt string
+		if err := rows.Scan(&srv.Name, &srv.Transport, &srv.Command, &srv.Package,
+			&argsJSON, &envJSON, &srv.URL, &headersJSON, &createdAt); err != nil {
 			return nil, fmt.Errorf("scanning MCP server: %w", err)
 		}
 		_ = json.Unmarshal([]byte(argsJSON), &srv.Args)
 		_ = json.Unmarshal([]byte(envJSON), &srv.Env)
+		_ = json.Unmarshal([]byte(headersJSON), &srv.Headers)
 		srv.CreatedAt, _ = time.Parse("2006-01-02T15:04:05.000", createdAt)
 		servers = append(servers, srv)
 	}

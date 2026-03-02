@@ -43,6 +43,9 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 		"--verbose",
 		"--permission-mode", "bypassPermissions",
 	}
+	if opts.MCPConfigPath != "" {
+		args = append(args, "--mcp-config", opts.MCPConfigPath)
+	}
 	if opts.Model != "" {
 		args = append(args, "--model", opts.Model)
 	}

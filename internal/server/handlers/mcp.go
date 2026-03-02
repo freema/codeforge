@@ -25,17 +25,23 @@ func NewMCPHandler(registry mcp.Registry) *MCPHandler {
 // CreateGlobal handles POST /api/v1/mcp/servers.
 func (h *MCPHandler) CreateGlobal(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name    string            `json:"name" validate:"required"`
-		Package string            `json:"package" validate:"required"`
+		Name      string            `json:"name" validate:"required"`
+		Transport string            `json:"transport,omitempty"` // "stdio" (default) or "http"
+		// stdio fields
+		Package string            `json:"package,omitempty"`
+		Command string            `json:"command,omitempty"`
 		Args    []string          `json:"args,omitempty"`
 		Env     map[string]string `json:"env,omitempty"`
+		// http fields
+		URL     string            `json:"url,omitempty"`
+		Headers map[string]string `json:"headers,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	if err := validate.Struct(req); err != nil {
-		writeError(w, http.StatusBadRequest, "name and package are required")
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
 	if !validName.MatchString(req.Name) {
@@ -43,11 +49,36 @@ func (h *MCPHandler) CreateGlobal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	transport := req.Transport
+	if transport == "" {
+		transport = "stdio"
+	}
+
+	switch transport {
+	case "http":
+		if req.URL == "" {
+			writeError(w, http.StatusBadRequest, "url is required for http transport")
+			return
+		}
+	case "stdio":
+		if req.Package == "" {
+			writeError(w, http.StatusBadRequest, "package is required for stdio transport")
+			return
+		}
+	default:
+		writeError(w, http.StatusBadRequest, "transport must be 'stdio' or 'http'")
+		return
+	}
+
 	srv := mcp.Server{
-		Name:    req.Name,
-		Package: req.Package,
-		Args:    req.Args,
-		Env:     req.Env,
+		Name:      req.Name,
+		Transport: transport,
+		Command:   req.Command,
+		Package:   req.Package,
+		Args:      req.Args,
+		Env:       req.Env,
+		URL:       req.URL,
+		Headers:   req.Headers,
 	}
 
 	if err := h.registry.CreateGlobal(r.Context(), srv); err != nil {

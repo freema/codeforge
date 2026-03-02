@@ -189,26 +189,37 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 	}
 
 	// Setup MCP servers (generate .mcp.json)
+	var mcpConfigPath string
 	if e.mcpInstaller != nil {
 		var taskMCPServers []mcp.Server
 		if t.Config != nil {
 			for _, s := range t.Config.MCPServers {
 				taskMCPServers = append(taskMCPServers, mcp.Server{
-					Name:    s.Name,
-					Package: s.Command, // task model uses "command" as package
-					Args:    s.Args,
-					Env:     s.Env,
+					Name:      s.Name,
+					Transport: s.Transport,
+					Command:   s.Command,
+					Package:   s.Command, // task model uses "command" as package for stdio
+					Args:      s.Args,
+					Env:       s.Env,
+					URL:       s.URL,
+					Headers:   s.Headers,
 				})
 			}
 		}
 		taskMCPServers = append(taskMCPServers, toolMCPServers...)
 		if err := e.mcpInstaller.Setup(taskCtx, workDir, t.RepoURL, taskMCPServers); err != nil {
 			log.Warn("MCP setup failed (continuing without MCP)", "error", err)
+		} else {
+			cfgPath := filepath.Join(workDir, ".mcp.json")
+			if _, statErr := os.Stat(cfgPath); statErr == nil {
+				mcpConfigPath = cfgPath
+				log.Info("MCP config written", "path", cfgPath)
+			}
 		}
 	}
 
 	// Run CLI
-	result, err := e.runStep(taskCtx, t, workDir, log)
+	result, err := e.runStep(taskCtx, t, workDir, mcpConfigPath, log)
 	if err != nil {
 		if taskCtx.Err() == context.DeadlineExceeded {
 			_ = e.streamer.EmitSystem(ctx, t.ID, "task_timeout", map[string]interface{}{
@@ -381,7 +392,7 @@ func (e *Executor) pullBranch(ctx context.Context, t *task.Task, workDir string,
 	}
 }
 
-func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, log *slog.Logger) (*runner.RunResult, error) {
+func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, mcpConfigPath string, log *slog.Logger) (*runner.RunResult, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "task.run")
 	defer span.End()
 
@@ -444,12 +455,13 @@ func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, lo
 	}
 
 	result, err := cliRunner.Run(ctx, runner.RunOptions{
-		Prompt:       prompt,
-		WorkDir:      workDir,
-		Model:        model,
-		APIKey:       apiKey,
-		MaxTurns:     maxTurns,
-		MaxBudgetUSD: maxBudget,
+		Prompt:        prompt,
+		WorkDir:       workDir,
+		Model:         model,
+		APIKey:        apiKey,
+		MaxTurns:      maxTurns,
+		MaxBudgetUSD:  maxBudget,
+		MCPConfigPath: mcpConfigPath,
 		OnEvent: func(event json.RawMessage) {
 			if normalizer != nil {
 				if normalized := normalizer.Normalize(event); normalized != nil {
