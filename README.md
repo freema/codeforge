@@ -140,9 +140,10 @@ task dev
 ## Roadmap
 
 - [x] **Multi-Step Workflows** — Orchestrate fetch → task → action pipelines with built-in templates (sentry-fixer, github-issue-fixer)
-- [ ] **Multi-CLI Support** — Runners for OpenCode, Codex, and other AI coding CLIs alongside Claude Code
+- [x] **Multi-CLI Support** — Claude Code + Codex runners with stream normalization; OpenCode and Aider planned
+- [x] **Code Review** — User-triggered review of task changes via `POST /tasks/:id/review` with structured output
+- [x] **Task Types** — Task type system (code, plan, review) with prompt templates and `GET /api/v1/task-types` endpoint
 - [ ] **Task Sessions** — Cross-task memory for projects; remember context from previous tasks on the same repository
-- [ ] **Code Review** — Automated review of changes by a separate model before creating a pull request
 - [ ] **Enhanced PR Messages** — Richer pull request descriptions with structured sections and conventional commits
 - [ ] **Subscription & Multi-User Auth** — Per-user API keys, usage tracking, and subscription management
 

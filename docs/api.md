@@ -128,6 +128,7 @@ Request:
 {
   "repo_url": "https://github.com/user/repo.git",
   "prompt": "Fix the failing tests in the auth module",
+  "task_type": "code",
   "provider_key": "my-github-key",
   "access_token": "ghp_xxx",
   "callback_url": "https://your-app.com/webhook",
@@ -160,6 +161,7 @@ Request:
 |-------|------|----------|-------------|
 | `repo_url` | string | yes | Git repository URL |
 | `prompt` | string | yes | Task instruction (max 100KB) |
+| `task_type` | string | no | Task type: `code` (default), `plan`, `review` |
 | `provider_key` | string | no | Name of registered key for git auth |
 | `access_token` | string | no | Inline git access token (never returned in responses) |
 | `callback_url` | string | no | Webhook URL for completion notification |
@@ -208,6 +210,7 @@ Response `200`:
     {
       "id": "77a2ffbd-...",
       "status": "completed",
+      "task_type": "code",
       "repo_url": "https://github.com/user/repo.git",
       "prompt": "Fix the failing tests",
       "iteration": 1,
@@ -239,6 +242,7 @@ Response `200`:
 {
   "id": "77a2ffbd-...",
   "status": "completed",
+  "task_type": "code",
   "repo_url": "https://github.com/user/repo.git",
   "prompt": "Fix the failing tests",
   "result": "I fixed the authentication tests by...",
@@ -552,6 +556,51 @@ while (true) {
 ```
 
 **Polling fallback:** If SSE is not feasible, poll `GET /api/v1/tasks/{id}` every 2-5 seconds.
+
+---
+
+## Task Types
+
+### List Task Types
+
+Returns available task types for the frontend toggle buttons.
+
+```
+GET /api/v1/task-types
+```
+
+Response `200`:
+```json
+{
+  "task_types": [
+    {
+      "name": "code",
+      "label": "Code",
+      "description": "Write or modify code based on the prompt"
+    },
+    {
+      "name": "plan",
+      "label": "Plan",
+      "description": "Analyze the codebase and create an implementation plan without modifying files"
+    },
+    {
+      "name": "review",
+      "label": "Review",
+      "description": "Review repository code quality, security, and architecture"
+    }
+  ]
+}
+```
+
+**Task type behavior:**
+
+| Type | Template | Behavior |
+|------|----------|----------|
+| `code` | None (user prompt as-is) | Default — writes/modifies code |
+| `plan` | `plan.md` | Read-only analysis, creates implementation plan, does NOT modify files |
+| `review` | `review.md` | Reviews code quality with structured JSON output, does NOT modify files |
+
+Note: The `review` task type is different from `POST /tasks/:id/review`. The endpoint reviews **changes of a specific task** (git diff). The task type reviews the **entire repository** as a new task.
 
 ---
 
@@ -1117,13 +1166,15 @@ All errors follow this structure:
 
 ```
 1. Verify auth       → GET  /api/v1/auth/verify
-2. List repos        → GET  /api/v1/repositories?provider_key=...
-3. Create task       → POST /api/v1/tasks  {repo_url, prompt}
-4. Stream progress   → GET  /api/v1/tasks/{id}/stream  (SSE)
-5. View result       → GET  /api/v1/tasks/{id}
-6. (optional) Review → POST /api/v1/tasks/{id}/review
-7. (optional) Fix    → POST /api/v1/tasks/{id}/instruct  {prompt}
-8. (optional) PR     → POST /api/v1/tasks/{id}/create-pr
+2. Load task types   → GET  /api/v1/task-types
+3. List repos        → GET  /api/v1/repositories?provider_key=...
+4. Create task       → POST /api/v1/tasks  {repo_url, prompt, task_type}
+5. Stream progress   → GET  /api/v1/tasks/{id}/stream  (SSE)
+6. View result       → GET  /api/v1/tasks/{id}
+7. (optional) Review → POST /api/v1/tasks/{id}/review
+8. (optional) Fix    → POST /api/v1/tasks/{id}/instruct  {prompt}
+9. (optional) PR     → POST /api/v1/tasks/{id}/create-pr
 ```
 
-Steps 6-8 are repeatable in any order. The user decides what to do after each step.
+Steps 7-9 are repeatable in any order. The user decides what to do after each step.
+Step 2 can be cached — task types don't change at runtime.

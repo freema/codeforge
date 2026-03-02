@@ -95,7 +95,7 @@ internal/
   keys/                 Access key registry + 3-tier resolver
   logger/               Structured logging (slog)
   metrics/              Prometheus metric definitions
-  prompt/               Prompt templates (embed FS, code review template)
+  prompt/               Prompt templates (embed FS, task types + code review)
   redisclient/          Redis client wrapper
   review/               Code review service (reviewer, parser, models)
   server/               HTTP server + handlers + middleware
@@ -133,4 +133,6 @@ tasks/                  Planning documents (not code)
 - **Git auth**: `GIT_ASKPASS` helper, never URL-embedded tokens
 - **Sensitive fields**: encrypted in Redis (AES-256-GCM), never in API responses (`json:"-"`)
 - **Multi-CLI**: tasks can specify `cli: "claude-code"` or `cli: "codex"` — registry resolves to runner
+- **Task types**: `code` (default), `plan`, `review` — each wraps the user prompt with a template in the executor. New types: add template in `internal/prompt/templates/`, register in `prompt.go`
+- **Stream normalizers**: each CLI has its own normalizer (`normalizer_claude.go`, `normalizer_codex.go`) mapping raw events to `NormalizedEvent`. New CLIs need a corresponding normalizer
 - **Review as action**: code review is triggered by user via endpoint, not automatic in executor

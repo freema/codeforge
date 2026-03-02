@@ -53,16 +53,18 @@ Client (ScopeBot / curl)
 ### CLI Runner (`internal/tool/runner/`)
 - `Runner` interface for pluggable AI tools
 - **Claude Code** runner: `--output-format stream-json` parsing, supports MaxTurns and MaxBudgetUSD
-- **Codex** runner: JSONL stream parsing (`--json --full-auto`), `CODEX_API_KEY` env var
+- **Codex** runner: JSONL stream parsing (`--json --sandbox danger-full-access`), `CODEX_API_KEY` env var. Uses `danger-full-access` sandbox because Codex's Landlock sandbox does not work inside Docker (missing kernel support / capabilities). The Docker container itself provides isolation.
 - Registry maps CLI names to Runner implementations
 - Selected per-task via `config.cli` field (default: `claude-code`)
 - Result extraction: prefers the `type: "result"` event text; falls back to the last `type: "assistant"` message text
 
-### Stream Normalization (`internal/worker/normalizer.go`)
+### Stream Normalization (`internal/tool/runner/`)
 - Converts CLI-specific events into a common stream format
 - Normalized event types: `thinking`, `text`, `tool_use`, `tool_result`, `result`, `error`, `system`
 - Both Claude Code and Codex output gets normalized before being sent to SSE clients
 - FE consumers only need to handle normalized event types
+- **Claude Code** normalizer: maps `assistant` blocks (thinking/text), `tool_use`/`tool_result`, `result`
+- **Codex** normalizer: maps `item.completed` events — `agent_message` → `text`, `function_call` → `tool_use`, `function_call_output` → `tool_result`, `command_execution` → `tool_result`, `turn.completed` → `result`
 
 ### Streaming
 
@@ -86,6 +88,16 @@ Client (ScopeBot / curl)
 - `otelhttp` wraps `http.ResponseWriter` without `http.Flusher` support — SSE requests bypass `otelhttp` via path-suffix check in `server.go`
 - The PrometheusMetrics middleware's `responseWriter` implements `Flush()` (delegates to underlying writer) and `Unwrap()` (for `http.ResponseController` compatibility)
 - Global `http.Server.WriteTimeout` is set to `0` (disabled) — SSE handler manages its own deadlines
+
+### Task Type System (`internal/prompt/`)
+- Three task types: `code` (default), `plan`, `review` — each with different behavior
+- **code**: no template wrapping, user prompt passed directly to CLI
+- **plan**: wraps user prompt in `plan.md` template — instructs AI to analyze repo and create implementation plan without modifying files
+- **review**: wraps user prompt in `review.md` template — instructs AI to review code quality with structured JSON output, read-only
+- Templates rendered via Go `text/template` with `embed.FS`
+- Template rendering happens in the executor (`buildPrompt()`) at runtime, NOT at task creation time
+- `Task.Prompt` always stores the original user prompt (displayed in FE), template is applied only when running the CLI
+- `GET /api/v1/task-types` endpoint returns available types for FE toggle buttons
 
 ### Review System (`internal/review/`)
 - **User-triggered action**, NOT an automatic step — user calls `POST /tasks/:id/review`
@@ -249,7 +261,7 @@ internal/
   keys/                 # Access key registry + resolver
   logger/               # Structured logging (slog)
   metrics/              # Prometheus metric definitions
-  prompt/               # Prompt templates (embed FS, code review)
+  prompt/               # Prompt templates (embed FS, task types + code review)
   redisclient/          # Redis client wrapper
   review/               # Code review service (reviewer, parser, models)
   server/               # HTTP server + handlers + middleware
