@@ -23,8 +23,8 @@ func NewSQLiteRegistry(db *sql.DB, cryptoSvc *crypto.Service) *SQLiteRegistry {
 }
 
 func (r *SQLiteRegistry) Create(ctx context.Context, key Key) error {
-	if key.Provider != "github" && key.Provider != "gitlab" {
-		return apperror.Validation("provider must be 'github' or 'gitlab'")
+	if key.Provider != "github" && key.Provider != "gitlab" && key.Provider != "sentry" {
+		return apperror.Validation("provider must be 'github', 'gitlab', or 'sentry'")
 	}
 
 	encrypted, err := r.crypto.Encrypt(key.Token)

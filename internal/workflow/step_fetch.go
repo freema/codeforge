@@ -73,7 +73,7 @@ func (e *FetchExecutor) Execute(ctx context.Context, stepDef StepDefinition, tct
 				return nil, fmt.Errorf("resolving key '%s': %w", keyName, err)
 			}
 			switch provider {
-			case "github":
+			case "github", "sentry":
 				req.Header.Set("Authorization", "Bearer "+token)
 			case "gitlab":
 				req.Header.Set("PRIVATE-TOKEN", token)

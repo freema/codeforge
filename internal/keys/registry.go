@@ -45,6 +45,8 @@ func verifyToken(ctx context.Context, provider, token string) *VerifyResult {
 		return verifyGitHub(ctx, token)
 	case "gitlab":
 		return verifyGitLab(ctx, token)
+	case "sentry":
+		return verifySentry(ctx, token)
 	default:
 		return &VerifyResult{Valid: false, Error: "unsupported provider"}
 	}
@@ -87,6 +89,48 @@ func verifyGitHub(ctx context.Context, token string) *VerifyResult {
 		Username: user.Login,
 		Email:    user.Email,
 		Scopes:   resp.Header.Get("X-OAuth-Scopes"),
+	}
+}
+
+func verifySentry(ctx context.Context, token string) *VerifyResult {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://sentry.io/api/0/organizations/", nil)
+	if err != nil {
+		return &VerifyResult{Valid: false, Error: "failed to create request"}
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return &VerifyResult{Valid: false, Error: "connection failed"}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return &VerifyResult{Valid: false, Error: "invalid or expired token"}
+	}
+	if resp.StatusCode != http.StatusOK {
+		return &VerifyResult{Valid: false, Error: fmt.Sprintf("unexpected status %d", resp.StatusCode)}
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	if err != nil {
+		return &VerifyResult{Valid: true}
+	}
+
+	var orgs []struct {
+		Slug string `json:"slug"`
+		Name string `json:"name"`
+	}
+	_ = json.Unmarshal(body, &orgs)
+
+	scopes := ""
+	if len(orgs) > 0 {
+		scopes = fmt.Sprintf("%d organization(s)", len(orgs))
+	}
+
+	return &VerifyResult{
+		Valid:  true,
+		Scopes: scopes,
 	}
 }
 
