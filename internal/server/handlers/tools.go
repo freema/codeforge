@@ -26,6 +26,8 @@ func (h *ToolHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Type           tools.ToolType      `json:"type" validate:"required"`
 		Description    string              `json:"description"`
 		Version        string              `json:"version"`
+		MCPTransport   string              `json:"mcp_transport"`
+		MCPURL         string              `json:"mcp_url"`
 		MCPPackage     string              `json:"mcp_package"`
 		MCPCommand     string              `json:"mcp_command"`
 		MCPArgs        []string            `json:"mcp_args"`
@@ -51,6 +53,8 @@ func (h *ToolHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Type:           req.Type,
 		Description:    req.Description,
 		Version:        req.Version,
+		MCPTransport:   req.MCPTransport,
+		MCPURL:         req.MCPURL,
 		MCPPackage:     req.MCPPackage,
 		MCPCommand:     req.MCPCommand,
 		MCPArgs:        req.MCPArgs,

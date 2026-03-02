@@ -10,11 +10,11 @@ import (
 
 var builtinTools = []ToolDefinition{
 	{
-		Name:        "sentry",
-		Type:        ToolTypeMCP,
-		Description: "Sentry error tracking — search issues, get stack traces, resolve errors",
-		MCPPackage:  "@sentry/mcp-server",
-		MCPCommand:  "npx",
+		Name:         "sentry",
+		Type:         ToolTypeMCP,
+		Description:  "Sentry error tracking — search issues, get stack traces, resolve errors",
+		MCPTransport: "http",
+		MCPURL:       "https://mcp.sentry.dev/mcp",
 		RequiredConfig: []ConfigField{
 			{Name: "auth_token", Description: "Sentry authentication token", Type: "secret", EnvVar: "SENTRY_AUTH_TOKEN", Sensitive: true},
 		},
@@ -48,8 +48,8 @@ var builtinTools = []ToolDefinition{
 		Name:        "github",
 		Type:        ToolTypeMCP,
 		Description: "GitHub — issues, PRs, repos, actions via GitHub MCP server",
-		MCPPackage:  "ghcr.io/github/github-mcp-server",
-		MCPCommand:  "docker",
+		MCPPackage:  "@modelcontextprotocol/server-github",
+		MCPCommand:  "npx",
 		RequiredConfig: []ConfigField{
 			{Name: "token", Description: "GitHub personal access token", Type: "secret", EnvVar: "GITHUB_PERSONAL_ACCESS_TOKEN", Sensitive: true},
 		},

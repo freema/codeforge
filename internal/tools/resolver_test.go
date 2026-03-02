@@ -100,8 +100,11 @@ func TestResolver_BuiltinFallback(t *testing.T) {
 	if len(instances) != 1 {
 		t.Fatalf("expected 1 instance, got %d", len(instances))
 	}
-	if instances[0].Definition.MCPPackage != "@sentry/mcp-server" {
-		t.Errorf("MCPPackage = %q, want @sentry/mcp-server", instances[0].Definition.MCPPackage)
+	if instances[0].Definition.MCPTransport != "http" {
+		t.Errorf("MCPTransport = %q, want http", instances[0].Definition.MCPTransport)
+	}
+	if instances[0].Definition.MCPURL != "https://mcp.sentry.dev/mcp" {
+		t.Errorf("MCPURL = %q, want https://mcp.sentry.dev/mcp", instances[0].Definition.MCPURL)
 	}
 }
 

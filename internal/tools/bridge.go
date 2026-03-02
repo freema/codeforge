@@ -14,12 +14,33 @@ func ToMCPServers(instances []ToolInstance) []mcp.Server {
 	servers := make([]mcp.Server, 0, len(instances))
 	for _, inst := range instances {
 		def := inst.Definition
+
+		if def.MCPTransport == "http" {
+			if def.MCPURL == "" {
+				continue // skip HTTP tools without URL
+			}
+			headers := make(map[string]string)
+			mapConfigToEnv(def.RequiredConfig, inst.Config, headers)
+			mapConfigToEnv(def.OptionalConfig, inst.Config, headers)
+
+			srv := mcp.Server{
+				Name:      def.Name,
+				Transport: "http",
+				URL:       def.MCPURL,
+			}
+			if len(headers) > 0 {
+				srv.Headers = headers
+			}
+			servers = append(servers, srv)
+			continue
+		}
+
+		// stdio transport
 		if def.MCPPackage == "" {
-			continue // skip tools without MCP backing
+			continue // skip stdio tools without package
 		}
 
 		env := make(map[string]string)
-		// Map config values to env vars based on field definitions
 		mapConfigToEnv(def.RequiredConfig, inst.Config, env)
 		mapConfigToEnv(def.OptionalConfig, inst.Config, env)
 

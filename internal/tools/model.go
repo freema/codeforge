@@ -17,8 +17,10 @@ type ToolDefinition struct {
 	Type           ToolType      `json:"type"`
 	Description    string        `json:"description"`
 	Version        string        `json:"version,omitempty"`
-	MCPPackage     string        `json:"mcp_package,omitempty"`
-	MCPCommand     string        `json:"mcp_command,omitempty"`
+	MCPTransport   string        `json:"mcp_transport,omitempty"` // "stdio" (default) or "http"
+	MCPURL         string        `json:"mcp_url,omitempty"`       // URL for http transport
+	MCPPackage     string        `json:"mcp_package,omitempty"`   // package for stdio transport
+	MCPCommand     string        `json:"mcp_command,omitempty"`   // command for stdio transport (npx, uvx, docker)
 	MCPArgs        []string      `json:"mcp_args,omitempty"`
 	RequiredConfig []ConfigField `json:"required_config,omitempty"`
 	OptionalConfig []ConfigField `json:"optional_config,omitempty"`
