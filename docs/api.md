@@ -654,7 +654,7 @@ Response `503`:
 
 ## Keys
 
-Manage encrypted access keys for git providers (GitHub, GitLab). Tokens are encrypted with AES-256-GCM and never returned in API responses.
+Manage encrypted access keys for providers (GitHub, GitLab, Sentry). Tokens are encrypted with AES-256-GCM and never returned in API responses.
 
 ### Register Key
 
@@ -668,6 +668,17 @@ POST /api/v1/keys
   "provider": "github",
   "token": "ghp_xxx",
   "scope": "org/repo"
+}
+```
+
+Provider values: `github`, `gitlab`, `sentry`
+
+Sentry example:
+```json
+{
+  "name": "my-sentry",
+  "provider": "sentry",
+  "token": "sntrys_xxx"
 }
 ```
 
@@ -773,24 +784,99 @@ Response `200`:
 
 ---
 
+## Sentry Proxy
+
+Proxy endpoints for browsing Sentry data. All endpoints require a `key_name` query param pointing to a stored Sentry key. Responses from Sentry are forwarded as-is (list endpoints wrapped in a named object).
+
+### List Organizations
+
+```
+GET /api/v1/sentry/organizations?key_name=my-sentry
+```
+
+### List Projects
+
+```
+GET /api/v1/sentry/projects?key_name=my-sentry&org=my-org
+```
+
+### List Issues
+
+```
+GET /api/v1/sentry/issues?key_name=my-sentry&org=my-org&project=my-project
+```
+
+| Query Param | Default | Description |
+|-------------|---------|-------------|
+| `key_name` | — | Stored Sentry key name (required) |
+| `org` | — | Sentry organization slug (required) |
+| `project` | — | Sentry project slug (required) |
+| `query` | `is:unresolved` | Sentry search query |
+| `sort` | — | Sort order (freq, date, priority) |
+| `limit` | 50 | Max results |
+
+### Get Issue Detail
+
+```
+GET /api/v1/sentry/issues/{issueID}?key_name=my-sentry
+```
+
+Returns raw Sentry issue JSON (title, culprit, count, metadata, etc.).
+
+### Get Latest Event
+
+```
+GET /api/v1/sentry/issues/{issueID}/latest-event?key_name=my-sentry
+```
+
+Returns full event with stack trace, breadcrumbs, tags, and context.
+
+---
+
 ## MCP Servers
 
 Manage global MCP (Model Context Protocol) servers. These are injected into the Claude Code `.mcp.json` at task runtime.
 
 ### Register MCP Server
 
+Supports two transport types: `stdio` (local process) and `http` (remote server).
+
 ```
 POST /api/v1/mcp/servers
 ```
 
+Stdio transport (default):
 ```json
 {
   "name": "context7",
+  "transport": "stdio",
   "package": "@anthropic-ai/context7",
+  "command": "npx",
   "args": ["--transport", "stdio"],
   "env": { "API_KEY": "xxx" }
 }
 ```
+
+HTTP transport:
+```json
+{
+  "name": "context7",
+  "transport": "http",
+  "url": "https://mcp.context7.com/mcp",
+  "headers": { "CONTEXT7_API_KEY": "xxx" }
+}
+```
+
+| Field | Transport | Required | Description |
+|-------|-----------|----------|-------------|
+| `name` | both | yes | Unique server name |
+| `transport` | both | no | `stdio` (default) or `http` |
+| `package` | stdio | yes | NPM package or binary path |
+| `command` | stdio | no | Command (npx, uvx, docker) |
+| `args` | stdio | no | Command arguments |
+| `env` | stdio | no | Environment variables |
+| `url` | http | yes | Server URL |
+| `headers` | http | no | HTTP headers |
 
 ### List MCP Servers
 
@@ -803,9 +889,9 @@ GET /api/v1/mcp/servers
   "servers": [
     {
       "name": "context7",
-      "package": "@anthropic-ai/context7",
-      "args": ["--transport", "stdio"],
-      "env": { "API_KEY": "xxx" }
+      "transport": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": { "CONTEXT7_API_KEY": "xxx" }
     }
   ]
 }
@@ -993,7 +1079,7 @@ POST /api/v1/workflows
 
 **Template syntax:** `{{.Params.key}}` for inputs, `{{.Steps.step_name.field}}` for step outputs.
 
-**Built-in workflows:** `sentry-fixer`, `github-issue-fixer`, `code-review`.
+**Built-in workflows:** `sentry-fixer`, `github-issue-fixer`, `gitlab-issue-fixer`, `code-review`.
 
 ### List Workflows
 

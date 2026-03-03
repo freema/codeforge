@@ -398,7 +398,8 @@ paths:
                   example: my-github-key
                 provider:
                   type: string
-                  description: Git provider (github, gitlab)
+                  description: Provider type
+                  enum: [github, gitlab, sentry]
                   example: github
                 token:
                   type: string
@@ -457,7 +458,7 @@ paths:
       operationId: verifyKey
       tags: [Keys]
       description: |
-        Decrypts the stored token and validates it against the provider API (GitHub/GitLab).
+        Decrypts the stored token and validates it against the provider API (GitHub/GitLab/Sentry).
         Returns token validity, associated username, email, and scopes.
         Use this to show a green/red status indicator in the UI after adding a key.
       parameters:
@@ -517,24 +518,44 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, package]
+              required: [name]
               properties:
                 name:
                   type: string
                   description: Unique server name
                   example: context7
+                transport:
+                  type: string
+                  enum: [stdio, http]
+                  default: stdio
+                  description: Transport type (stdio for local process, http for remote)
                 package:
                   type: string
-                  description: NPM package or binary path
+                  description: NPM package or binary path (required for stdio transport)
                   example: "@anthropic-ai/context7"
+                command:
+                  type: string
+                  description: Command to run (e.g. npx, uvx) — stdio transport only
                 args:
                   type: array
                   items:
                     type: string
+                  description: Command arguments — stdio transport only
                 env:
                   type: object
                   additionalProperties:
                     type: string
+                  description: Environment variables — stdio transport only
+                url:
+                  type: string
+                  format: uri
+                  description: Server URL (required for http transport)
+                  example: "https://mcp.context7.com/mcp"
+                headers:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: HTTP headers — http transport only
       responses:
         "201":
           description: MCP server registered
@@ -657,6 +678,218 @@ paths:
           $ref: "#/components/responses/NotFound"
         "502":
           description: Provider API error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/sentry/organizations:
+    get:
+      summary: List Sentry organizations
+      operationId: listSentryOrganizations
+      tags: [Sentry]
+      description: Proxies request to Sentry API using a stored auth token.
+      parameters:
+        - name: key_name
+          in: query
+          required: true
+          description: Name of the stored Sentry key
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of Sentry organizations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organizations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        slug:
+                          type: string
+                        name:
+                          type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          description: Sentry API error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/sentry/projects:
+    get:
+      summary: List Sentry projects in an organization
+      operationId: listSentryProjects
+      tags: [Sentry]
+      parameters:
+        - name: key_name
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: org
+          in: query
+          required: true
+          description: Sentry organization slug
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of Sentry projects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        slug:
+                          type: string
+                        name:
+                          type: string
+                        platform:
+                          type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          description: Sentry API error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/sentry/issues:
+    get:
+      summary: List Sentry issues for a project
+      operationId: listSentryIssues
+      tags: [Sentry]
+      parameters:
+        - name: key_name
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: org
+          in: query
+          required: true
+          description: Sentry organization slug
+          schema:
+            type: string
+        - name: project
+          in: query
+          required: true
+          description: Sentry project slug
+          schema:
+            type: string
+        - name: query
+          in: query
+          description: Sentry search query (default "is:unresolved")
+          schema:
+            type: string
+        - name: sort
+          in: query
+          description: Sort order (e.g. freq, date, priority)
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Max results (default 50)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of Sentry issues (raw Sentry format)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issues:
+                    type: array
+                    items:
+                      type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          description: Sentry API error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/sentry/issues/{issueID}:
+    get:
+      summary: Get a Sentry issue detail
+      operationId: getSentryIssue
+      tags: [Sentry]
+      parameters:
+        - name: issueID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: key_name
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sentry issue detail (raw Sentry format)
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          description: Sentry API error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/sentry/issues/{issueID}/latest-event:
+    get:
+      summary: Get latest event for a Sentry issue
+      operationId: getSentryIssueLatestEvent
+      tags: [Sentry]
+      description: Returns the latest event with full stack trace, breadcrumbs, and context.
+      parameters:
+        - name: issueID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: key_name
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Latest event (raw Sentry format)
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          description: Sentry API error
           content:
             application/json:
               schema:
@@ -1216,10 +1449,13 @@ components:
 
     TaskMCPServer:
       type: object
-      required: [name, command]
+      required: [name]
       properties:
         name:
           type: string
+        transport:
+          type: string
+          enum: [stdio, http]
         command:
           type: string
         args:
@@ -1230,7 +1466,16 @@ components:
           type: object
           additionalProperties:
             type: string
-          description: Environment variables as key-value pairs
+          description: Environment variables — stdio transport
+        url:
+          type: string
+          format: uri
+          description: Server URL — http transport
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: HTTP headers — http transport
 
     TaskTypeInfo:
       type: object
@@ -1389,13 +1634,25 @@ components:
       properties:
         name:
           type: string
+        transport:
+          type: string
+          enum: [stdio, http]
         package:
+          type: string
+        command:
           type: string
         args:
           type: array
           items:
             type: string
         env:
+          type: object
+          additionalProperties:
+            type: string
+        url:
+          type: string
+          format: uri
+        headers:
           type: object
           additionalProperties:
             type: string
@@ -1645,6 +1902,14 @@ components:
           type: string
         version:
           type: string
+        mcp_transport:
+          type: string
+          enum: [stdio, http]
+          description: Transport type (omitted = stdio default)
+        mcp_url:
+          type: string
+          format: uri
+          description: URL for http transport tools
         mcp_package:
           type: string
         mcp_command:
@@ -1698,6 +1963,14 @@ components:
           type: string
         version:
           type: string
+        mcp_transport:
+          type: string
+          enum: [stdio, http]
+          description: Transport type (default stdio)
+        mcp_url:
+          type: string
+          format: uri
+          description: URL for http transport
         mcp_package:
           type: string
         mcp_command:
