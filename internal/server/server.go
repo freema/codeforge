@@ -76,6 +76,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, t
 	toolHandler := handlers.NewToolHandler(toolRegistry)
 	wsHandler := handlers.NewWorkspaceHandler(workspaceMgr, taskService)
 	repoHandler := handlers.NewRepoHandler(keyRegistry)
+	sentryHandler := handlers.NewSentryHandler(keyRegistry)
 	workflowHandler := handlers.NewWorkflowHandler(workflowRegistry, workflowRunStore, workflowRunCreator, redis)
 
 	// Protected API routes
@@ -141,6 +142,14 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, t
 			})
 
 			r.Get("/repositories", repoHandler.List)
+
+			r.Route("/sentry", func(r chi.Router) {
+				r.Get("/organizations", sentryHandler.ListOrganizations)
+				r.Get("/projects", sentryHandler.ListProjects)
+				r.Get("/issues", sentryHandler.ListIssues)
+				r.Get("/issues/{issueID}", sentryHandler.GetIssue)
+				r.Get("/issues/{issueID}/latest-event", sentryHandler.GetLatestEvent)
+			})
 
 			r.Route("/workflows", func(r chi.Router) {
 				r.Post("/", workflowHandler.CreateWorkflow)
