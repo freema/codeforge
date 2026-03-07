@@ -1079,7 +1079,7 @@ POST /api/v1/workflows
 
 **Template syntax:** `{{.Params.key}}` for inputs, `{{.Steps.step_name.field}}` for step outputs.
 
-**Built-in workflows:** `sentry-fixer`, `github-issue-fixer`, `gitlab-issue-fixer`, `code-review`.
+**Built-in workflows:** `sentry-fixer`, `github-issue-fixer`, `gitlab-issue-fixer`, `code-review`, `knowledge-update`.
 
 ### List Workflows
 

@@ -50,6 +50,7 @@ func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx
 	if err != nil {
 		return nil, fmt.Errorf("rendering prompt: %w", err)
 	}
+	taskType, _ := Render(cfg.TaskType, tctx)
 	providerKey, _ := Render(cfg.ProviderKey, tctx)
 	accessToken, _ := Render(cfg.AccessToken, tctx)
 	cli, _ := Render(cfg.CLI, tctx)
@@ -79,6 +80,7 @@ func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx
 	req := task.CreateTaskRequest{
 		RepoURL:     repoURL,
 		Prompt:      prompt,
+		TaskType:    taskType,
 		ProviderKey: providerKey,
 		AccessToken: accessToken,
 		Config:      taskConfig,

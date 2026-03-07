@@ -123,7 +123,7 @@ Client (ScopeBot / curl)
   - **task** — creates and waits for a CodeForge task (clone + AI CLI run)
   - **action** — built-in actions (e.g., `create_pr`, `notify`) that operate on previous step results
 - Go `text/template` engine for step configuration: `{{.Params.key}}`, `{{.Steps.step_name.field}}`
-- Built-in workflows: `sentry-fixer`, `github-issue-fixer`, `gitlab-issue-fixer`, `code-review`
+- Built-in workflows: `sentry-fixer`, `github-issue-fixer`, `gitlab-issue-fixer`, `code-review`, `knowledge-update`
 - Workflow definitions stored in SQLite (user-created + built-in, seeded on startup)
 - Run state tracked in SQLite with per-step status records
 - Streaming via Redis Pub/Sub (`workflow:{runID}:stream`) with history replay, same SSE pattern as tasks

@@ -73,6 +73,7 @@ type FetchConfig struct {
 type TaskStepConfig struct {
 	RepoURL          string `json:"repo_url"`
 	Prompt           string `json:"prompt"`
+	TaskType         string `json:"task_type,omitempty"`          // task type override: "code", "plan", "review"
 	ProviderKey      string `json:"provider_key,omitempty"`
 	AccessToken      string `json:"access_token,omitempty"`
 	CLI              string `json:"cli,omitempty"`                // CLI runner override (e.g. "claude-code", "codex")
