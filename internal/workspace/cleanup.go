@@ -11,8 +11,8 @@ import (
 
 // CleanerConfig holds cleanup configuration.
 type CleanerConfig struct {
-	Interval             time.Duration
-	DiskWarningThreshold int64 // bytes
+	Interval              time.Duration
+	DiskWarningThreshold  int64 // bytes
 	DiskCriticalThreshold int64 // bytes
 }
 
@@ -32,7 +32,7 @@ func NewCleaner(manager *Manager, taskService *task.Service, cfg CleanerConfig) 
 	}
 }
 
-// Start runs the cleanup loop until the context is cancelled.
+// Start runs the cleanup loop until the context is canceled.
 func (c *Cleaner) Start(ctx context.Context) {
 	interval := c.cfg.Interval
 	if interval <= 0 {

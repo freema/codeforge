@@ -25,8 +25,8 @@ func NewMCPHandler(registry mcp.Registry) *MCPHandler {
 // CreateGlobal handles POST /api/v1/mcp/servers.
 func (h *MCPHandler) CreateGlobal(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name      string            `json:"name" validate:"required"`
-		Transport string            `json:"transport,omitempty"` // "stdio" (default) or "http"
+		Name      string `json:"name" validate:"required"`
+		Transport string `json:"transport,omitempty"` // "stdio" (default) or "http"
 		// stdio fields
 		Package string            `json:"package,omitempty"`
 		Command string            `json:"command,omitempty"`

@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"time"
 
-	gitpkg "github.com/freema/codeforge/internal/tool/git"
-	"github.com/freema/codeforge/internal/tool/runner"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/task"
+	gitpkg "github.com/freema/codeforge/internal/tool/git"
+	"github.com/freema/codeforge/internal/tool/runner"
 )
 
 // StreamEvent is a structured event published to Redis Pub/Sub.

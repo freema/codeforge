@@ -54,6 +54,15 @@ workflow:
   context_ttl_hours: 24     # TTL for workflow context in Redis
   max_run_duration_sec: 7200 # 2 hours max per workflow run
 
+code_review:
+  review_drafts: false           # review draft PRs/MRs from webhooks
+  default_cli: "claude-code"     # CLI for webhook-triggered reviews
+  default_key_name: ""           # registered key name for git auth (required for webhooks)
+  webhook_dedup_ttl: 3600        # deduplicate webhooks for same PR+SHA (seconds, default: 1h)
+  webhook_secrets:
+    github: ""                   # HMAC-SHA256 secret for GitHub webhook verification
+    gitlab: ""                   # secret token for GitLab webhook verification
+
 rate_limit:
   enabled: true
   tasks_per_minute: 10

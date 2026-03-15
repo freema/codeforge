@@ -2,7 +2,9 @@
 
 ## System Overview
 
-CodeForge is a Go HTTP server that orchestrates AI-powered code tasks. It receives task requests via REST API, clones repositories, runs AI CLI tools against them, and optionally creates pull requests with the changes. It supports multiple CLI runners (Claude Code, Codex), code review as a user action, and a tool system for extending AI capabilities.
+CodeForge is a Go HTTP server that orchestrates AI-powered code work over git repositories. A task is a **session over a repo** — not a one-shot job. Each task tracks its workspace, conversation history (multi-turn), review results, and PR state.
+
+The system receives task requests via REST API, clones repositories, runs AI CLI tools against them, streams progress in real time, and supports human-in-the-loop actions: review, instruct, create PR, post review comments. It handles automated PR reviews via webhooks, multiple CLI runners (Claude Code, Codex), and a tool system for extending AI capabilities.
 
 ```
 Client (ScopeBot / curl)
@@ -90,10 +92,11 @@ Client (ScopeBot / curl)
 - Global `http.Server.WriteTimeout` is set to `0` (disabled) — SSE handler manages its own deadlines
 
 ### Task Type System (`internal/prompt/`)
-- Three task types: `code` (default), `plan`, `review` — each with different behavior
+- Four task types: `code` (default), `plan`, `review`, `pr_review` — each with different behavior
 - **code**: no template wrapping, user prompt passed directly to CLI
 - **plan**: wraps user prompt in `plan.md` template — instructs AI to analyze repo and create implementation plan without modifying files
 - **review**: wraps user prompt in `review.md` template — instructs AI to review code quality with structured JSON output, read-only
+- **pr_review**: wraps user prompt in `pr_review.md` template — instructs AI to review a specific PR/MR diff via `git diff origin/{base}...HEAD`, outputs structured JSON
 - Templates rendered via Go `text/template` with `embed.FS`
 - Template rendering happens in the executor (`buildPrompt()`) at runtime, NOT at task creation time
 - `Task.Prompt` always stores the original user prompt (displayed in FE), template is applied only when running the CLI
@@ -101,11 +104,31 @@ Client (ScopeBot / curl)
 
 ### Review System (`internal/review/`)
 - **User-triggered action**, NOT an automatic step — user calls `POST /tasks/:id/review`
-- `Reviewer` service orchestrates: validate state -> run CLI review -> parse output -> store result
-- `TaskProvider` interface abstracts task service + workspace resolution
+- **Async via worker pool**: `POST /review` returns 202, review enqueued to Redis FIFO queue, executed by worker (same path as instruct)
+- Executor's `executeReview()` handles: resolve workspace → build `code_review` prompt → run CLI → parse output → store `ReviewResult`
 - Multi-strategy parser: direct JSON, markdown code block, heuristic brace matching, fallback
 - Review result stored on `Task.ReviewResult` field in Redis
+- Full SSE streaming during review (events: `review_started`, CLI output, `review_completed`)
+- Cancel support, worker pool concurrency control, configurable timeout — no HTTP timeout dependency
 - Supports different CLI for review (e.g. Codex reviews Claude Code's output)
+
+### PR Review System
+- `pr_review` is a task type, NOT a separate system — reuses the entire task lifecycle
+- **API trigger**: `POST /api/v1/tasks` with `task_type: "pr_review"`, `config.pr_number`, source/target branches
+- **Webhook trigger**: GitHub/GitLab webhooks auto-create `pr_review` tasks (endpoints outside Bearer auth, verified via webhook secrets)
+- **Clone strategy**: clones target branch (non-shallow), fetches PR ref via `git fetch origin pull/{N}/head:pr-{N}`, checks out local branch — handles fork PRs automatically
+- **Completion**: executor parses `ReviewResult` from CLI output, stores on task; if `output_mode: "post_comments"`, automatically posts to GitHub/GitLab
+- **Comment posting**: `POST /tasks/:id/post-review` endpoint for manual posting; uses GitHub Pull Request Reviews API (line-level comments, max 20) or GitLab Discussions API (position-based comments)
+- **Comment formatting**: `internal/review/format.go` — severity labels (CRITICAL, MAJOR, MINOR, SUGGESTION), markdown summary body
+- **GitHub review posting**: `internal/tool/git/github_review.go` — verdict mapping (approve→APPROVE, request_changes→REQUEST_CHANGES)
+- **GitLab review posting**: `internal/tool/git/gitlab_review.go` — MR version SHAs for position-based comments, fallback to summary-only
+
+### Webhook Receivers (`internal/server/handlers/webhook_receiver.go`)
+- **GitHub**: HMAC-SHA256 signature verification via `X-Hub-Signature-256`, handles `pull_request` events (opened, synchronize, reopened)
+- **GitLab**: constant-time `X-Gitlab-Token` comparison, handles `Merge Request Hook` events (open, update, reopen)
+- Draft PR/MR filtering: skipped unless `code_review.review_drafts` is true
+- Configuration: `code_review.webhook_secrets.github`, `code_review.webhook_secrets.gitlab`, `code_review.default_key_name`, `code_review.default_cli`
+- Routes registered outside Bearer auth group: `POST /api/v1/webhooks/github`, `POST /api/v1/webhooks/gitlab`
 
 ### Tool System (`internal/tools/`)
 - High-level abstraction over MCP servers — users request tools by name, system handles MCP wiring
@@ -179,6 +202,7 @@ All keys use configurable prefix (default: `codeforge:`).
 | `mcp:project:{id}:index` | Set | Per-project MCP server index |
 | `workspace:{id}` | Hash | Workspace metadata |
 | `workspaces:index` | Set | Index of all workspaces |
+| `webhook:dedup:{repo}:{pr}:{sha}` | String | Webhook dedup (SETNX + TTL) |
 | `ratelimit:{token_hash}` | Sorted Set | Sliding window rate limit |
 | `input:tasks` | List | Redis-based task input channel |
 | `queue:workflows` | List | FIFO workflow run queue (RPUSH/BLPOP) |
@@ -206,13 +230,25 @@ pending ──▶ cloning ──▶ running ──▶ completed ──▶ creati
  failed      failed      failed
 ```
 
+### Task Session Lifecycle
+
+1. **Create**  → POST /tasks → pending → queue (RPUSH)
+2. **Execute** → worker BLPOP → cloning → running → completed
+3. **Review**  → POST /tasks/:id/review → 202 → reviewing → queue → worker → completed (with ReviewResult)
+4. **Instruct** → POST /tasks/:id/instruct → awaiting_instruction → queue → worker → completed
+5. **Create PR** → POST /tasks/:id/create-pr → creating_pr → pr_created
+6. **Cancel**  → POST /tasks/:id/cancel → context cancel → failed
+
+Steps 3-5 are repeatable. All queue operations go through Redis FIFO (RPUSH + BLPOP).
+Review and instruct share the same worker pool — no separate execution path.
+
 ### States
 
 - **pending**: Task created, queued for processing
 - **cloning**: Git repository being cloned
 - **running**: AI CLI executing the prompt
 - **completed**: CLI finished, results available — user can now review, instruct, or create PR
-- **reviewing**: Code review in progress (user-triggered via `POST /tasks/:id/review`)
+- **reviewing**: Code review in progress (enqueued via `POST /tasks/:id/review`, runs in worker pool)
 - **failed**: Terminal state (clone/run/timeout/cancel failure)
 - **awaiting_instruction**: Waiting for follow-up prompt (after `POST /tasks/:id/instruct`)
 - **creating_pr**: PR/MR being created
@@ -242,6 +278,7 @@ pending ──▶ cloning ──▶ running ──▶ completed ──▶ creati
 - `codeforge_http_requests_total` (counter) - HTTP requests
 - `codeforge_http_request_duration_seconds` (histogram) - HTTP latency
 - `codeforge_webhook_deliveries_total` (counter) - webhook outcomes
+- `codeforge_review_parse_failures_total` (counter) - review output parse failures
 
 ### OpenTelemetry Tracing
 - Spans: `task.execute`, `task.clone`, `task.run`
@@ -252,7 +289,7 @@ pending ──▶ cloning ──▶ running ──▶ completed ──▶ creati
 ## Directory Structure
 
 ```
-cmd/codeforge/          # Application entrypoint + review adapter
+cmd/codeforge/          # Application entrypoint
 internal/
   apperror/             # Application error types
   config/               # Configuration loading (koanf)
@@ -261,13 +298,14 @@ internal/
   keys/                 # Access key registry + resolver
   logger/               # Structured logging (slog)
   metrics/              # Prometheus metric definitions
-  prompt/               # Prompt templates (embed FS, task types + code review)
+  prompt/               # Prompt templates (embed FS, task types: code, plan, review, pr_review)
   redisclient/          # Redis client wrapper
-  review/               # Code review service (reviewer, parser, models)
+  review/               # Code review types, output parser, comment formatting
   server/               # HTTP server + handlers + middleware
+    handlers/           # Request handlers (tasks, webhook receiver, stream, etc.)
   task/                 # Task model, service, state machine
   tool/                 # Tool subsystem namespace (low-level)
-    git/                # Git operations (clone, branch, PR)
+    git/                # Git operations (clone, branch, PR, review posting)
     runner/             # CLI runner interface + implementations (Claude, Codex)
     mcp/                # MCP server registry + installer
   tools/                # Tool system (high-level: catalog, registry, resolver, bridge)

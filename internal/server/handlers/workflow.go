@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -20,21 +19,38 @@ type WorkflowRunCreator interface {
 	CreateRun(ctx context.Context, workflowName string, params map[string]string) (*workflow.WorkflowRun, error)
 }
 
+// WorkflowRunCanceller cancels workflow runs. Satisfied by *workflow.Orchestrator.
+type WorkflowRunCanceller interface {
+	CancelRun(ctx context.Context, runID string, taskCanceller func(taskID string) error) error
+	CancelPendingRuns(ctx context.Context, workflowName string, taskCanceller func(taskID string) error) (int, error)
+}
+
 // WorkflowHandler handles workflow-related HTTP endpoints.
 type WorkflowHandler struct {
-	registry   workflow.Registry
-	runStore   workflow.RunStore
-	runCreator WorkflowRunCreator
-	redis      *redisclient.Client
+	registry      workflow.Registry
+	runStore      workflow.RunStore
+	runCreator    WorkflowRunCreator
+	runCanceller  WorkflowRunCanceller
+	taskCanceller func(taskID string) error
+	redis         *redisclient.Client
 }
 
 // NewWorkflowHandler creates a new workflow handler.
-func NewWorkflowHandler(registry workflow.Registry, runStore workflow.RunStore, runCreator WorkflowRunCreator, redis *redisclient.Client) *WorkflowHandler {
+func NewWorkflowHandler(
+	registry workflow.Registry,
+	runStore workflow.RunStore,
+	runCreator WorkflowRunCreator,
+	runCanceller WorkflowRunCanceller,
+	taskCanceller func(taskID string) error,
+	redis *redisclient.Client,
+) *WorkflowHandler {
 	return &WorkflowHandler{
-		registry:   registry,
-		runStore:   runStore,
-		runCreator: runCreator,
-		redis:      redis,
+		registry:      registry,
+		runStore:      runStore,
+		runCreator:    runCreator,
+		runCanceller:  runCanceller,
+		taskCanceller: taskCanceller,
+		redis:         redis,
 	}
 }
 
@@ -205,7 +221,7 @@ func (h *WorkflowHandler) StreamRun(w http.ResponseWriter, r *http.Request) {
 	rc := http.NewResponseController(w)
 	flush := func() { flusher.Flush() }
 
-	isTerminal := run.Status == workflow.RunStatusCompleted || run.Status == workflow.RunStatusFailed
+	isTerminal := run.Status == workflow.RunStatusCompleted || run.Status == workflow.RunStatusFailed || run.Status == workflow.RunStatusCanceled
 
 	streamKey := h.redis.Key("workflow", runID, "stream")
 	doneKey := h.redis.Key("workflow", runID, "done")
@@ -216,7 +232,7 @@ func (h *WorkflowHandler) StreamRun(w http.ResponseWriter, r *http.Request) {
 	var msgCh <-chan *redis.Message
 	if !isTerminal {
 		pubsub := h.redis.Unwrap().Subscribe(subCtx, streamKey, doneKey)
-		defer pubsub.Close()
+		defer func() { _ = pubsub.Close() }()
 		msgCh = pubsub.Channel()
 	}
 
@@ -303,7 +319,38 @@ func (h *WorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// OtelBypassPath checks if a path needs SSE bypass.
-func OtelBypassWorkflowStream(path string) bool {
-	return strings.HasSuffix(path, "/stream") && strings.Contains(path, "/workflow-runs/")
+// CancelRun handles POST /api/v1/workflow-runs/{runID}/cancel.
+func (h *WorkflowHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "runID")
+	if runID == "" {
+		writeError(w, http.StatusBadRequest, "run ID is required")
+		return
+	}
+
+	if err := h.runCanceller.CancelRun(r.Context(), runID, h.taskCanceller); err != nil {
+		writeAppError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"id":      runID,
+		"status":  "canceling",
+		"message": "workflow run cancellation requested",
+	})
+}
+
+// CancelAllRuns handles POST /api/v1/workflow-runs/cancel-all.
+func (h *WorkflowHandler) CancelAllRuns(w http.ResponseWriter, r *http.Request) {
+	workflowName := r.URL.Query().Get("workflow")
+
+	canceled, err := h.runCanceller.CancelPendingRuns(r.Context(), workflowName, h.taskCanceller)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to cancel runs")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"canceled": canceled,
+		"message":  fmt.Sprintf("%d workflow runs canceled", canceled),
+	})
 }

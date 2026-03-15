@@ -11,11 +11,11 @@ import (
 
 // CloneOptions configures a git clone operation.
 type CloneOptions struct {
-	RepoURL  string
-	DestDir  string
-	Token    string
-	Branch   string
-	Shallow  bool
+	RepoURL string
+	DestDir string
+	Token   string
+	Branch  string
+	Shallow bool
 }
 
 // Clone clones a git repository using GIT_ASKPASS for token authentication.
@@ -75,11 +75,13 @@ func createAskPassScript(token string) (string, error) {
 	script := fmt.Sprintf("#!/bin/sh\necho '%s'\n", escaped)
 
 	if _, err := f.WriteString(script); err != nil {
-		f.Close()
+		_ = f.Close()
 		os.Remove(f.Name())
 		return "", err
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		return "", err
+	}
 
 	if err := os.Chmod(f.Name(), 0700); err != nil {
 		os.Remove(f.Name())

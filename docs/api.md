@@ -94,11 +94,15 @@ Response `401`:
 
 ### Task Lifecycle (State Machine)
 
+See [Task Session Lifecycle](architecture.md#task-session-lifecycle) for a compact reference.
+
 ```
 POST /tasks          → pending → cloning → running → completed
 POST /instruct       → completed/awaiting_instruction → running → completed
 POST /review         → completed/awaiting_instruction → reviewing → completed
 POST /create-pr      → completed → creating_pr → pr_created
+POST /tasks (pr_review) → pending → cloning → running → completed (with ReviewResult)
+Webhook (PR opened)     → auto-creates pr_review task → same lifecycle as above
 ```
 
 Valid transitions:
@@ -161,7 +165,7 @@ Request:
 |-------|------|----------|-------------|
 | `repo_url` | string | yes | Git repository URL |
 | `prompt` | string | yes | Task instruction (max 100KB) |
-| `task_type` | string | no | Task type: `code` (default), `plan`, `review` |
+| `task_type` | string | no | Task type: `code` (default), `plan`, `review`, `pr_review` |
 | `provider_key` | string | no | Name of registered key for git auth |
 | `access_token` | string | no | Inline git access token (never returned in responses) |
 | `callback_url` | string | no | Webhook URL for completion notification |
@@ -176,6 +180,8 @@ Request:
 | `config.workspace_task_id` | string | no | Reuse workspace from another task |
 | `config.mcp_servers` | array | no | Per-task MCP servers |
 | `config.tools` | array | no | Per-task tool requests |
+| `config.pr_number` | int | no | PR/MR number (required for `pr_review` tasks) |
+| `config.output_mode` | string | no | `"post_comments"` or `"api_only"` (for `pr_review` tasks, default: `"api_only"`) |
 
 Response `201`:
 ```json
@@ -318,7 +324,7 @@ Errors: `400` (validation), `404` (not found), `409` (wrong status).
 
 ### Code Review
 
-Run a code review against the task's workspace. The review is a user-triggered action, not automatic.
+Enqueue a code review of the task's workspace for async worker execution. Returns 202 immediately — the review runs in the worker pool with full SSE streaming, cancel support, and configurable timeout.
 
 ```
 POST /api/v1/tasks/{taskID}/review
@@ -341,33 +347,17 @@ Task must be in `completed` or `awaiting_instruction` status.
 
 Transitions: `completed` → `reviewing` → `completed` (with `review_result` stored on task).
 
-Response `200`:
+Monitor progress via SSE: `GET /tasks/{taskID}/stream` (events: `review_started`, CLI output, `review_completed`).
+
+Response `202`:
 ```json
 {
-  "verdict": "request_changes",
-  "score": 6,
-  "summary": "Good overall but missing error handling in two places",
-  "issues": [
-    {
-      "severity": "major",
-      "file": "src/handlers/auth.go",
-      "line": 42,
-      "description": "Missing error check on json.Unmarshal",
-      "suggestion": "Add if err != nil { return err } after unmarshal"
-    },
-    {
-      "severity": "minor",
-      "file": "src/handlers/auth.go",
-      "line": 55,
-      "description": "Consider using a constant for max name length",
-      "suggestion": ""
-    }
-  ],
-  "auto_fixable": false,
-  "reviewed_by": "claude-code:claude-sonnet-4-20250514",
-  "duration_seconds": 22.37
+  "id": "task-abc",
+  "status": "reviewing"
 }
 ```
+
+The `ReviewResult` is stored on the task after completion — retrieve via `GET /tasks/{taskID}`.
 
 **ReviewResult fields:**
 
@@ -388,6 +378,81 @@ Response `200`:
 
 Errors: `400` (bad CLI), `404` (not found), `409` (wrong status / workspace gone).
 
+### PR Review (Automated)
+
+Create a `pr_review` task to review a pull request / merge request diff. The task clones the target branch, fetches the PR ref (handles fork PRs automatically via `pull/{N}/head`), runs AI review, and stores a `ReviewResult`.
+
+```
+POST /api/v1/tasks
+```
+
+Request:
+```json
+{
+  "repo_url": "https://github.com/user/repo.git",
+  "provider_key": "my-github-key",
+  "prompt": "Review pull request #42",
+  "task_type": "pr_review",
+  "config": {
+    "cli": "claude-code",
+    "pr_number": 42,
+    "source_branch": "feature/login",
+    "target_branch": "main",
+    "output_mode": "post_comments"
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `task_type` | string | yes | Must be `"pr_review"` |
+| `config.pr_number` | int | yes | PR/MR number to review |
+| `config.source_branch` | string | yes | PR head branch |
+| `config.target_branch` | string | yes | PR base branch |
+| `config.output_mode` | string | no | `"post_comments"` (post to PR) or `"api_only"` (default, results via API only) |
+
+The task uses `git diff origin/{target_branch}...HEAD` to review only the PR changes. Fork PRs are handled automatically — CodeForge clones the target branch, then fetches the PR ref via `git fetch origin pull/{N}/head:pr-{N}`.
+
+When `output_mode` is `"post_comments"`, the executor automatically posts review comments to the GitHub PR / GitLab MR after completion.
+
+The `ReviewResult` is stored on the task and returned via `GET /tasks/{id}`.
+
+### Post Review Comments
+
+Post an existing task's `ReviewResult` as comments to a PR/MR. Useful when `output_mode` was `"api_only"` but you later want to post comments, or after a manual `POST /tasks/:id/review`.
+
+```
+POST /api/v1/tasks/{taskID}/post-review
+```
+
+Request (all fields optional):
+```json
+{
+  "pr_number": 42
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `pr_number` | int | no | Override PR number (defaults to task's `config.pr_number` or `pr_number`) |
+
+Task must have a `review_result` (run a review first). Token is resolved from the task's `provider_key` or `access_token`.
+
+Response `200`:
+```json
+{
+  "review_url": "https://github.com/user/repo/pull/42#pullrequestreview-123",
+  "comments_posted": 3,
+  "pr_number": 42
+}
+```
+
+**GitHub:** Posts a Pull Request Review with line-level comments (max 20) and verdict mapping (approve→APPROVE, request_changes→REQUEST_CHANGES).
+
+**GitLab:** Posts MR Discussions with position-based comments. Falls back to summary-only if MR versions are unavailable.
+
+Errors: `400` (no review result / no PR number / token resolution failed), `404` (not found).
+
 ### Cancel Task
 
 ```
@@ -400,12 +465,12 @@ Response `200`:
 ```json
 {
   "id": "77a2ffbd-...",
-  "status": "cancelling",
+  "status": "canceling",
   "message": "task cancellation requested"
 }
 ```
 
-Note: `cancelling` is a transient response status, not a stored state. Poll `GET /tasks/{id}` — final state will be `failed`.
+Note: `canceling` is a transient response status, not a stored state. Poll `GET /tasks/{id}` — final state will be `failed`.
 
 Errors: `404` (not found), `409` (not running/cloning).
 
@@ -480,7 +545,7 @@ GET /api/v1/tasks/{taskID}/stream
 |-------|------|------|
 | `cli_started` | `{"cli": "claude-code", "iteration": "1"}` | CLI execution begins |
 | `task_timeout` | `{"timeout_seconds": 300}` | Task times out |
-| `task_cancelled` | `null` | User cancels task |
+| `task_canceled` | `null` | User cancels task |
 | `task_failed` | `{"error": "..."}` | Task fails |
 | `review_started` | `null` | Code review starts |
 | `review_completed` | `{"verdict": "approve", "score": 8, "issues_count": 0}` | Review finishes |
@@ -587,6 +652,11 @@ Response `200`:
       "name": "review",
       "label": "Review",
       "description": "Review repository code quality, security, and architecture"
+    },
+    {
+      "name": "pr_review",
+      "label": "PR Review",
+      "description": "Review a pull request / merge request diff and post comments"
     }
   ]
 }
@@ -599,8 +669,12 @@ Response `200`:
 | `code` | None (user prompt as-is) | Default — writes/modifies code |
 | `plan` | `plan.md` | Read-only analysis, creates implementation plan, does NOT modify files |
 | `review` | `review.md` | Reviews code quality with structured JSON output, does NOT modify files |
+| `pr_review` | `pr_review.md` | Reviews a PR/MR diff, outputs structured JSON, optionally posts comments to PR/MR |
 
-Note: The `review` task type is different from `POST /tasks/:id/review`. The endpoint reviews **changes of a specific task** (git diff). The task type reviews the **entire repository** as a new task.
+**Review distinctions:**
+- `review` task type — reviews the **entire repository** as a new task
+- `POST /tasks/:id/review` — reviews **changes of a specific task** (git diff HEAD~1)
+- `pr_review` task type — reviews **a specific PR/MR diff** (git diff origin/{base}...HEAD)
 
 ---
 
@@ -1075,7 +1149,7 @@ POST /api/v1/workflows
 |------|-------------|
 | `fetch` | HTTP request with JSONPath output extraction |
 | `task` | Creates a CodeForge task (clone + AI CLI run) |
-| `action` | Built-in action: `create_pr`, `notify` |
+| `action` | Built-in action: `create_pr` |
 
 **Template syntax:** `{{.Params.key}}` for inputs, `{{.Steps.step_name.field}}` for step outputs.
 
@@ -1191,6 +1265,112 @@ Workflow events:
 | `step_completed` | `{"step": "name"}` |
 | `step_failed` | `{"step": "name", "error": "..."}` |
 
+### Cancel Workflow Run
+
+```
+POST /api/v1/workflow-runs/{runID}/cancel
+```
+
+Cancels a running workflow run and its active task.
+
+**Response:** `200 OK`
+```json
+{"status": "canceling", "message": "workflow run cancellation requested"}
+```
+
+### Cancel All Runs for Workflow
+
+```
+POST /api/v1/workflow-runs/cancel-all
+```
+
+**Query params:** `workflow` (required) — workflow name.
+
+Cancels all pending/running runs for a specific workflow.
+
+**Response:** `200 OK`
+```json
+{"canceled": 2, "message": "2 workflow runs canceled"}
+```
+
+---
+
+## PR Webhook Receivers (No Auth)
+
+Webhook endpoints for GitHub/GitLab to automatically create `pr_review` tasks when PRs/MRs are opened or updated. These endpoints use webhook secret verification instead of Bearer auth.
+
+### GitHub Webhook
+
+```
+POST /api/v1/webhooks/github
+```
+
+**Setup:** In your GitHub repo → Settings → Webhooks → Add webhook:
+- **Payload URL:** `https://your-codeforge.com/api/v1/webhooks/github`
+- **Content type:** `application/json`
+- **Secret:** same as `CODEFORGE_CODE_REVIEW__WEBHOOK_SECRETS__GITHUB`
+- **Events:** select "Pull requests"
+
+**Verification:** HMAC-SHA256 via `X-Hub-Signature-256` header.
+
+**Handled events:** `pull_request` with actions `opened`, `synchronize`, `reopened`.
+
+**Draft PRs:** Skipped unless `code_review.review_drafts` is `true`.
+
+**Created task:**
+```json
+{
+  "repo_url": "(from webhook payload)",
+  "provider_key": "(from code_review.default_key_name)",
+  "prompt": "Review pull request #42",
+  "task_type": "pr_review",
+  "config": {
+    "cli": "(from code_review.default_cli)",
+    "source_branch": "feature/login",
+    "target_branch": "main",
+    "pr_number": 42,
+    "output_mode": "post_comments"
+  }
+}
+```
+
+Response `201`:
+```json
+{ "status": "created", "task_id": "abc-123-..." }
+```
+
+### GitLab Webhook
+
+```
+POST /api/v1/webhooks/gitlab
+```
+
+**Setup:** In your GitLab project → Settings → Webhooks → Add webhook:
+- **URL:** `https://your-codeforge.com/api/v1/webhooks/gitlab`
+- **Secret token:** same as `CODEFORGE_CODE_REVIEW__WEBHOOK_SECRETS__GITLAB`
+- **Trigger:** "Merge request events"
+
+**Verification:** Constant-time comparison of `X-Gitlab-Token` header.
+
+**Handled events:** `Merge Request Hook` with actions `open`, `update`, `reopen`.
+
+**Draft/WIP MRs:** Skipped unless `code_review.review_drafts` is `true`.
+
+Response `201`:
+```json
+{ "status": "created", "task_id": "abc-123-..." }
+```
+
+### Webhook Configuration
+
+| Variable | Description |
+|----------|-------------|
+| `CODEFORGE_CODE_REVIEW__WEBHOOK_SECRETS__GITHUB` | HMAC secret for GitHub webhook verification |
+| `CODEFORGE_CODE_REVIEW__WEBHOOK_SECRETS__GITLAB` | Secret token for GitLab webhook verification |
+| `CODEFORGE_CODE_REVIEW__DEFAULT_KEY_NAME` | Registered key name for git auth (required for webhooks) |
+| `CODEFORGE_CODE_REVIEW__DEFAULT_CLI` | CLI to use for reviews (default: `claude-code`) |
+| `CODEFORGE_CODE_REVIEW__REVIEW_DRAFTS` | Review draft PRs/MRs (default: `false`) |
+
 ---
 
 ## Webhook Callbacks
@@ -1248,7 +1428,9 @@ All errors follow this structure:
 
 ---
 
-## Typical FE Flow
+## Typical FE Flows
+
+### Code Task (interactive)
 
 ```
 1. Verify auth       → GET  /api/v1/auth/verify
@@ -1263,4 +1445,22 @@ All errors follow this structure:
 ```
 
 Steps 7-9 are repeatable in any order. The user decides what to do after each step.
-Step 2 can be cached — task types don't change at runtime.
+
+### PR Review (API-triggered)
+
+```
+1. Create pr_review task → POST /api/v1/tasks  {task_type: "pr_review", config: {pr_number, ...}}
+2. Stream or poll        → GET  /api/v1/tasks/{id}/stream
+3. View ReviewResult     → GET  /api/v1/tasks/{id}  (review_result field)
+4. (optional) Post       → POST /api/v1/tasks/{id}/post-review
+```
+
+### PR Review (webhook-triggered)
+
+```
+1. GitHub/GitLab sends webhook → POST /api/v1/webhooks/github|gitlab
+2. CodeForge auto-creates pr_review task with output_mode: "post_comments"
+3. On completion, review comments posted automatically to PR/MR
+```
+
+Step 2 in the code task flow can be cached — task types don't change at runtime.

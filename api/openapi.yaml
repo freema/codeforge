@@ -212,7 +212,7 @@ paths:
       operationId: cancelTask
       description: |
         Requests cancellation of a running or cloning task. Returns a transient
-        "cancelling" status indicating the request was accepted. The task will
+        "canceling" status indicating the request was accepted. The task will
         transition to "failed" once cancellation completes. Poll GET /tasks/{taskID}
         to observe the final state.
       tags: [Tasks]
@@ -272,9 +272,11 @@ paths:
       operationId: reviewTask
       tags: [Tasks]
       description: |
-        Runs a code review against the task's workspace using a CLI tool (default: codex).
+        Enqueues a code review of the task's workspace for async worker execution.
         The task must be in completed or awaiting_instruction status.
+        Returns 202 immediately — review runs in the worker pool with SSE streaming.
         Transitions: completed/awaiting_instruction → reviewing → completed (with review_result).
+        Monitor progress via GET /tasks/{taskID}/stream (SSE events: review_started, review_completed).
       parameters:
         - name: taskID
           in: path
@@ -295,18 +297,144 @@ paths:
                   type: string
                   description: AI model override for the review
       responses:
-        "200":
-          description: Review completed
+        "202":
+          description: Review enqueued for worker execution
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ReviewResult"
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    example: reviewing
         "400":
           $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+
+  /api/v1/tasks/{taskID}/post-review:
+    post:
+      summary: Post review comments to PR/MR
+      operationId: postReviewComments
+      tags: [Tasks]
+      description: |
+        Posts the task's ReviewResult as comments to the associated GitHub PR or GitLab MR.
+        Task must have a review_result (run a review first).
+        Token is resolved from the task's provider_key or access_token.
+      parameters:
+        - name: taskID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pr_number:
+                  type: integer
+                  description: Override PR/MR number (defaults to task config or task field)
+      responses:
+        "200":
+          description: Review comments posted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  review_url:
+                    type: string
+                    description: URL to the posted review on GitHub/GitLab
+                  comments_posted:
+                    type: integer
+                    description: Number of line-level comments posted
+                  pr_number:
+                    type: integer
+                    description: The PR/MR number used
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/webhooks/github:
+    post:
+      summary: GitHub webhook receiver for PR reviews
+      operationId: githubWebhook
+      security: []
+      tags: [Webhooks]
+      description: |
+        Receives GitHub pull_request webhook events and automatically creates pr_review tasks.
+        Verified via HMAC-SHA256 signature (X-Hub-Signature-256 header).
+        Handles actions: opened, synchronize, reopened. Skips drafts unless configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: GitHub pull_request webhook payload
+      responses:
+        "201":
+          description: Review task created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: created
+                  task_id:
+                    type: string
+                    format: uuid
+        "200":
+          description: Event ignored (not a handled action or draft)
+        "401":
+          description: Invalid webhook signature
+
+  /api/v1/webhooks/gitlab:
+    post:
+      summary: GitLab webhook receiver for MR reviews
+      operationId: gitlabWebhook
+      security: []
+      tags: [Webhooks]
+      description: |
+        Receives GitLab Merge Request Hook events and automatically creates pr_review tasks.
+        Verified via X-Gitlab-Token header constant-time comparison.
+        Handles actions: open, update, reopen. Skips draft/WIP unless configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: GitLab merge_request webhook payload
+      responses:
+        "201":
+          description: Review task created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: created
+                  task_id:
+                    type: string
+                    format: uuid
+        "200":
+          description: Event ignored (not a handled action or draft/WIP)
+        "401":
+          description: Invalid webhook token
 
   /api/v1/tasks/{taskID}/stream:
     get:
@@ -1405,7 +1533,7 @@ components:
         task_type:
           type: string
           description: "Type of task: code (default), plan, or review"
-          enum: [code, plan, review]
+          enum: [code, plan, review, pr_review]
           default: code
         callback_url:
           type: string
@@ -1442,10 +1570,34 @@ components:
         max_budget_usd:
           type: number
           description: Maximum spend in USD
+        workspace_task_id:
+          type: string
+          description: Reuse workspace from another task
         mcp_servers:
           type: array
           items:
             $ref: "#/components/schemas/TaskMCPServer"
+        tools:
+          type: array
+          description: Per-task tool requests
+          items:
+            type: object
+            required: [name]
+            properties:
+              name:
+                type: string
+              config:
+                type: object
+                additionalProperties:
+                  type: string
+        pr_number:
+          type: integer
+          description: PR/MR number (required for pr_review tasks)
+        output_mode:
+          type: string
+          description: Output mode for pr_review tasks
+          enum: [api_only, post_comments]
+          default: api_only
 
     TaskMCPServer:
       type: object
@@ -1456,8 +1608,12 @@ components:
         transport:
           type: string
           enum: [stdio, http]
+        package:
+          type: string
+          description: NPM package or binary path — stdio transport
         command:
           type: string
+          description: Command to run (npx, uvx, docker) — stdio transport
         args:
           type: array
           items:
@@ -1512,7 +1668,7 @@ components:
         task_type:
           type: string
           description: "Type of task: code, plan, or review"
-          enum: [code, plan, review]
+          enum: [code, plan, review, pr_review]
         callback_url:
           type: string
         config:
@@ -1684,10 +1840,10 @@ components:
         status:
           type: string
           description: >
-            Transient response status "cancelling" — NOT a stored TaskStatus
+            Transient response status "canceling" — NOT a stored TaskStatus
             enum value. It indicates the cancellation request was accepted.
             Poll GET /tasks/{id} to observe the final state (will be "failed").
-          example: cancelling
+          example: canceling
         message:
           type: string
           example: cancellation requested

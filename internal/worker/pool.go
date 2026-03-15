@@ -84,6 +84,16 @@ func (p *Pool) Cancel(taskID string) error {
 	return nil
 }
 
+// shouldProcess returns true if a task status is actionable by the worker pool.
+// Tasks in other states are stale queue entries that should be skipped.
+func shouldProcess(s task.TaskStatus) bool {
+	switch s {
+	case task.StatusPending, task.StatusAwaitingInstruction, task.StatusReviewing:
+		return true
+	}
+	return false
+}
+
 func (p *Pool) worker(ctx context.Context, id int) {
 	defer p.wg.Done()
 	log := slog.With("worker", id)
@@ -123,6 +133,14 @@ func (p *Pool) worker(ctx context.Context, id int) {
 		if err != nil {
 			log.Warn("failed to load task, skipping", "task_id", taskID, "error", err)
 			p.activeCount.Add(-1)
+			continue
+		}
+
+		// Guard against stale/duplicate queue entries — only actionable states proceed
+		if !shouldProcess(t.Status) {
+			log.Warn("skipping stale queue entry", "task_id", taskID, "status", t.Status)
+			p.activeCount.Add(-1)
+			metrics.WorkersActive.Set(float64(p.activeCount.Load()))
 			continue
 		}
 

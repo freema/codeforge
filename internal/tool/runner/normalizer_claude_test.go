@@ -30,16 +30,16 @@ func TestClaudeNormalizer_Normalize(t *testing.T) {
 			wantCLI:     "claude-code",
 		},
 		{
-			name:    "assistant tool_use",
-			input:   `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool_1","name":"Read","input":{}}]}}`,
+			name:     "assistant tool_use",
+			input:    `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool_1","name":"Read","input":{}}]}}`,
 			wantType: EventToolUse,
-			wantCLI: "claude-code",
+			wantCLI:  "claude-code",
 		},
 		{
-			name:    "assistant tool_result",
-			input:   `{"type":"assistant","message":{"content":[{"type":"tool_result","tool_use_id":"tool_1"}]}}`,
+			name:     "assistant tool_result",
+			input:    `{"type":"assistant","message":{"content":[{"type":"tool_result","tool_use_id":"tool_1"}]}}`,
 			wantType: EventToolResult,
-			wantCLI: "claude-code",
+			wantCLI:  "claude-code",
 		},
 		{
 			name:        "assistant multiple text blocks concatenated",
@@ -56,16 +56,16 @@ func TestClaudeNormalizer_Normalize(t *testing.T) {
 			wantCLI:     "claude-code",
 		},
 		{
-			name:        "result error_during_execution",
-			input:       `{"type":"result","subtype":"error_during_execution","result":"","usage":{"input_tokens":100,"output_tokens":50}}`,
-			wantType:    EventError,
-			wantCLI:     "claude-code",
+			name:     "result error_during_execution",
+			input:    `{"type":"result","subtype":"error_during_execution","result":"","usage":{"input_tokens":100,"output_tokens":50}}`,
+			wantType: EventError,
+			wantCLI:  "claude-code",
 		},
 		{
-			name:    "unknown type maps to system",
-			input:   `{"type":"init","session_id":"abc123"}`,
+			name:     "unknown type maps to system",
+			input:    `{"type":"init","session_id":"abc123"}`,
 			wantType: EventSystem,
-			wantCLI: "claude-code",
+			wantCLI:  "claude-code",
 		},
 		{
 			name:    "invalid JSON returns nil",
@@ -78,10 +78,10 @@ func TestClaudeNormalizer_Normalize(t *testing.T) {
 			wantNil: true,
 		},
 		{
-			name:    "assistant with empty content array",
-			input:   `{"type":"assistant","message":{"content":[]}}`,
+			name:     "assistant with empty content array",
+			input:    `{"type":"assistant","message":{"content":[]}}`,
 			wantType: EventSystem,
-			wantCLI: "claude-code",
+			wantCLI:  "claude-code",
 		},
 	}
 

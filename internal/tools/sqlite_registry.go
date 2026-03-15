@@ -131,8 +131,21 @@ func (r *SQLiteRegistry) List(ctx context.Context, scope string) ([]ToolDefiniti
 }
 
 func (r *SQLiteRegistry) Delete(ctx context.Context, scope, name string) error {
+	// Check if the tool is built-in before attempting deletion
+	var builtin bool
+	err := r.db.QueryRowContext(ctx,
+		"SELECT builtin FROM tools WHERE scope = ? AND name = ?",
+		scope, name,
+	).Scan(&builtin)
+	if err != nil {
+		return apperror.NotFound("tool '%s' not found", name)
+	}
+	if builtin {
+		return apperror.Validation("built-in tool '%s' cannot be deleted", name)
+	}
+
 	result, err := r.db.ExecContext(ctx,
-		"DELETE FROM tools WHERE scope = ? AND name = ?",
+		"DELETE FROM tools WHERE scope = ? AND name = ? AND builtin = 0",
 		scope, name,
 	)
 	if err != nil {

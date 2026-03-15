@@ -93,6 +93,17 @@ Set `CODEFORGE_CONFIG` to specify a YAML config file path, or use environment va
 | `CODEFORGE_WORKFLOW__CONTEXT_TTL_HOURS` | `24` | TTL for workflow context in Redis (hours) |
 | `CODEFORGE_WORKFLOW__MAX_RUN_DURATION_SEC` | `7200` | Max workflow run duration (seconds) |
 
+### Code Review (PR Webhooks)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CODEFORGE_CODE_REVIEW__REVIEW_DRAFTS` | `false` | Review draft PRs/MRs from webhooks |
+| `CODEFORGE_CODE_REVIEW__DEFAULT_CLI` | `claude-code` | CLI for webhook-triggered reviews |
+| `CODEFORGE_CODE_REVIEW__DEFAULT_KEY_NAME` | *(empty)* | Registered key name for git auth (required for webhooks) |
+| `CODEFORGE_CODE_REVIEW__WEBHOOK_DEDUP_TTL` | `3600` | Webhook dedup TTL in seconds (prevents duplicate reviews for same commit) |
+| `CODEFORGE_CODE_REVIEW__WEBHOOK_SECRETS__GITHUB` | *(empty)* | HMAC-SHA256 secret for GitHub webhook verification |
+| `CODEFORGE_CODE_REVIEW__WEBHOOK_SECRETS__GITLAB` | *(empty)* | Secret token for GitLab webhook verification |
+
 ### Tracing
 
 | Variable | Default | Description |
@@ -153,6 +164,15 @@ git:
 workflow:
   context_ttl_hours: 24
   max_run_duration_sec: 7200
+
+code_review:
+  review_drafts: false
+  default_cli: "claude-code"
+  default_key_name: "my-github-key"   # required for webhook-triggered reviews
+  webhook_dedup_ttl: 3600             # seconds, prevents duplicate reviews for same commit
+  webhook_secrets:
+    github: "your-github-webhook-secret"
+    gitlab: "your-gitlab-webhook-secret"
 
 logging:
   level: "info"

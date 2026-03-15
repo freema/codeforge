@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -14,9 +15,9 @@ import (
 
 	"github.com/freema/codeforge/internal/apperror"
 	"github.com/freema/codeforge/internal/crypto"
+	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/review"
 	gitpkg "github.com/freema/codeforge/internal/tool/git"
-	"github.com/freema/codeforge/internal/redisclient"
 )
 
 // Service manages task lifecycle and Redis persistence.
@@ -63,17 +64,18 @@ func (s *Service) Create(ctx context.Context, req CreateTaskRequest) (*Task, err
 	}
 
 	t := &Task{
-		ID:          uuid.New().String(),
-		Status:      StatusPending,
-		RepoURL:     req.RepoURL,
-		ProviderKey: req.ProviderKey,
-		AccessToken: req.AccessToken,
-		Prompt:      req.Prompt,
-		TaskType:    taskType,
-		CallbackURL: req.CallbackURL,
-		Config:      req.Config,
-		Iteration:   1,
-		CreatedAt:   time.Now().UTC(),
+		ID:            uuid.New().String(),
+		Status:        StatusPending,
+		RepoURL:       req.RepoURL,
+		ProviderKey:   req.ProviderKey,
+		AccessToken:   req.AccessToken,
+		Prompt:        req.Prompt,
+		TaskType:      taskType,
+		CallbackURL:   req.CallbackURL,
+		Config:        req.Config,
+		WorkflowRunID: req.WorkflowRunID,
+		Iteration:     1,
+		CreatedAt:     time.Now().UTC(),
 	}
 
 	if req.Config != nil && req.Config.AIApiKey != "" {
@@ -362,18 +364,20 @@ func (s *Service) GetIterations(ctx context.Context, taskID string) ([]Iteration
 
 // TaskSummary is a lightweight view of a task for listing.
 type TaskSummary struct {
-	ID         string     `json:"id"`
-	Status     TaskStatus `json:"status"`
-	RepoURL    string     `json:"repo_url"`
-	Prompt     string     `json:"prompt"`
-	TaskType   string     `json:"task_type,omitempty"`
-	Iteration  int        `json:"iteration"`
-	Error      string     `json:"error,omitempty"`
-	Branch     string     `json:"branch,omitempty"`
-	PRURL      string     `json:"pr_url,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	StartedAt  *time.Time `json:"started_at,omitempty"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	ID             string                 `json:"id"`
+	Status         TaskStatus             `json:"status"`
+	RepoURL        string                 `json:"repo_url"`
+	Prompt         string                 `json:"prompt"`
+	TaskType       string                 `json:"task_type,omitempty"`
+	Iteration      int                    `json:"iteration"`
+	Error          string                 `json:"error,omitempty"`
+	Branch         string                 `json:"branch,omitempty"`
+	PRURL          string                 `json:"pr_url,omitempty"`
+	WorkflowRunID  string                 `json:"workflow_run_id,omitempty"`
+	ChangesSummary *gitpkg.ChangesSummary `json:"changes_summary,omitempty"`
+	CreatedAt      time.Time              `json:"created_at"`
+	StartedAt      *time.Time             `json:"started_at,omitempty"`
+	FinishedAt     *time.Time             `json:"finished_at,omitempty"`
 }
 
 // ListOptions configures task listing.
@@ -441,18 +445,20 @@ func (s *Service) List(ctx context.Context, opts ListOptions) ([]TaskSummary, in
 		}
 
 		tasks = append(tasks, TaskSummary{
-			ID:         t.ID,
-			Status:     t.Status,
-			RepoURL:    t.RepoURL,
-			Prompt:     truncatePrompt(t.Prompt, 200),
-			TaskType:   t.TaskType,
-			Iteration:  t.Iteration,
-			Error:      t.Error,
-			Branch:     t.Branch,
-			PRURL:      t.PRURL,
-			CreatedAt:  t.CreatedAt,
-			StartedAt:  t.StartedAt,
-			FinishedAt: t.FinishedAt,
+			ID:             t.ID,
+			Status:         t.Status,
+			RepoURL:        t.RepoURL,
+			Prompt:         truncatePrompt(t.Prompt, 200),
+			TaskType:       t.TaskType,
+			Iteration:      t.Iteration,
+			Error:          t.Error,
+			Branch:         t.Branch,
+			PRURL:          t.PRURL,
+			WorkflowRunID:  t.WorkflowRunID,
+			ChangesSummary: t.ChangesSummary,
+			CreatedAt:      t.CreatedAt,
+			StartedAt:      t.StartedAt,
+			FinishedAt:     t.FinishedAt,
 		})
 	}
 
@@ -504,34 +510,69 @@ func sortTasksByCreatedDesc(tasks []TaskSummary) {
 	}
 }
 
-// StartReview transitions a task to the reviewing state.
-// Valid from: completed, awaiting_instruction.
-func (s *Service) StartReview(ctx context.Context, taskID string) error {
+// StartReviewAsync enqueues a review for worker execution (non-blocking).
+// Uses Redis WATCH for atomic check-and-set to prevent double-enqueue races.
+func (s *Service) StartReviewAsync(ctx context.Context, taskID, cli, model string) (*Task, error) {
+	stateKey := s.redis.Key("task", taskID, "state")
+	queueKey := s.redis.Key(s.queueName)
+	now := time.Now().UTC()
+
+	err := s.redis.Unwrap().Watch(ctx, func(tx *redis.Tx) error {
+		current, err := tx.HGet(ctx, stateKey, "status").Result()
+		if err == redis.Nil {
+			return apperror.NotFound("task %s not found", taskID)
+		}
+		if err != nil {
+			return fmt.Errorf("reading task status: %w", err)
+		}
+
+		switch TaskStatus(current) {
+		case StatusCompleted, StatusAwaitingInstruction:
+			// ok
+		case StatusRunning, StatusCloning, StatusCreatingPR, StatusReviewing:
+			return apperror.Conflict("task is currently %s, cannot start review", TaskStatus(current))
+		case StatusFailed:
+			return apperror.Validation("task has failed, create a new task instead")
+		default:
+			return apperror.Conflict("task in status %s cannot be reviewed", TaskStatus(current))
+		}
+
+		_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			pipe.HSet(ctx, stateKey, map[string]interface{}{
+				"status":       string(StatusReviewing),
+				"updated_at":   now.Format(time.RFC3339Nano),
+				"review_cli":   cli,
+				"review_model": model,
+				"error":        "",
+			})
+			pipe.Persist(ctx, stateKey)
+			pipe.RPush(ctx, queueKey, taskID)
+			return nil
+		})
+		return err
+	}, stateKey)
+
+	if err != nil {
+		// WATCH detects concurrent modification → business 409, not 500
+		if errors.Is(err, redis.TxFailedErr) {
+			return nil, apperror.Conflict("task state changed concurrently, retry the request")
+		}
+		return nil, err
+	}
+
+	// Load the full task for the response
 	t, err := s.Get(ctx, taskID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	switch t.Status {
-	case StatusCompleted, StatusAwaitingInstruction:
-		// ok
-	case StatusRunning, StatusCloning, StatusCreatingPR, StatusReviewing:
-		return apperror.Conflict("task is currently %s, cannot start review", t.Status)
-	case StatusFailed:
-		return apperror.Validation("task has failed, create a new task instead")
-	default:
-		return apperror.Conflict("task in status %s cannot be reviewed", t.Status)
-	}
+	slog.Info("review enqueued", "task_id", taskID)
 
-	if err := s.UpdateStatus(ctx, taskID, StatusReviewing); err != nil {
-		return err
-	}
+	s.persistToSQLite(func() error {
+		return s.sqlite.UpdateStatus(ctx, taskID, StatusReviewing, nil, nil)
+	})
 
-	// Remove TTL while review is running
-	stateKey := s.redis.Key("task", taskID, "state")
-	s.redis.Unwrap().Persist(ctx, stateKey)
-
-	return nil
+	return t, nil
 }
 
 // CompleteReview stores the review result and transitions the task back to completed.
@@ -573,14 +614,14 @@ func (s *Service) SetError(ctx context.Context, taskID string, errMsg string) er
 // taskToHash converts a Task to a Redis hash map.
 func (s *Service) taskToHash(t *Task) map[string]interface{} {
 	fields := map[string]interface{}{
-		"id":          t.ID,
-		"status":      string(t.Status),
-		"repo_url":    t.RepoURL,
-		"prompt":      t.Prompt,
-		"task_type":   t.TaskType,
-		"iteration":   t.Iteration,
-		"created_at":  t.CreatedAt.Format(time.RFC3339Nano),
-		"updated_at":  t.CreatedAt.Format(time.RFC3339Nano),
+		"id":         t.ID,
+		"status":     string(t.Status),
+		"repo_url":   t.RepoURL,
+		"prompt":     t.Prompt,
+		"task_type":  t.TaskType,
+		"iteration":  t.Iteration,
+		"created_at": t.CreatedAt.Format(time.RFC3339Nano),
+		"updated_at": t.CreatedAt.Format(time.RFC3339Nano),
 	}
 
 	if t.ProviderKey != "" {
@@ -592,8 +633,17 @@ func (s *Service) taskToHash(t *Task) map[string]interface{} {
 	if t.Config != nil {
 		fields["config"] = MarshalConfig(t.Config)
 	}
+	if t.WorkflowRunID != "" {
+		fields["workflow_run_id"] = t.WorkflowRunID
+	}
 	if t.TraceID != "" {
 		fields["trace_id"] = t.TraceID
+	}
+	if t.ReviewCLI != "" {
+		fields["review_cli"] = t.ReviewCLI
+	}
+	if t.ReviewModel != "" {
+		fields["review_model"] = t.ReviewModel
 	}
 
 	return fields
@@ -613,6 +663,7 @@ func (s *Service) hashToTask(fields map[string]string) *Task {
 		Branch:        fields["branch"],
 		PRURL:         fields["pr_url"],
 		Error:         fields["error"],
+		WorkflowRunID: fields["workflow_run_id"],
 		TraceID:       fields["trace_id"],
 	}
 
@@ -639,17 +690,20 @@ func (s *Service) hashToTask(fields map[string]string) *Task {
 	t.ChangesSummary = UnmarshalChangesSummary(fields["changes_summary"])
 	t.Usage = UnmarshalUsageInfo(fields["usage"])
 	t.ReviewResult = review.UnmarshalReviewResult(fields["review_result"])
+	t.ReviewCLI = fields["review_cli"]
+	t.ReviewModel = fields["review_model"]
 
 	return t
 }
 
 // CreateTaskRequest is the payload for task creation.
 type CreateTaskRequest struct {
-	RepoURL     string      `json:"repo_url" validate:"required,url"`
-	ProviderKey string      `json:"provider_key,omitempty"`
-	AccessToken string      `json:"access_token,omitempty"`
-	Prompt      string      `json:"prompt" validate:"required,max=102400"`
-	TaskType    string      `json:"task_type,omitempty"`
-	CallbackURL string      `json:"callback_url,omitempty" validate:"omitempty,url"`
-	Config      *TaskConfig `json:"config,omitempty"`
+	RepoURL       string      `json:"repo_url" validate:"required,url"`
+	ProviderKey   string      `json:"provider_key,omitempty"`
+	AccessToken   string      `json:"access_token,omitempty"`
+	Prompt        string      `json:"prompt" validate:"required,max=102400"`
+	TaskType      string      `json:"task_type,omitempty"`
+	CallbackURL   string      `json:"callback_url,omitempty" validate:"omitempty,url"`
+	Config        *TaskConfig `json:"config,omitempty"`
+	WorkflowRunID string      `json:"workflow_run_id,omitempty"`
 }

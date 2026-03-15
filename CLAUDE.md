@@ -2,7 +2,7 @@
 
 ## Overview
 
-CodeForge is a Go HTTP server that acts as a remote code task runner. It clones repos, runs AI CLI tools (Claude Code, Codex), streams progress via Redis, and returns results. Supports multi-turn conversations, code review, tool integration, and PR creation.
+CodeForge is a Go HTTP server that orchestrates AI-powered code work over git repositories. A task is a **session over a repo** (not a one-shot job) — it tracks workspace, conversation history, review results, and PR state. Supports multi-turn conversations, automated PR reviews, webhook triggers, tool integration, and PR creation.
 
 ## Development Setup
 
@@ -34,12 +34,14 @@ task logs             # Tail all logs
 task shell            # Open shell in container
 task redis:cli        # Open redis-cli
 task mod:tidy         # Run go mod tidy
+task build:action     # Build CI Action Docker image
 ```
 
 ## Project Structure
 
 ```
-cmd/codeforge/         Main entry point + review adapter
+cmd/codeforge/         Server entry point
+cmd/codeforge-action/  CI Action entry point (GitHub Action / GitLab CI)
 internal/
   apperror/            Application error types
   config/              Configuration (koanf, YAML + env vars)
@@ -48,15 +50,15 @@ internal/
   keys/                Key registry + resolver
   logger/              Structured logging (slog)
   metrics/             Prometheus metrics
-  prompt/              Prompt templates (embed FS)
+  prompt/              Prompt templates (embed FS, task types + code/PR review)
   redisclient/         Redis client wrapper
-  review/              Code review service (reviewer, parser, models)
+  review/              Code review types (models, parser, formatting)
   server/              HTTP server (Chi router)
-    handlers/          Request handlers
+    handlers/          Request handlers (tasks, webhook receiver, stream, etc.)
     middleware/        Auth, logging, recovery, rate limit
   task/                Task model, service, state machine
   tool/                Tool subsystem namespace
-    git/               Clone, branch, GitHub/GitLab PR
+    git/               Clone, branch, GitHub/GitLab PR, review posting
     runner/            AI CLI runner interface + implementations (Claude, Codex)
     mcp/               MCP server registry + installer
   tools/               Tool system (catalog, registry, resolver, bridge)
@@ -85,6 +87,7 @@ tasks/                 Planning documents (not code)
 - **Git auth**: GIT_ASKPASS helper, never URL-embedded tokens
 - **Multi-CLI**: per-task CLI selection via `config.cli` field (claude-code, codex)
 - **Review as action**: user triggers review via `POST /tasks/:id/review`, not automatic
+- **PR review is a task**: `pr_review` task type reuses the entire task system, no separate infrastructure
 
 ## Architecture
 
@@ -95,3 +98,24 @@ tasks/                 Planning documents (not code)
 - **Persistence**: SQLite for workflows, tools, keys, MCP configs
 - **Worker pool**: configurable concurrency, graceful shutdown
 - **Task lifecycle**: pending → cloning → running → completed (+ reviewing, awaiting_instruction, creating_pr, pr_created, failed)
+
+## Key Flows
+
+1. **Create task** → clone repo → run AI CLI → stream progress → store result
+2. **Stream** → SSE with history replay + live events
+3. **Instruct** → follow-up turn in same workspace (multi-turn)
+4. **Review task** → AI reviews task's changes (user-triggered action)
+5. **PR review** → `pr_review` task type reviews PR/MR diff, optionally posts comments
+6. **Webhook review** → GitHub/GitLab webhooks auto-create `pr_review` tasks
+7. **Post review** → post ReviewResult as PR/MR comments
+8. **Create PR/MR** → push changes + open PR from task workspace
+9. **Workflows** → multi-step fetch → task → action pipelines
+
+## Design Philosophy
+
+1. Backend orchestrator for AI work over git — not a chat app
+2. Task = session over a repo — stateful workspace with conversation history
+3. Queue-first execution — Redis FIFO, worker pool, state machine, SSE
+4. Human-in-the-loop — review, instruct, create PR at any point
+5. Two integration axes — provider data (GitHub/GitLab/Sentry) + MCP tools
+6. Workflow layer composes multi-step scenarios on top of task runtime

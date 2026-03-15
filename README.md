@@ -12,145 +12,92 @@
 
 ## Overview
 
-```
-Client                  CodeForge                          AI CLI
-  │                        │                                 │
-  │  POST /api/v1/tasks    │                                 │
-  ├───────────────────────▶│                                 │
-  │         201 {id}       │                                 │
-  │◀───────────────────────┤                                 │
-  │                        │  git clone ──▶ run CLI          │
-  │                        ├────────────────────────────────▶│
-  │    Redis Pub/Sub       │         stream-json events      │
-  │◀ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┤◀────────────────────────────────┤
-  │                        │                                 │
-  │  GET /tasks/{id}       │           result + diff         │
-  ├───────────────────────▶│◀────────────────────────────────┤
-  │     200 {result}       │                                 │
-  │◀───────────────────────┤                                 │
-  │                        │                                 │
-  │  POST /tasks/{id}/     │                                 │
-  │       create-pr        │  git push ──▶ GitHub/GitLab API │
-  ├───────────────────────▶├─────────────────────────────────▶
-  │     200 {pr_url}       │                                 │
-  │◀───────────────────────┤                                 │
-```
+CodeForge is a backend orchestrator for AI-powered code work over git repositories. A task is a **session over a repo** — it clones, runs an AI CLI (Claude Code, Codex), streams progress via SSE, and supports multi-turn follow-ups, code review, PR creation, and webhook-triggered PR reviews.
 
-CodeForge receives task requests via REST API, clones the repository, runs an AI CLI tool (Claude Code) against it, streams progress via Redis Pub/Sub, and optionally creates pull requests. It supports multi-turn conversations, multi-step workflows, webhook callbacks, and workspace lifecycle management.
+**Two modes:** Server (queue + workers + API) or **CI Action** (self-contained GitHub Action / GitLab CI step for automated PR review).
+
+```
+Client ──▶ POST /tasks ──▶ Queue ──▶ Worker (clone → CLI → result)
+       ◀── SSE stream ◀──────────────────────────────────────────┘
+       ──▶ POST /tasks/{id}/instruct | review | create-pr
+```
 
 ## Quick Start
-
-### Using pre-built image (recommended)
 
 ```bash
 docker pull ghcr.io/freema/codeforge:latest
 ```
 
-Create a `docker-compose.yaml`:
-
-```yaml
-services:
-  codeforge:
-    image: ghcr.io/freema/codeforge:latest
-    ports:
-      - "8080:8080"
-    environment:
-      CODEFORGE_REDIS__URL: redis://redis:6379
-      CODEFORGE_SERVER__AUTH_TOKEN: ${CODEFORGE_AUTH_TOKEN:?set CODEFORGE_AUTH_TOKEN}
-      CODEFORGE_ENCRYPTION__KEY: ${CODEFORGE_ENCRYPTION_KEY:?set CODEFORGE_ENCRYPTION_KEY}
-    volumes:
-      - workspaces:/data/workspaces
-    depends_on:
-      redis:
-        condition: service_healthy
-
-  redis:
-    image: redis:7-alpine
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 3
-
-volumes:
-  workspaces:
-  redis-data:
-```
+A ready-to-use compose file is at [`deployments/docker-compose.production.yaml`](deployments/docker-compose.production.yaml). For development:
 
 ```bash
-# Generate an encryption key
-export CODEFORGE_ENCRYPTION_KEY=$(openssl rand -base64 32)
-export CODEFORGE_AUTH_TOKEN="your-secure-token"
-
-docker compose up -d
+# Requires Docker + Task runner (https://taskfile.dev)
+task dev
 ```
-
-A ready-to-use production compose file is also available at [`deployments/docker-compose.production.yaml`](deployments/docker-compose.production.yaml).
-
-### Try it
 
 ```bash
 # Create a task
 curl -X POST http://localhost:8080/api/v1/tasks \
-  -H "Authorization: Bearer $CODEFORGE_AUTH_TOKEN" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "repo_url": "https://github.com/user/repo.git",
-    "access_token": "ghp_your_token",
-    "prompt": "Fix the failing tests in the auth module"
-  }'
-
-# Check status
-curl http://localhost:8080/api/v1/tasks/{id} \
-  -H "Authorization: Bearer $CODEFORGE_AUTH_TOKEN"
-
-# Run a built-in workflow (fetch GitHub issue → fix → create PR)
-curl -X POST http://localhost:8080/api/v1/workflows/github-issue-fixer/run \
-  -H "Authorization: Bearer $CODEFORGE_AUTH_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "params": {
-      "repo_url": "https://github.com/user/repo.git",
-      "issue_number": "42",
-      "key_name": "my-github-key"
-    }
-  }'
+  -d '{"repo_url": "https://github.com/user/repo.git", "access_token": "ghp_...", "prompt": "Fix the failing tests"}'
 ```
 
-### Development
+See [API Reference](docs/api.md) for all endpoints and examples.
 
-```bash
-# Requires Docker + docker-compose
-# Install Task runner: https://taskfile.dev/installation/
-task dev
+## CI Action (GitHub Actions / GitLab CI)
+
+Add automated AI code review to any repository — **1 secret, 12 lines of YAML:**
+
+```yaml
+# .github/workflows/review.yml
+name: Code Review
+on: pull_request
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: freema/codeforge-action@v1
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
+
+**Task types:** `pr_review` (default), `code_review`, `knowledge_update`, `custom`
+**CLIs:** Claude Code, Codex | **Platforms:** GitHub Actions, GitLab CI
+
+See [CI Action docs](docs/ci-action.md) for full configuration.
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [API Reference](docs/api.md) | Endpoints, request/response examples, webhook format |
-| [Architecture](docs/architecture.md) | System design, Redis schema, task lifecycle |
-| [Configuration](docs/configuration.md) | Environment variables, YAML config |
+| [API Reference](docs/api.md) | Endpoints, request/response, task types, webhooks |
+| [Architecture](docs/architecture.md) | System design, Redis schema, task lifecycle, streaming |
+| [Code Review](docs/code-review-workflow.md) | Task review, PR review, webhook-triggered reviews |
+| [Configuration](docs/configuration.md) | Environment variables, YAML config, all options |
 | [Deployment](docs/deployment.md) | Docker, Kubernetes, monitoring |
-| [Development](docs/development.md) | Dev setup, testing, project structure |
+| [Development](docs/development.md) | Dev setup, testing, project structure, conventions |
+| [Manual E2E Testing](docs/manual-e2e-testing.md) | Manual lifecycle tests against real repos (Claude + Codex) |
+| [CI Action](docs/ci-action.md) | GitHub Action / GitLab CI setup, inputs, task types |
 
 ## Roadmap
 
-- [x] **Multi-Step Workflows** — Orchestrate fetch → task → action pipelines with built-in templates (sentry-fixer, github-issue-fixer)
-- [x] **Multi-CLI Support** — Claude Code + Codex runners with stream normalization; OpenCode and Aider planned
-- [x] **Code Review** — User-triggered review of task changes via `POST /tasks/:id/review` with structured output
-- [x] **Task Types** — Task type system (code, plan, review) with prompt templates and `GET /api/v1/task-types` endpoint
-- [ ] **Task Sessions** — Cross-task memory for projects; remember context from previous tasks on the same repository
-- [ ] **Enhanced PR Messages** — Richer pull request descriptions with structured sections and conventional commits
-- [ ] **Subscription & Multi-User Auth** — Per-user API keys, usage tracking, and subscription management
-
-## Author
-
-**Tomas Grasl** — [tomasgrasl.cz](https://tomasgrasl.cz)
+- [x] Multi-step workflows (fetch → task → action)
+- [x] Multi-CLI support (Claude Code + Codex)
+- [x] Code review as action (`POST /tasks/:id/review`)
+- [x] Task types (code, plan, review, pr_review)
+- [x] Automated PR review (webhooks + comment posting)
+- [x] **CI Action** — self-contained GitHub Action / GitLab CI step (multi-CLI, tools, review posting)
+- [ ] Cross-task memory (project context across tasks)
+- [ ] Enhanced PR descriptions
+- [ ] Multi-user auth + usage tracking
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) | **Tomas Grasl** — [tomasgrasl.cz](https://tomasgrasl.cz)

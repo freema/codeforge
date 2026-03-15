@@ -34,8 +34,6 @@ func (e *ActionExecutor) Execute(ctx context.Context, stepDef StepDefinition, tc
 	switch cfg.Kind {
 	case ActionCreatePR:
 		return e.executeCreatePR(ctx, cfg, tctx)
-	case ActionNotify:
-		return e.executeNotify(ctx, cfg, tctx)
 	default:
 		return nil, fmt.Errorf("unknown action kind: %s", cfg.Kind)
 	}
@@ -61,6 +59,11 @@ func (e *ActionExecutor) executeCreatePR(ctx context.Context, cfg ActionConfig, 
 		return nil, fmt.Errorf("rendering PR description: %w", err)
 	}
 
+	// Truncate title to GitHub's 72-char convention
+	if len(title) > 72 {
+		title = title[:69] + "..."
+	}
+
 	result, err := e.prCreator.CreatePR(ctx, taskID, task.CreatePRRequest{
 		Title:       title,
 		Description: description,
@@ -76,9 +79,4 @@ func (e *ActionExecutor) executeCreatePR(ctx context.Context, cfg ActionConfig, 
 		"pr_number": fmt.Sprintf("%d", result.PRNumber),
 		"branch":    result.Branch,
 	}, nil
-}
-
-func (e *ActionExecutor) executeNotify(_ context.Context, _ ActionConfig, _ TemplateContext) (map[string]string, error) {
-	slog.Info("notify action: placeholder (not implemented)")
-	return map[string]string{"status": "skipped"}, nil
 }

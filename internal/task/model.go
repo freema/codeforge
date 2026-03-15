@@ -26,14 +26,14 @@ const (
 
 // Task represents a code task in the system.
 type Task struct {
-	ID          string     `json:"id"`
-	Status      TaskStatus `json:"status"`
-	RepoURL     string     `json:"repo_url"`
-	ProviderKey string     `json:"provider_key,omitempty"`
-	AccessToken string     `json:"-"` // NEVER in API responses
-	Prompt      string     `json:"prompt"`
-	TaskType    string     `json:"task_type,omitempty"`
-	CallbackURL string     `json:"callback_url,omitempty"`
+	ID          string      `json:"id"`
+	Status      TaskStatus  `json:"status"`
+	RepoURL     string      `json:"repo_url"`
+	ProviderKey string      `json:"provider_key,omitempty"`
+	AccessToken string      `json:"-"` // NEVER in API responses
+	Prompt      string      `json:"prompt"`
+	TaskType    string      `json:"task_type,omitempty"`
+	CallbackURL string      `json:"callback_url,omitempty"`
 	Config      *TaskConfig `json:"config,omitempty"`
 
 	// Result fields
@@ -43,17 +43,25 @@ type Task struct {
 	Usage          *UsageInfo             `json:"usage,omitempty"`
 	ReviewResult   *review.ReviewResult   `json:"review_result,omitempty"`
 
-	// Iteration tracking (Phase 3)
+	// Iteration tracking
 	Iteration     int         `json:"iteration"`
-	CurrentPrompt string      `json:"current_prompt,omitempty"`
-	Iterations    []Iteration `json:"iterations,omitempty"` // populated on demand via ?include=iterations
+	CurrentPrompt string      `json:"current_prompt,omitempty"` // follow-up prompt for current iteration (set by Instruct)
+	Iterations    []Iteration `json:"iterations,omitempty"`     // populated on demand via ?include=iterations
 
-	// Git integration (Phase 2)
+	// Git integration — PRNumber is the PR created by CodeForge (via create-pr).
+	// For the input PR number on pr_review tasks, see TaskConfig.PRNumber.
 	Branch   string `json:"branch,omitempty"`
 	PRNumber int    `json:"pr_number,omitempty"`
 	PRURL    string `json:"pr_url,omitempty"`
 
-	// Observability (Phase 6)
+	// Review params (set by StartReviewAsync, consumed by executor)
+	ReviewCLI   string `json:"-"`
+	ReviewModel string `json:"-"`
+
+	// Workflow linkage
+	WorkflowRunID string `json:"workflow_run_id,omitempty"`
+
+	// Observability
 	TraceID string `json:"trace_id,omitempty"`
 
 	// Timestamps
@@ -71,17 +79,19 @@ type UsageInfo struct {
 
 // TaskConfig holds per-task configuration overrides.
 type TaskConfig struct {
-	TimeoutSeconds  int         `json:"timeout_seconds,omitempty"`
-	CLI             string      `json:"cli,omitempty"`
-	AIModel         string      `json:"ai_model,omitempty"`
-	AIApiKey        string      `json:"-"` // NEVER in responses (custom UnmarshalJSON accepts it)
-	MaxTurns        int         `json:"max_turns,omitempty"`
-	SourceBranch    string      `json:"source_branch,omitempty"` // branch to clone/checkout
-	TargetBranch    string      `json:"target_branch,omitempty"`
-	MaxBudgetUSD    float64     `json:"max_budget_usd,omitempty"`
-	MCPServers      []MCPServer    `json:"mcp_servers,omitempty"`
-	Tools           []tools.TaskTool    `json:"tools,omitempty"`
-	WorkspaceTaskID string              `json:"workspace_task_id,omitempty"` // reuse workspace from another task
+	TimeoutSeconds  int              `json:"timeout_seconds,omitempty"`
+	CLI             string           `json:"cli,omitempty"`
+	AIModel         string           `json:"ai_model,omitempty"`
+	AIApiKey        string           `json:"-"` // NEVER in responses (custom UnmarshalJSON accepts it)
+	MaxTurns        int              `json:"max_turns,omitempty"`
+	SourceBranch    string           `json:"source_branch,omitempty"` // branch to clone/checkout
+	TargetBranch    string           `json:"target_branch,omitempty"`
+	MaxBudgetUSD    float64          `json:"max_budget_usd,omitempty"`
+	MCPServers      []MCPServer      `json:"mcp_servers,omitempty"`
+	Tools           []tools.TaskTool `json:"tools,omitempty"`
+	WorkspaceTaskID string           `json:"workspace_task_id,omitempty"` // reuse workspace from another task
+	PRNumber        int              `json:"pr_number,omitempty"`         // input PR/MR number to review (for pr_review tasks)
+	OutputMode      string           `json:"output_mode,omitempty"`       // "post_comments" or "api_only" (for pr_review tasks)
 }
 
 // UnmarshalJSON accepts ai_api_key from JSON input while json:"-" keeps it hidden in output.
@@ -102,10 +112,11 @@ func (c *TaskConfig) UnmarshalJSON(data []byte) error {
 
 // MCPServer defines an MCP server configuration.
 type MCPServer struct {
-	Name      string            `json:"name"`
-	Transport string            `json:"transport,omitempty"` // "stdio" (default) or "http"
+	Name      string `json:"name"`
+	Transport string `json:"transport,omitempty"` // "stdio" (default) or "http"
 	// stdio fields
-	Command string            `json:"command,omitempty"`
+	Package string            `json:"package,omitempty"` // NPM package or binary path
+	Command string            `json:"command,omitempty"` // e.g. "npx", "uvx", "docker"
 	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
 	// http fields
@@ -113,17 +124,17 @@ type MCPServer struct {
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
-// Iteration stores result data for a single iteration (Phase 3).
+// Iteration stores result data for a single iteration.
 type Iteration struct {
-	Number    int             `json:"number"`
-	Prompt    string          `json:"prompt"`
-	Result    string          `json:"result,omitempty"`
-	Error     string          `json:"error,omitempty"`
-	Status    TaskStatus      `json:"status"`
+	Number    int                    `json:"number"`
+	Prompt    string                 `json:"prompt"`
+	Result    string                 `json:"result,omitempty"`
+	Error     string                 `json:"error,omitempty"`
+	Status    TaskStatus             `json:"status"`
 	Changes   *gitpkg.ChangesSummary `json:"changes,omitempty"`
-	Usage     *UsageInfo      `json:"usage,omitempty"`
-	StartedAt time.Time       `json:"started_at"`
-	EndedAt   *time.Time      `json:"ended_at,omitempty"`
+	Usage     *UsageInfo             `json:"usage,omitempty"`
+	StartedAt time.Time              `json:"started_at"`
+	EndedAt   *time.Time             `json:"ended_at,omitempty"`
 }
 
 // MarshalConfig serializes TaskConfig to JSON string for Redis storage.

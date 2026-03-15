@@ -22,6 +22,7 @@ const (
 	RunStatusRunning   RunStatus = "running"
 	RunStatusCompleted RunStatus = "completed"
 	RunStatusFailed    RunStatus = "failed"
+	RunStatusCanceled  RunStatus = "canceled"
 )
 
 // StepStatus represents the current state of a workflow step execution.
@@ -40,7 +41,6 @@ type ActionKind string
 
 const (
 	ActionCreatePR ActionKind = "create_pr"
-	ActionNotify   ActionKind = "notify"
 )
 
 // WorkflowDefinition describes a reusable workflow template.
@@ -73,13 +73,23 @@ type FetchConfig struct {
 type TaskStepConfig struct {
 	RepoURL          string `json:"repo_url"`
 	Prompt           string `json:"prompt"`
-	TaskType         string `json:"task_type,omitempty"`          // task type override: "code", "plan", "review"
+	TaskType         string `json:"task_type,omitempty"` // task type override: "code", "plan", "review", "pr_review"
 	ProviderKey      string `json:"provider_key,omitempty"`
 	AccessToken      string `json:"access_token,omitempty"`
 	CLI              string `json:"cli,omitempty"`                // CLI runner override (e.g. "claude-code", "codex")
 	AIModel          string `json:"ai_model,omitempty"`           // AI model override
 	SourceBranch     string `json:"source_branch,omitempty"`      // branch to clone/checkout
+	TargetBranch     string `json:"target_branch,omitempty"`      // base branch for PR review / PR creation
 	WorkspaceTaskRef string `json:"workspace_task_ref,omitempty"` // step name whose workspace to reuse
+
+	// PR review fields
+	PRNumber   int    `json:"pr_number,omitempty"`   // PR/MR number (for pr_review tasks)
+	OutputMode string `json:"output_mode,omitempty"` // "post_comments" or "api_only" (for pr_review tasks)
+
+	// Tool/MCP overrides (raw JSON, forwarded to task.CreateTaskRequest as-is)
+	Tools      json.RawMessage `json:"tools,omitempty"`        // per-task tool requests ([]tools.TaskTool)
+	MCPServers json.RawMessage `json:"mcp_servers,omitempty"`  // per-task MCP servers ([]task.MCPServer)
+	ToolKeyRef string          `json:"tool_key_ref,omitempty"` // key name → resolve token as auth_token for tools
 }
 
 // ActionConfig is the configuration for an action step.

@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"path/filepath"
 
-	"github.com/freema/codeforge/internal/tool/runner"
-	gitpkg "github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/slug"
+	gitpkg "github.com/freema/codeforge/internal/tool/git"
+	"github.com/freema/codeforge/internal/tool/runner"
 )
 
 // WorkspacePathResolver resolves the filesystem path for a task workspace.

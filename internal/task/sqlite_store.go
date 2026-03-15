@@ -35,12 +35,14 @@ func (s *SQLiteStore) Save(ctx context.Context, t *Task) error {
 			result, error, changes_json, usage_json,
 			iteration, current_prompt,
 			branch, pr_number, pr_url,
-			trace_id, created_at, started_at, finished_at, updated_at)
+			workflow_run_id, trace_id,
+			created_at, started_at, finished_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?,
 			?, ?, ?, ?,
 			?, ?,
 			?, ?, ?,
-			?, ?, ?, ?, ?)
+			?, ?,
+			?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 			status = excluded.status,
 			repo_url = excluded.repo_url,
@@ -58,6 +60,7 @@ func (s *SQLiteStore) Save(ctx context.Context, t *Task) error {
 			branch = excluded.branch,
 			pr_number = excluded.pr_number,
 			pr_url = excluded.pr_url,
+			workflow_run_id = excluded.workflow_run_id,
 			trace_id = excluded.trace_id,
 			started_at = excluded.started_at,
 			finished_at = excluded.finished_at,
@@ -66,7 +69,8 @@ func (s *SQLiteStore) Save(ctx context.Context, t *Task) error {
 		t.Result, t.Error, changesJSON, usageJSON,
 		t.Iteration, t.CurrentPrompt,
 		t.Branch, t.PRNumber, t.PRURL,
-		t.TraceID, t.CreatedAt.Format(time.RFC3339Nano), nullableTime(t.StartedAt), nullableTime(t.FinishedAt), now,
+		t.WorkflowRunID, t.TraceID,
+		t.CreatedAt.Format(time.RFC3339Nano), nullableTime(t.StartedAt), nullableTime(t.FinishedAt), now,
 	)
 	if err != nil {
 		return fmt.Errorf("saving task to sqlite: %w", err)
@@ -192,7 +196,7 @@ func (s *SQLiteStore) Get(ctx context.Context, taskID string) (*Task, error) {
 			result, error, changes_json, usage_json,
 			iteration, current_prompt,
 			branch, pr_number, pr_url,
-			trace_id, created_at, started_at, finished_at, updated_at,
+			workflow_run_id, trace_id, created_at, started_at, finished_at, updated_at,
 			review_result_json
 		 FROM tasks WHERE id = ?`,
 		taskID,
@@ -201,7 +205,7 @@ func (s *SQLiteStore) Get(ctx context.Context, taskID string) (*Task, error) {
 		&t.Result, &t.Error, &changesJSON, &usageJSON,
 		&t.Iteration, &t.CurrentPrompt,
 		&t.Branch, &t.PRNumber, &t.PRURL,
-		&t.TraceID, &createdAt, &startedAt, &finishedAt, &updatedAt,
+		&t.WorkflowRunID, &t.TraceID, &createdAt, &startedAt, &finishedAt, &updatedAt,
 		&reviewJSON,
 	)
 	if err == sql.ErrNoRows {
@@ -297,11 +301,11 @@ func (s *SQLiteStore) List(ctx context.Context, opts ListOptions) ([]TaskSummary
 	var query string
 	var args []interface{}
 	if opts.Status != "" {
-		query = `SELECT id, status, repo_url, prompt, task_type, iteration, error, branch, pr_url, created_at, started_at, finished_at
+		query = `SELECT id, status, repo_url, prompt, task_type, iteration, error, branch, pr_url, workflow_run_id, changes_json, created_at, started_at, finished_at
 			FROM tasks WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
 		args = []interface{}{opts.Status, limit, opts.Offset}
 	} else {
-		query = `SELECT id, status, repo_url, prompt, task_type, iteration, error, branch, pr_url, created_at, started_at, finished_at
+		query = `SELECT id, status, repo_url, prompt, task_type, iteration, error, branch, pr_url, workflow_run_id, changes_json, created_at, started_at, finished_at
 			FROM tasks ORDER BY created_at DESC LIMIT ? OFFSET ?`
 		args = []interface{}{limit, opts.Offset}
 	}
@@ -316,15 +320,22 @@ func (s *SQLiteStore) List(ctx context.Context, opts ListOptions) ([]TaskSummary
 	for rows.Next() {
 		var ts TaskSummary
 		var statusStr, prompt, createdAt string
+		var changesJSON sql.NullString
 		var startedAt, finishedAt sql.NullString
 
 		if err := rows.Scan(&ts.ID, &statusStr, &ts.RepoURL, &prompt, &ts.TaskType, &ts.Iteration,
-			&ts.Error, &ts.Branch, &ts.PRURL, &createdAt, &startedAt, &finishedAt); err != nil {
+			&ts.Error, &ts.Branch, &ts.PRURL, &ts.WorkflowRunID, &changesJSON, &createdAt, &startedAt, &finishedAt); err != nil {
 			return nil, 0, fmt.Errorf("scanning task: %w", err)
 		}
 
 		ts.Status = TaskStatus(statusStr)
 		ts.Prompt = truncatePrompt(prompt, 200)
+		if changesJSON.Valid && changesJSON.String != "" && changesJSON.String != "{}" {
+			cs := UnmarshalChangesSummary(changesJSON.String)
+			if cs != nil && (cs.FilesModified > 0 || cs.FilesCreated > 0 || cs.FilesDeleted > 0) {
+				ts.ChangesSummary = cs
+			}
+		}
 		ts.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
 		if startedAt.Valid {
 			t, _ := time.Parse(time.RFC3339Nano, startedAt.String)

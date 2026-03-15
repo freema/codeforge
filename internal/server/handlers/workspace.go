@@ -56,9 +56,9 @@ func (h *WorkspaceHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"workspaces":  items,
+		"workspaces":    items,
 		"total_size_mb": float64(totalSize) / (1024 * 1024),
-		"total_count":  len(items),
+		"total_count":   len(items),
 	})
 }
 

@@ -41,4 +41,3 @@ func UpdatePRDescription(ctx context.Context, repo *RepoInfo, token string, prNu
 		return fmt.Errorf("PR update not supported for provider: %s", repo.Provider)
 	}
 }
-

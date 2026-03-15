@@ -17,13 +17,14 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
-	"github.com/freema/codeforge/internal/tool/runner"
-	gitpkg "github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/keys"
-	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/metrics"
 	"github.com/freema/codeforge/internal/prompt"
+	"github.com/freema/codeforge/internal/review"
 	"github.com/freema/codeforge/internal/task"
+	gitpkg "github.com/freema/codeforge/internal/tool/git"
+	"github.com/freema/codeforge/internal/tool/mcp"
+	"github.com/freema/codeforge/internal/tool/runner"
 	"github.com/freema/codeforge/internal/tools"
 	"github.com/freema/codeforge/internal/tracing"
 	"github.com/freema/codeforge/internal/webhook"
@@ -34,10 +35,11 @@ const defaultMaxContextChars = 50000
 
 // ExecutorConfig holds executor configuration.
 type ExecutorConfig struct {
-	WorkspaceBase  string
-	DefaultTimeout int
-	MaxTimeout     int
-	DefaultModels  map[string]string // CLI name → default model (e.g. "claude-code" → "claude-sonnet-4-...")
+	WorkspaceBase   string
+	DefaultTimeout  int
+	MaxTimeout      int
+	DefaultModels   map[string]string // CLI name → default model (e.g. "claude-code" → "claude-sonnet-4-...")
+	ProviderDomains map[string]string // custom domain → provider mappings
 }
 
 // Executor orchestrates the full task lifecycle: clone → run CLI → diff → report.
@@ -78,6 +80,14 @@ func NewExecutor(
 	}
 }
 
+// emitOrLog emits a stream event, logging a warning on failure.
+// Streaming is best-effort — failures are non-fatal.
+func (e *Executor) emitOrLog(err error, log *slog.Logger, event, taskID string) {
+	if err != nil {
+		log.Warn("stream emit failed", "event", event, "task_id", taskID, "error", err)
+	}
+}
+
 // Execute runs the full task pipeline.
 func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 	ctx, span := tracing.Tracer().Start(ctx, "task.execute",
@@ -85,9 +95,14 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 	)
 	defer span.End()
 
-	// Store trace ID on task
 	if traceID := tracing.TraceIDFromContext(ctx); traceID != "" {
 		t.TraceID = traceID
+	}
+
+	// Dispatch review tasks to dedicated flow (enqueued via StartReviewAsync)
+	if t.Status == task.StatusReviewing {
+		e.executeReview(ctx, t)
+		return
 	}
 
 	log := slog.With("task_id", t.ID, "iteration", t.Iteration, "trace_id", t.TraceID)
@@ -96,11 +111,36 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 	metrics.TasksInProgress.Inc()
 	defer func() {
 		metrics.TasksInProgress.Dec()
-		duration := time.Since(startTime).Seconds()
-		metrics.TaskDuration.WithLabelValues(string(t.Status)).Observe(duration)
+		metrics.TaskDuration.WithLabelValues(string(t.Status)).Observe(time.Since(startTime).Seconds())
 	}()
 
-	// Determine timeout
+	timeout := e.resolveTimeout(t)
+	taskCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+
+	// Phase 1: resolve token + prepare workspace
+	e.resolveToken(taskCtx, t, log)
+	workDir, err := e.setupWorkspace(taskCtx, ctx, t, startTime, log)
+	if err != nil {
+		return // failTask already called inside setupWorkspace
+	}
+
+	// Phase 2: resolve tools + MCP config
+	mcpConfigPath := e.setupMCP(taskCtx, t, workDir, log)
+
+	// Phase 3: run CLI
+	result, err := e.runStep(taskCtx, t, workDir, mcpConfigPath, log)
+	if err != nil {
+		e.handleRunError(ctx, taskCtx, t, err, timeout, startTime, log)
+		return
+	}
+
+	// Phase 4: finalize
+	e.completeTask(ctx, t, result, workDir, startTime, log)
+}
+
+// resolveTimeout determines the effective task timeout in seconds.
+func (e *Executor) resolveTimeout(t *task.Task) int {
 	timeout := e.cfg.DefaultTimeout
 	if t.Config != nil && t.Config.TimeoutSeconds > 0 {
 		timeout = t.Config.TimeoutSeconds
@@ -108,79 +148,81 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 	if timeout > e.cfg.MaxTimeout {
 		timeout = e.cfg.MaxTimeout
 	}
+	return timeout
+}
 
-	taskCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
+// resolveToken resolves the access token from the key registry if not already set.
+func (e *Executor) resolveToken(ctx context.Context, t *task.Task, log *slog.Logger) {
+	if e.keyResolver == nil || t.AccessToken != "" {
+		return
+	}
+	token, err := e.keyResolver.ResolveToken(ctx, t.RepoURL, t.AccessToken, t.ProviderKey)
+	if err != nil {
+		log.Warn("token resolution failed", "error", err)
+		return
+	}
+	t.AccessToken = token
+}
 
-	// Resolve workDir: prefer workspace manager path, fallback to legacy
+// setupWorkspace resolves or clones the workspace directory.
+// Returns the workDir path or calls failTask and returns an error.
+func (e *Executor) setupWorkspace(taskCtx, parentCtx context.Context, t *task.Task, startTime time.Time, log *slog.Logger) (string, error) {
 	workDir := filepath.Join(e.cfg.WorkspaceBase, t.ID)
 	if e.workspaceMgr != nil {
-		if ws := e.workspaceMgr.Get(ctx, t.ID); ws != nil && ws.Path != "" {
+		if ws := e.workspaceMgr.Get(parentCtx, t.ID); ws != nil && ws.Path != "" {
 			workDir = ws.Path
 		}
 	}
 
-	// Resolve access token (task → registry → env)
-	if e.keyResolver != nil && t.AccessToken == "" {
-		token, err := e.keyResolver.ResolveToken(taskCtx, t.RepoURL, t.AccessToken, t.ProviderKey)
-		if err != nil {
-			log.Warn("token resolution failed", "error", err)
-		} else {
-			t.AccessToken = token
-		}
-	}
-
-	// Check if we should reuse a workspace from a referenced task (e.g. code review step)
-	reuseWorkspace := false
+	// Check workspace reuse from a referenced task (e.g. code review step)
 	if t.Config != nil && t.Config.WorkspaceTaskID != "" && e.workspaceMgr != nil {
-		if refWs := e.workspaceMgr.Get(ctx, t.Config.WorkspaceTaskID); refWs != nil {
+		if refWs := e.workspaceMgr.Get(parentCtx, t.Config.WorkspaceTaskID); refWs != nil {
 			if _, statErr := os.Stat(refWs.Path); statErr == nil {
-				workDir = refWs.Path
-				reuseWorkspace = true
 				log.Info("reusing workspace from referenced task",
-					"ref_task_id", t.Config.WorkspaceTaskID,
-					"work_dir", workDir,
-				)
+					"ref_task_id", t.Config.WorkspaceTaskID, "work_dir", refWs.Path)
+				return refWs.Path, nil
 			}
 		}
 	}
 
-	// Clone or reuse workspace
-	if reuseWorkspace {
-		// Skip cloning — workspace already populated by the referenced task
-	} else if t.Iteration <= 1 {
+	// First iteration: clone
+	if t.Iteration <= 1 {
 		if err := e.cloneStep(taskCtx, t, workDir, log); err != nil {
-			e.failTask(ctx, t, fmt.Sprintf("clone failed: %v", err), startTime, log)
-			return
+			e.failTask(parentCtx, t, fmt.Sprintf("clone failed: %v", err), startTime, log)
+			return "", err
 		}
-		// Re-resolve workDir — cloneStep may have created the workspace at a
-		// slug-based path that differs from the initial ID-based fallback.
+		// Re-resolve workDir — cloneStep may have created workspace at a slug-based path
 		if e.workspaceMgr != nil {
-			if ws := e.workspaceMgr.Get(ctx, t.ID); ws != nil && ws.Path != "" {
+			if ws := e.workspaceMgr.Get(parentCtx, t.ID); ws != nil && ws.Path != "" {
 				workDir = ws.Path
 			}
 		}
+		return workDir, nil
+	}
+
+	// Follow-up iteration: reuse or re-clone
+	if _, err := os.Stat(workDir); os.IsNotExist(err) {
+		log.Warn("workspace missing for iteration, re-cloning", "work_dir", workDir)
+		if err := e.cloneStep(taskCtx, t, workDir, log); err != nil {
+			e.failTask(parentCtx, t, fmt.Sprintf("re-clone failed: %v", err), startTime, log)
+			return "", err
+		}
 	} else {
-		// Reuse workspace — check it still exists
-		if _, err := os.Stat(workDir); os.IsNotExist(err) {
-			log.Warn("workspace missing for iteration, re-cloning", "work_dir", workDir)
-			if err := e.cloneStep(taskCtx, t, workDir, log); err != nil {
-				e.failTask(ctx, t, fmt.Sprintf("re-clone failed: %v", err), startTime, log)
-				return
-			}
-		} else {
-			log.Info("reusing existing workspace", "work_dir", workDir)
-			// Pull latest if a branch was pushed (PR flow)
-			if t.Branch != "" {
-				e.pullBranch(taskCtx, t, workDir, log)
-			}
+		log.Info("reusing existing workspace", "work_dir", workDir)
+		if t.Branch != "" {
+			e.pullBranch(taskCtx, t, workDir, log)
 		}
 	}
 
+	return workDir, nil
+}
+
+// setupMCP resolves tool definitions and MCP server configs, writes .mcp.json.
+func (e *Executor) setupMCP(ctx context.Context, t *task.Task, workDir string, log *slog.Logger) string {
 	// Resolve tool definitions → MCP servers
 	var toolMCPServers []mcp.Server
 	if e.toolResolver != nil && t.Config != nil && len(t.Config.Tools) > 0 {
-		instances, err := e.toolResolver.Resolve(taskCtx, t.RepoURL, t.Config.Tools)
+		instances, err := e.toolResolver.Resolve(ctx, t.RepoURL, t.Config.Tools)
 		if err != nil {
 			log.Warn("tool resolution failed (continuing without tools)", "error", err)
 		} else {
@@ -188,81 +230,82 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 		}
 	}
 
-	// Setup MCP servers (generate .mcp.json)
-	var mcpConfigPath string
-	if e.mcpInstaller != nil {
-		var taskMCPServers []mcp.Server
-		if t.Config != nil {
-			for _, s := range t.Config.MCPServers {
-				taskMCPServers = append(taskMCPServers, mcp.Server{
-					Name:      s.Name,
-					Transport: s.Transport,
-					Command:   s.Command,
-					Package:   s.Command, // task model uses "command" as package for stdio
-					Args:      s.Args,
-					Env:       s.Env,
-					URL:       s.URL,
-					Headers:   s.Headers,
-				})
-			}
-		}
-		taskMCPServers = append(taskMCPServers, toolMCPServers...)
-		if err := e.mcpInstaller.Setup(taskCtx, workDir, t.RepoURL, taskMCPServers); err != nil {
-			log.Warn("MCP setup failed (continuing without MCP)", "error", err)
-		} else {
-			cfgPath := filepath.Join(workDir, ".mcp.json")
-			if _, statErr := os.Stat(cfgPath); statErr == nil {
-				mcpConfigPath = cfgPath
-				log.Info("MCP config written", "path", cfgPath)
-			}
-		}
+	if e.mcpInstaller == nil {
+		return ""
 	}
 
-	// Run CLI
-	result, err := e.runStep(taskCtx, t, workDir, mcpConfigPath, log)
-	if err != nil {
-		if taskCtx.Err() == context.DeadlineExceeded {
-			_ = e.streamer.EmitSystem(ctx, t.ID, "task_timeout", map[string]interface{}{
-				"timeout_seconds": timeout,
+	// Collect task-level MCP servers
+	var taskMCPServers []mcp.Server
+	if t.Config != nil {
+		for _, s := range t.Config.MCPServers {
+			taskMCPServers = append(taskMCPServers, mcp.Server{
+				Name:      s.Name,
+				Transport: s.Transport,
+				Command:   s.Command,
+				Package:   s.Package,
+				Args:      s.Args,
+				Env:       s.Env,
+				URL:       s.URL,
+				Headers:   s.Headers,
 			})
-			e.failTask(ctx, t, fmt.Sprintf("task timed out after %ds", timeout), startTime, log)
-			return
 		}
-		if ctx.Err() == context.Canceled {
-			_ = e.streamer.EmitSystem(ctx, t.ID, "task_cancelled", nil)
-			e.failTask(context.Background(), t, "cancelled by user", startTime, log)
-			return
-		}
-		e.failTask(ctx, t, fmt.Sprintf("CLI execution failed: %v", err), startTime, log)
+	}
+	taskMCPServers = append(taskMCPServers, toolMCPServers...)
+
+	if err := e.mcpInstaller.Setup(ctx, workDir, t.RepoURL, taskMCPServers); err != nil {
+		log.Warn("MCP setup failed (continuing without MCP)", "error", err)
+		return ""
+	}
+
+	cfgPath := filepath.Join(workDir, ".mcp.json")
+	if _, statErr := os.Stat(cfgPath); statErr == nil {
+		log.Info("MCP config written", "path", cfgPath)
+		return cfgPath
+	}
+	return ""
+}
+
+// handleRunError classifies the CLI run error and calls failTask with the appropriate message.
+func (e *Executor) handleRunError(ctx, taskCtx context.Context, t *task.Task, err error, timeout int, startTime time.Time, log *slog.Logger) {
+	if taskCtx.Err() == context.DeadlineExceeded {
+		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "task_timeout", map[string]interface{}{
+			"timeout_seconds": timeout,
+		}), log, "task_timeout", t.ID)
+		e.failTask(ctx, t, fmt.Sprintf("task timed out after %ds", timeout), startTime, log)
 		return
 	}
+	if ctx.Err() == context.Canceled {
+		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "task_canceled", nil), log, "task_canceled", t.ID)
+		e.failTask(context.Background(), t, "canceled by user", startTime, log)
+		return
+	}
+	e.failTask(ctx, t, fmt.Sprintf("CLI execution failed: %v", err), startTime, log)
+}
 
-	// Calculate changes
+// completeTask handles post-CLI success: changes, result storage, status transition,
+// iteration record, events, pr_review handling, and webhook delivery.
+func (e *Executor) completeTask(ctx context.Context, t *task.Task, result *runner.RunResult, workDir string, startTime time.Time, log *slog.Logger) {
 	changes, err := gitpkg.CalculateChanges(ctx, workDir)
 	if err != nil {
 		log.Warn("failed to calculate changes", "error", err)
 	}
 
-	// Update workspace size
 	if e.workspaceMgr != nil {
 		if size, err := e.workspaceMgr.UpdateSize(ctx, t.ID); err == nil {
 			log.Info("workspace size updated", "size_bytes", size)
 		}
 	}
 
-	// Build usage info
 	usage := &task.UsageInfo{
 		InputTokens:     result.InputTokens,
 		OutputTokens:    result.OutputTokens,
 		DurationSeconds: int(result.Duration.Seconds()),
 	}
 
-	// Store result
 	if err := e.taskService.SetResult(ctx, t.ID, result.Output, changes, usage); err != nil {
 		log.Error("failed to store result", "error", err)
 	}
 
-	// Transition to completed
 	if err := e.taskService.UpdateStatus(ctx, t.ID, task.StatusCompleted); err != nil {
 		log.Error("failed to update status to completed", "error", err)
 		return
@@ -275,7 +318,7 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 	if prompt == "" {
 		prompt = t.Prompt
 	}
-	_ = e.taskService.SaveIteration(ctx, t.ID, task.Iteration{
+	if err := e.taskService.SaveIteration(ctx, t.ID, task.Iteration{
 		Number:    t.Iteration,
 		Prompt:    prompt,
 		Result:    truncate(result.Output, 2000),
@@ -284,18 +327,24 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 		Usage:     usage,
 		StartedAt: startTime,
 		EndedAt:   &now,
-	})
+	}); err != nil {
+		log.Warn("failed to save iteration", "error", err)
+	}
 
-	// Emit completion events
-	_ = e.streamer.EmitResult(ctx, t.ID, "task_completed", map[string]interface{}{
+	e.emitOrLog(e.streamer.EmitResult(ctx, t.ID, "task_completed", map[string]interface{}{
 		"result":          truncate(result.Output, 2000),
 		"changes_summary": changes,
 		"usage":           usage,
 		"iteration":       t.Iteration,
-	})
-	_ = e.streamer.EmitDone(ctx, t.ID, task.StatusCompleted, changes)
+	}), log, "task_completed", t.ID)
 
-	// Send webhook
+	// Review post-processing BEFORE done — client may close stream after done event
+	if t.TaskType == "pr_review" || t.TaskType == "review" {
+		e.handlePRReviewCompletion(ctx, t, result.Output, log)
+	}
+
+	e.emitOrLog(e.streamer.EmitDone(ctx, t.ID, task.StatusCompleted, changes), log, "task_done", t.ID)
+
 	if t.CallbackURL != "" && e.webhook != nil {
 		e.sendWebhook(ctx, t, result.Output, changes, usage, log)
 	}
@@ -312,9 +361,9 @@ func (e *Executor) cloneStep(ctx context.Context, t *task.Task, workDir string, 
 		return err
 	}
 
-	_ = e.streamer.EmitGit(ctx, t.ID, "clone_started", map[string]string{
+	e.emitOrLog(e.streamer.EmitGit(ctx, t.ID, "clone_started", map[string]string{
 		"repo_url": gitpkg.SanitizeURL(t.RepoURL),
-	})
+	}), log, "clone_started", t.ID)
 
 	// Create workspace via manager (or fallback to raw mkdir)
 	if e.workspaceMgr != nil {
@@ -333,29 +382,67 @@ func (e *Executor) cloneStep(ctx context.Context, t *task.Task, workDir string, 
 		}
 	}
 
-	branch := ""
-	if t.Config != nil {
-		branch = t.Config.SourceBranch
-		if branch == "" {
-			branch = t.Config.TargetBranch // backward compat
+	// For pr_review tasks: clone the target branch (or default), then fetch the PR ref.
+	// This handles fork PRs where the source branch doesn't exist in the origin repo.
+	if t.TaskType == "pr_review" && t.Config != nil && t.Config.PRNumber > 0 {
+		targetBranch := t.Config.TargetBranch
+		if targetBranch == "" {
+			targetBranch = "main"
+		}
+
+		err := gitpkg.Clone(ctx, gitpkg.CloneOptions{
+			RepoURL: t.RepoURL,
+			DestDir: workDir,
+			Token:   t.AccessToken,
+			Branch:  targetBranch,
+			Shallow: false, // need full history for diff
+		})
+		if err != nil {
+			span.SetStatus(codes.Error, "clone failed")
+			return err
+		}
+
+		// Determine the correct PR ref based on provider (GitHub vs GitLab)
+		repo, parseErr := gitpkg.ParseRepoURL(t.RepoURL, e.cfg.ProviderDomains)
+		var prRef string
+		if parseErr == nil && repo.Provider == gitpkg.ProviderGitLab {
+			prRef = fmt.Sprintf("merge-requests/%d/head", t.Config.PRNumber)
+		} else {
+			prRef = fmt.Sprintf("pull/%d/head", t.Config.PRNumber)
+		}
+		prBranch := fmt.Sprintf("pr-%d", t.Config.PRNumber)
+		if err := e.fetchAndCheckoutPR(ctx, t, workDir, prRef, prBranch, log); err != nil {
+			span.SetStatus(codes.Error, "pr fetch failed")
+			return err
+		}
+
+		// Store the resolved branch name for the prompt template
+		t.Config.SourceBranch = prBranch
+	} else {
+		branch := ""
+		if t.Config != nil {
+			branch = t.Config.SourceBranch
+			if branch == "" {
+				branch = t.Config.TargetBranch // backward compat
+			}
+		}
+
+		err := gitpkg.Clone(ctx, gitpkg.CloneOptions{
+			RepoURL: t.RepoURL,
+			DestDir: workDir,
+			Token:   t.AccessToken,
+			Branch:  branch,
+			Shallow: true,
+		})
+		if err != nil {
+			span.SetStatus(codes.Error, "clone failed")
+			return err
 		}
 	}
 
-	err := gitpkg.Clone(ctx, gitpkg.CloneOptions{
-		RepoURL: t.RepoURL,
-		DestDir: workDir,
-		Token:   t.AccessToken,
-		Branch:  branch,
-		Shallow: true,
-	})
-	if err != nil {
-		span.SetStatus(codes.Error, "clone failed")
-		return err
-	}
-
-	_ = e.streamer.EmitGit(ctx, t.ID, "clone_completed", map[string]string{
+	e.emitOrLog(e.streamer.EmitGit(ctx, t.ID, "clone_completed", map[string]string{
 		"work_dir": workDir,
-	})
+	}), log, "clone_completed", t.ID)
 
 	// If running as root, chown workspace to "codeforge" user so the CLI
 	// (which drops privileges) can write to it.
@@ -432,10 +519,10 @@ func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, mc
 		normalizer = runner.NewCodexNormalizer()
 	}
 
-	_ = e.streamer.EmitSystem(ctx, t.ID, "cli_started", map[string]string{
+	e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "cli_started", map[string]string{
 		"cli":       resolvedCLI,
 		"iteration": fmt.Sprintf("%d", t.Iteration),
-	})
+	}), log, "cli_started", t.ID)
 
 	// Build prompt with conversation context for iterations > 1
 	prompt := e.buildPrompt(ctx, t)
@@ -465,11 +552,11 @@ func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, mc
 		OnEvent: func(event json.RawMessage) {
 			if normalizer != nil {
 				if normalized := normalizer.Normalize(event); normalized != nil {
-					_ = e.streamer.EmitNormalized(ctx, t.ID, normalized)
+					e.emitOrLog(e.streamer.EmitNormalized(ctx, t.ID, normalized), log, "cli_normalized", t.ID)
 					return
 				}
 			}
-			_ = e.streamer.EmitCLIOutput(ctx, t.ID, event)
+			e.emitOrLog(e.streamer.EmitCLIOutput(ctx, t.ID, event), log, "cli_output", t.ID)
 		},
 	})
 
@@ -490,7 +577,25 @@ func (e *Executor) buildPrompt(ctx context.Context, t *task.Task) string {
 
 	// Apply task type template for first iteration only
 	if t.Iteration <= 1 && t.TaskType != "" && t.TaskType != "code" {
-		rendered, err := prompt.RenderTaskPrompt(t.TaskType, currentPrompt)
+		var rendered string
+		var err error
+
+		if t.TaskType == "pr_review" && t.Config != nil {
+			// PR review needs richer context (branches, PR number)
+			baseBranch := t.Config.TargetBranch
+			if baseBranch == "" {
+				baseBranch = "main"
+			}
+			rendered, err = prompt.RenderPRReviewPrompt(prompt.PRReviewData{
+				UserPrompt: currentPrompt,
+				PRNumber:   t.Config.PRNumber,
+				PRBranch:   t.Config.SourceBranch,
+				BaseBranch: baseBranch,
+			})
+		} else {
+			rendered, err = prompt.RenderTaskPrompt(t.TaskType, currentPrompt)
+		}
+
 		if err != nil {
 			slog.Warn("failed to render task type template, using raw prompt",
 				"task_type", t.TaskType, "error", err)
@@ -538,8 +643,16 @@ func (e *Executor) buildPrompt(ctx context.Context, t *task.Task) string {
 func (e *Executor) failTask(ctx context.Context, t *task.Task, errMsg string, startTime time.Time, log *slog.Logger) {
 	log.Error("task failed", "error", errMsg)
 
-	_ = e.taskService.SetError(ctx, t.ID, errMsg)
-	_ = e.taskService.UpdateStatus(ctx, t.ID, task.StatusFailed)
+	// Use a detached context for finalization — the original ctx may be canceled
+	// (e.g. user-triggered cancel), but we still need to persist the failure state.
+	finalCtx := context.WithoutCancel(ctx)
+
+	if err := e.taskService.SetError(finalCtx, t.ID, errMsg); err != nil {
+		log.Warn("failed to set error on task", "error", err)
+	}
+	if err := e.taskService.UpdateStatus(finalCtx, t.ID, task.StatusFailed); err != nil {
+		log.Warn("failed to update task status to failed", "error", err)
+	}
 	metrics.TasksTotal.WithLabelValues(string(task.StatusFailed)).Inc()
 
 	// Save failed iteration record
@@ -548,28 +661,32 @@ func (e *Executor) failTask(ctx context.Context, t *task.Task, errMsg string, st
 	if prompt == "" {
 		prompt = t.Prompt
 	}
-	_ = e.taskService.SaveIteration(ctx, t.ID, task.Iteration{
+	if err := e.taskService.SaveIteration(finalCtx, t.ID, task.Iteration{
 		Number:    t.Iteration,
 		Prompt:    prompt,
 		Error:     errMsg,
 		Status:    task.StatusFailed,
 		StartedAt: startTime,
 		EndedAt:   &now,
-	})
+	}); err != nil {
+		log.Warn("failed to save failed iteration", "error", err)
+	}
 
-	_ = e.streamer.EmitSystem(ctx, t.ID, "task_failed", map[string]string{
+	e.emitOrLog(e.streamer.EmitSystem(finalCtx, t.ID, "task_failed", map[string]string{
 		"error": errMsg,
-	})
-	_ = e.streamer.EmitDone(ctx, t.ID, task.StatusFailed, nil)
+	}), log, "task_failed", t.ID)
+	e.emitOrLog(e.streamer.EmitDone(finalCtx, t.ID, task.StatusFailed, nil), log, "task_done_failed", t.ID)
 
 	if t.CallbackURL != "" && e.webhook != nil {
-		_ = e.webhook.Send(ctx, t.CallbackURL, webhook.Payload{
+		if err := e.webhook.Send(finalCtx, t.CallbackURL, webhook.Payload{
 			TaskID:     t.ID,
 			Status:     string(task.StatusFailed),
 			Error:      errMsg,
 			TraceID:    t.TraceID,
 			FinishedAt: time.Now().UTC(),
-		})
+		}); err != nil {
+			log.Warn("failed to send failure webhook", "error", err)
+		}
 	}
 }
 
@@ -585,6 +702,323 @@ func (e *Executor) sendWebhook(ctx context.Context, t *task.Task, result string,
 	}); err != nil {
 		log.Error("webhook delivery failed", "error", err)
 	}
+}
+
+// fetchAndCheckoutPR fetches a PR ref from origin and checks out a local branch.
+// This handles both same-repo and fork PRs via the pull/{number}/head ref.
+func (e *Executor) fetchAndCheckoutPR(ctx context.Context, t *task.Task, workDir, prRef, localBranch string, log *slog.Logger) error {
+	askPassEnv, cleanup, err := gitpkg.AskPassEnv(t.AccessToken)
+	if err != nil {
+		return fmt.Errorf("creating askpass for PR fetch: %w", err)
+	}
+	defer cleanup()
+
+	env := os.Environ()
+	if len(askPassEnv) > 0 {
+		env = append(env, askPassEnv...)
+	}
+
+	// git fetch origin pull/N/head:pr-N
+	fetchRefSpec := fmt.Sprintf("%s:%s", prRef, localBranch)
+	fetchCmd := exec.CommandContext(ctx, "git", "fetch", "origin", fetchRefSpec)
+	fetchCmd.Dir = workDir
+	fetchCmd.Env = env
+	var stderr strings.Builder
+	fetchCmd.Stderr = &stderr
+
+	if err := fetchCmd.Run(); err != nil {
+		return fmt.Errorf("git fetch %s failed: %s", prRef, stderr.String())
+	}
+
+	// git checkout pr-N
+	checkoutCmd := exec.CommandContext(ctx, "git", "checkout", localBranch)
+	checkoutCmd.Dir = workDir
+	stderr.Reset()
+	checkoutCmd.Stderr = &stderr
+
+	if err := checkoutCmd.Run(); err != nil {
+		return fmt.Errorf("git checkout %s failed: %s", localBranch, stderr.String())
+	}
+
+	log.Info("PR branch checked out", "pr_ref", prRef, "local_branch", localBranch)
+	return nil
+}
+
+// handlePRReviewCompletion parses the CLI output as ReviewResult and optionally
+// posts review comments to the GitHub PR / GitLab MR.
+func (e *Executor) handlePRReviewCompletion(ctx context.Context, t *task.Task, output string, log *slog.Logger) {
+	// Parse ReviewResult from CLI output
+	reviewResult, err := review.ParseReviewOutput(output)
+	if err != nil {
+		metrics.ReviewParseFailures.Inc()
+		log.Warn("pr_review: failed to parse review result", "error", err)
+		return
+	}
+
+	// Resolve CLI + model for reviewed_by
+	cli := "claude-code"
+	model := e.cfg.DefaultModels[cli]
+	if t.Config != nil {
+		if t.Config.CLI != "" {
+			cli = t.Config.CLI
+		}
+		if t.Config.AIModel != "" {
+			model = t.Config.AIModel
+		} else if m, ok := e.cfg.DefaultModels[cli]; ok {
+			model = m
+		}
+	}
+	reviewResult.ReviewedBy = cli + ":" + model
+
+	// Store ReviewResult on the task
+	if err := e.taskService.SetReviewResult(ctx, t.ID, reviewResult); err != nil {
+		log.Error("pr_review: failed to store review result", "error", err)
+	}
+
+	e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "review_parsed", map[string]interface{}{
+		"verdict":      reviewResult.Verdict,
+		"score":        reviewResult.Score,
+		"issues_count": len(reviewResult.Issues),
+	}), log, "review_parsed", t.ID)
+
+	// Post comments to PR/MR if requested
+	if t.Config == nil || t.Config.OutputMode != "post_comments" || t.Config.PRNumber <= 0 {
+		return
+	}
+
+	// Resolve token from provider key
+	token := t.AccessToken
+	if token == "" && e.keyResolver != nil {
+		resolved, resolveErr := e.keyResolver.ResolveToken(ctx, t.RepoURL, "", t.ProviderKey)
+		if resolveErr != nil {
+			log.Error("pr_review: failed to resolve token for comment posting", "error", resolveErr)
+			return
+		}
+		token = resolved
+	}
+
+	repo, err := gitpkg.ParseRepoURL(t.RepoURL, e.cfg.ProviderDomains)
+	if err != nil {
+		log.Error("pr_review: failed to parse repo URL", "error", err)
+		return
+	}
+
+	log.Info("pr_review: posting review comments",
+		"provider", repo.Provider,
+		"pr_number", t.Config.PRNumber,
+		"issues", len(reviewResult.Issues),
+	)
+
+	postResult, err := gitpkg.PostReviewComments(
+		ctx, repo, token, t.Config.PRNumber, reviewResult,
+		review.FormatSummaryBody, review.FormatIssueComment,
+	)
+	if err != nil {
+		log.Error("pr_review: failed to post review comments", "error", err)
+		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "review_post_failed", map[string]string{
+			"error": err.Error(),
+		}), log, "review_post_failed", t.ID)
+		return
+	}
+
+	e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "review_posted", map[string]interface{}{
+		"review_url":      postResult.ReviewURL,
+		"comments_posted": postResult.CommentsPosted,
+	}), log, "review_posted", t.ID)
+
+	log.Info("pr_review: review comments posted",
+		"review_url", postResult.ReviewURL,
+		"comments_posted", postResult.CommentsPosted,
+	)
+}
+
+// resolveWorkDir finds the workspace directory for a task without cloning.
+func (e *Executor) resolveWorkDir(ctx context.Context, t *task.Task) string {
+	if e.workspaceMgr != nil {
+		if ws := e.workspaceMgr.Get(ctx, t.ID); ws != nil && ws.Path != "" {
+			return ws.Path
+		}
+		if t.Config != nil && t.Config.WorkspaceTaskID != "" {
+			if ws := e.workspaceMgr.Get(ctx, t.Config.WorkspaceTaskID); ws != nil && ws.Path != "" {
+				return ws.Path
+			}
+		}
+	}
+	return filepath.Join(e.cfg.WorkspaceBase, t.ID)
+}
+
+// executeReview runs a code review on an existing task workspace.
+// Called when a task is dequeued with status=reviewing (enqueued by StartReviewAsync).
+func (e *Executor) executeReview(ctx context.Context, t *task.Task) {
+	ctx, span := tracing.Tracer().Start(ctx, "task.review",
+		tracing.WithTaskAttributes(t.ID, t.Iteration),
+	)
+	defer span.End()
+
+	log := slog.With("task_id", t.ID, "trace_id", t.TraceID, "review", true)
+	startTime := time.Now().UTC()
+
+	metrics.TasksInProgress.Inc()
+	defer func() {
+		metrics.TasksInProgress.Dec()
+		metrics.TaskDuration.WithLabelValues("review").Observe(time.Since(startTime).Seconds())
+	}()
+
+	timeout := e.resolveTimeout(t)
+	taskCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+
+	// Resolve workspace — review runs on existing workspace, no clone needed
+	workDir := e.resolveWorkDir(ctx, t)
+	if _, err := os.Stat(workDir); os.IsNotExist(err) {
+		e.failTask(ctx, t, "workspace not found for review — it may have been cleaned up", startTime, log)
+		return
+	}
+
+	// Resolve CLI: review param → task config → default
+	cli := "claude-code"
+	if t.ReviewCLI != "" {
+		cli = t.ReviewCLI
+	} else if t.Config != nil && t.Config.CLI != "" {
+		cli = t.Config.CLI
+	}
+
+	cliRunner, err := e.cliRegistry.Get(cli)
+	if err != nil {
+		e.failTask(ctx, t, fmt.Sprintf("failed to resolve CLI %q for review: %v", cli, err), startTime, log)
+		return
+	}
+
+	// Resolve model: review param → task config → default for CLI
+	model := e.cfg.DefaultModels[cli]
+	if t.ReviewModel != "" {
+		model = t.ReviewModel
+	} else if t.Config != nil && t.Config.AIModel != "" {
+		model = t.Config.AIModel
+	}
+
+	// Build review prompt from code_review template
+	reviewPrompt, err := prompt.Render("code_review", prompt.CodeReviewData{
+		OriginalPrompt: t.Prompt,
+	})
+	if err != nil {
+		e.failTask(ctx, t, fmt.Sprintf("failed to render review prompt: %v", err), startTime, log)
+		return
+	}
+
+	e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "review_started", map[string]string{
+		"cli":   cli,
+		"model": model,
+	}), log, "review_started", t.ID)
+
+	// Select stream normalizer for CLI output
+	var normalizer runner.StreamNormalizer
+	switch cli {
+	case "claude-code":
+		normalizer = runner.NewClaudeNormalizer()
+	case "codex":
+		normalizer = runner.NewCodexNormalizer()
+	}
+
+	apiKey := ""
+	if t.Config != nil {
+		apiKey = t.Config.AIApiKey
+	}
+
+	// Run CLI with streaming
+	result, err := cliRunner.Run(taskCtx, runner.RunOptions{
+		Prompt:  reviewPrompt,
+		WorkDir: workDir,
+		Model:   model,
+		APIKey:  apiKey,
+		OnEvent: func(event json.RawMessage) {
+			if normalizer != nil {
+				if normalized := normalizer.Normalize(event); normalized != nil {
+					e.emitOrLog(e.streamer.EmitNormalized(ctx, t.ID, normalized), log, "review_normalized", t.ID)
+					return
+				}
+			}
+			e.emitOrLog(e.streamer.EmitCLIOutput(ctx, t.ID, event), log, "review_cli_output", t.ID)
+		},
+	})
+	if err != nil {
+		if taskCtx.Err() == context.DeadlineExceeded {
+			e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "review_timeout", map[string]interface{}{
+				"timeout_seconds": timeout,
+			}), log, "review_timeout", t.ID)
+			e.failTask(ctx, t, fmt.Sprintf("review timed out after %ds", timeout), startTime, log)
+		} else if ctx.Err() == context.Canceled {
+			e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "review_canceled", nil), log, "review_canceled", t.ID)
+			e.failTask(context.Background(), t, "review canceled by user", startTime, log)
+		} else {
+			e.failTask(ctx, t, fmt.Sprintf("review CLI execution failed: %v", err), startTime, log)
+		}
+		return
+	}
+
+	// Parse ReviewResult from CLI output
+	reviewResult, parseErr := review.ParseReviewOutput(result.Output)
+	if parseErr != nil {
+		metrics.ReviewParseFailures.Inc()
+		log.Warn("failed to parse review output", "error", parseErr)
+		output := result.Output
+		if len(output) > 500 {
+			output = output[:500]
+		}
+		reviewResult = &review.ReviewResult{
+			Verdict: review.VerdictComment,
+			Summary: output,
+		}
+	}
+
+	reviewResult.ReviewedBy = cli + ":" + model
+	reviewResult.DurationSeconds = time.Since(startTime).Seconds()
+
+	// Store raw result + usage
+	usage := &task.UsageInfo{
+		InputTokens:     result.InputTokens,
+		OutputTokens:    result.OutputTokens,
+		DurationSeconds: int(result.Duration.Seconds()),
+	}
+	if err := e.taskService.SetResult(ctx, t.ID, result.Output, nil, usage); err != nil {
+		log.Error("failed to store review result", "error", err)
+	}
+
+	// Complete review: store ReviewResult + transition reviewing → completed
+	if err := e.taskService.CompleteReview(ctx, t.ID, reviewResult); err != nil {
+		log.Error("failed to complete review", "error", err)
+		e.failTask(ctx, t, fmt.Sprintf("failed to complete review: %v", err), startTime, log)
+		return
+	}
+
+	metrics.TasksTotal.WithLabelValues(string(task.StatusCompleted)).Inc()
+
+	e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "review_completed", map[string]interface{}{
+		"verdict":      reviewResult.Verdict,
+		"score":        reviewResult.Score,
+		"issues_count": len(reviewResult.Issues),
+		"duration":     reviewResult.DurationSeconds,
+	}), log, "review_completed", t.ID)
+	e.emitOrLog(e.streamer.EmitDone(ctx, t.ID, task.StatusCompleted, nil), log, "review_done", t.ID)
+
+	if t.CallbackURL != "" && e.webhook != nil {
+		if err := e.webhook.Send(ctx, t.CallbackURL, webhook.Payload{
+			TaskID:     t.ID,
+			Status:     string(task.StatusCompleted),
+			Result:     result.Output,
+			Usage:      usage,
+			TraceID:    t.TraceID,
+			FinishedAt: time.Now().UTC(),
+		}); err != nil {
+			log.Warn("failed to send review completion webhook", "error", err)
+		}
+	}
+
+	log.Info("review completed",
+		"verdict", reviewResult.Verdict,
+		"score", reviewResult.Score,
+		"duration", result.Duration,
+	)
 }
 
 func truncate(s string, maxLen int) string {

@@ -101,6 +101,11 @@ tasks:
     cmds:
       - "{{.DC_E2E}} run --rm -e CODEFORGE_TEST_URL=http://app:8080 -e CODEFORGE_TEST_TOKEN=dev-token app go test -tags integration -v -count=1 -timeout 120s ./tests/e2e/..."
 
+  build:action:
+    desc: Build CI Action Docker image
+    cmds:
+      - docker build -f deployments/Dockerfile.action -t codeforge-action:{{.IMAGE_TAG}} .
+
   build:mock-cli:
     desc: Build mock Claude CLI for testing
     cmds:

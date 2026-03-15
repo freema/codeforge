@@ -14,6 +14,7 @@ const maxTemplateOutput = 1 << 20 // 1MB
 type TemplateContext struct {
 	Params map[string]string            // workflow input parameters
 	Steps  map[string]map[string]string // step name → output key → value
+	RunID  string                       // workflow run ID
 }
 
 // Render evaluates a Go text/template string against the given context.
@@ -24,8 +25,8 @@ func Render(tmpl string, ctx TemplateContext) (string, error) {
 	}
 
 	funcMap := template.FuncMap{
-		"repoPath": repoPath,
-		"repoHost": repoHost,
+		"repoPath":  repoPath,
+		"repoHost":  repoHost,
 		"urlEncode": url.PathEscape,
 	}
 

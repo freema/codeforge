@@ -28,9 +28,9 @@ type RedisInputPayload struct {
 
 // Listener consumes task payloads from a Redis list (primary input for ScopeBot).
 type Listener struct {
-	redis      *redisclient.Client
-	service    *Service
-	inputKey   string
+	redis           *redisclient.Client
+	service         *Service
+	inputKey        string
 	resultKeyPrefix string
 }
 

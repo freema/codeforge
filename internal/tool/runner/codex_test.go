@@ -7,15 +7,15 @@ import (
 
 func TestExtractCodexStreamData(t *testing.T) {
 	tests := []struct {
-		name         string
-		input        string
-		wantText     string
-		wantInTokens int
+		name          string
+		input         string
+		wantText      string
+		wantInTokens  int
 		wantOutTokens int
 	}{
 		{
-			name:  "agent_message item.completed",
-			input: `{"type":"item.completed","item":{"type":"agent_message","text":"I fixed the bug."}}`,
+			name:     "agent_message item.completed",
+			input:    `{"type":"item.completed","item":{"type":"agent_message","text":"I fixed the bug."}}`,
 			wantText: "I fixed the bug.",
 		},
 		{

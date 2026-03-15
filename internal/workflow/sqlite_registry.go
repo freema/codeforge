@@ -118,6 +118,22 @@ func (r *SQLiteRegistry) Delete(ctx context.Context, name string) error {
 	return nil
 }
 
+// DeleteBuiltin removes a built-in workflow definition (used for cleanup of stale builtins on startup).
+func (r *SQLiteRegistry) DeleteBuiltin(ctx context.Context, name string) error {
+	result, err := r.db.ExecContext(ctx, `DELETE FROM workflow_definitions WHERE name = ? AND builtin = 1`, name)
+	if err != nil {
+		return fmt.Errorf("deleting builtin workflow: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+	if rows == 0 {
+		return apperror.NotFound("builtin workflow '%s' not found", name)
+	}
+	return nil
+}
+
 type rowScanner interface {
 	Scan(dest ...interface{}) error
 }

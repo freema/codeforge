@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
-	gitpkg "github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/keys"
+	gitpkg "github.com/freema/codeforge/internal/tool/git"
 )
 
 // RepoHandler handles repository listing endpoints.

@@ -1,0 +1,73 @@
+name: 'CodeForge'
+description: 'AI-powered code review & tasks for GitHub and GitLab — multi-CLI, auto-knowledge, review posting'
+author: 'freema'
+branding:
+  icon: 'code'
+  color: 'blue'
+
+inputs:
+  task_type:
+    description: 'Task type: pr_review, code_review, knowledge_update, custom'
+    required: false
+    default: 'pr_review'
+  prompt:
+    description: 'Custom prompt (required for task_type=custom, optional for reviews)'
+    required: false
+  cli:
+    description: 'AI CLI tool: claude-code or codex'
+    required: false
+    default: 'claude-code'
+  model:
+    description: 'AI model override (e.g., claude-sonnet-4-20250514)'
+    required: false
+  api_key:
+    description: 'AI provider API key (overrides ANTHROPIC_API_KEY / OPENAI_API_KEY)'
+    required: false
+  provider_token:
+    description: 'GitHub/GitLab token for PR operations (defaults to GITHUB_TOKEN)'
+    required: false
+  mcp_config:
+    description: 'MCP configuration JSON string or path to .mcp.json'
+    required: false
+  post_comments:
+    description: 'Post review results as PR/MR comments'
+    required: false
+    default: 'true'
+  output_format:
+    description: 'Output format: json, markdown, text'
+    required: false
+    default: 'json'
+  max_turns:
+    description: 'Maximum AI conversation turns'
+    required: false
+  allowed_tools:
+    description: 'Comma-separated tool allowlist for Claude Code'
+    required: false
+
+outputs:
+  verdict:
+    description: 'Review verdict: approve, request_changes, or comment'
+  score:
+    description: 'Review score (1-10)'
+  issues_count:
+    description: 'Number of issues found'
+  review:
+    description: 'Full review result as JSON'
+  output:
+    description: 'Raw CLI output'
+
+runs:
+  using: 'docker'
+  image: 'docker://ghcr.io/freema/codeforge-action:latest'
+  env:
+    INPUT_TASK_TYPE: ${{ inputs.task_type }}
+    INPUT_PROMPT: ${{ inputs.prompt }}
+    INPUT_CLI: ${{ inputs.cli }}
+    INPUT_MODEL: ${{ inputs.model }}
+    INPUT_API_KEY: ${{ inputs.api_key }}
+    INPUT_PROVIDER_TOKEN: ${{ inputs.provider_token }}
+    INPUT_MCP_CONFIG: ${{ inputs.mcp_config }}
+    INPUT_POST_COMMENTS: ${{ inputs.post_comments }}
+    INPUT_OUTPUT_FORMAT: ${{ inputs.output_format }}
+    INPUT_MAX_TURNS: ${{ inputs.max_turns }}
+    INPUT_ALLOWED_TOOLS: ${{ inputs.allowed_tools }}

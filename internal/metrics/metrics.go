@@ -85,4 +85,11 @@ var (
 		[]string{"method", "path"},
 	)
 
+	// ReviewParseFailures counts review output parse failures.
+	ReviewParseFailures = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "codeforge_review_parse_failures_total",
+			Help: "Total number of review output parse failures",
+		},
+	)
 )

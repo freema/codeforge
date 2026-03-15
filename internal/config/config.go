@@ -20,10 +20,10 @@ type Config struct {
 	CLI        CLIConfig        `koanf:"cli"`
 	Git        GitConfig        `koanf:"git"`
 	Encryption EncryptionConfig `koanf:"encryption"`
-	MCP        MCPConfig        `koanf:"mcp"`
 	Webhooks   WebhookConfig    `koanf:"webhooks"`
 	RateLimit  RateLimitConfig  `koanf:"rate_limit"`
 	Workflow   WorkflowConfig   `koanf:"workflow"`
+	CodeReview CodeReviewConfig `koanf:"code_review"`
 	Tracing    TracingConfig    `koanf:"tracing"`
 	Logging    LoggingConfig    `koanf:"logging"`
 }
@@ -48,14 +48,14 @@ type WorkersConfig struct {
 }
 
 type TasksConfig struct {
-	DefaultTimeout         int    `koanf:"default_timeout"`
-	MaxTimeout             int    `koanf:"max_timeout"`
-	WorkspaceTTL           int    `koanf:"workspace_ttl"`
-	WorkspaceBase          string `koanf:"workspace_base"`
-	StateTTL               int    `koanf:"state_ttl"`
-	ResultTTL              int    `koanf:"result_ttl"`
-	DiskWarningThresholdGB int    `koanf:"disk_warning_threshold_gb"`
-	DiskCriticalThresholdGB int   `koanf:"disk_critical_threshold_gb"`
+	DefaultTimeout          int    `koanf:"default_timeout"`
+	MaxTimeout              int    `koanf:"max_timeout"`
+	WorkspaceTTL            int    `koanf:"workspace_ttl"`
+	WorkspaceBase           string `koanf:"workspace_base"`
+	StateTTL                int    `koanf:"state_ttl"`
+	ResultTTL               int    `koanf:"result_ttl"`
+	DiskWarningThresholdGB  int    `koanf:"disk_warning_threshold_gb"`
+	DiskCriticalThresholdGB int    `koanf:"disk_critical_threshold_gb"`
 }
 
 type CLIConfig struct {
@@ -85,8 +85,6 @@ type EncryptionConfig struct {
 	Key string `koanf:"key"`
 }
 
-type MCPConfig struct{}
-
 type WorkflowConfig struct {
 	ContextTTLHours   int `koanf:"context_ttl_hours"`
 	MaxRunDurationSec int `koanf:"max_run_duration_sec"`
@@ -96,6 +94,19 @@ type WebhookConfig struct {
 	HMACSecret string        `koanf:"hmac_secret"`
 	RetryCount int           `koanf:"retry_count"`
 	RetryDelay time.Duration `koanf:"retry_delay"`
+}
+
+type CodeReviewConfig struct {
+	ReviewDrafts    bool                 `koanf:"review_drafts"`
+	DefaultCLI      string               `koanf:"default_cli"`
+	DefaultKeyName  string               `koanf:"default_key_name"` // fallback key for webhook-triggered reviews
+	WebhookSecrets  WebhookSecretsConfig `koanf:"webhook_secrets"`
+	WebhookDedupTTL int                  `koanf:"webhook_dedup_ttl"` // dedup TTL in seconds (default: 3600)
+}
+
+type WebhookSecretsConfig struct {
+	GitHub string `koanf:"github"`
+	GitLab string `koanf:"gitlab"`
 }
 
 type RateLimitConfig struct {
@@ -169,6 +180,11 @@ func Defaults() *Config {
 		Workflow: WorkflowConfig{
 			ContextTTLHours:   24,
 			MaxRunDurationSec: 7200,
+		},
+		CodeReview: CodeReviewConfig{
+			ReviewDrafts:    false,
+			DefaultCLI:      "claude-code",
+			WebhookDedupTTL: 3600,
 		},
 		Tracing: TracingConfig{
 			Exporter:     "otlp",

@@ -75,7 +75,7 @@ func (s *SQLiteRunStore) UpdateRunStatus(ctx context.Context, runID string, stat
 	case RunStatusRunning:
 		query = `UPDATE workflow_runs SET status = ?, started_at = ? WHERE id = ?`
 		args = []interface{}{string(status), now, runID}
-	case RunStatusCompleted, RunStatusFailed:
+	case RunStatusCompleted, RunStatusFailed, RunStatusCanceled:
 		query = `UPDATE workflow_runs SET status = ?, error = ?, finished_at = ? WHERE id = ?`
 		args = []interface{}{string(status), errMsg, now, runID}
 	default:

@@ -5,8 +5,8 @@ RUN apk add --no-cache git nodejs npm ca-certificates tzdata curl coreutils gosu
 # Install air for hot reload (pinned — latest requires Go 1.25+)
 RUN go install github.com/air-verse/air@v1.61.7
 
-# Install golangci-lint
-RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v1.62.2
+# Install golangci-lint v2 (matches .golangci.yml version: "2")
+RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v2.11.3
 
 # Install Claude Code CLI (optional for dev — not needed for unit tests)
 ARG CLAUDE_CODE_VERSION=1.0.88

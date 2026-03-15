@@ -7,22 +7,22 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/freema/codeforge/internal/tool/runner"
 	"github.com/freema/codeforge/internal/config"
 	"github.com/freema/codeforge/internal/crypto"
 	"github.com/freema/codeforge/internal/database"
 	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/logger"
-	"github.com/freema/codeforge/internal/review"
-	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/server"
 	"github.com/freema/codeforge/internal/server/handlers"
 	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/tool/mcp"
+	"github.com/freema/codeforge/internal/tool/runner"
 	"github.com/freema/codeforge/internal/tools"
 	"github.com/freema/codeforge/internal/tracing"
 	"github.com/freema/codeforge/internal/webhook"
@@ -75,7 +75,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("connecting to redis: %w", err)
 	}
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -89,7 +89,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("opening sqlite: %w", err)
 	}
-	defer sqliteDB.Close()
+	defer func() { _ = sqliteDB.Close() }()
 
 	if err := database.Migrate(context.Background(), sqliteDB.Unwrap()); err != nil {
 		return fmt.Errorf("running sqlite migrations: %w", err)
@@ -149,6 +149,13 @@ func run() error {
 	cliRegistry.Register("claude-code", runner.NewClaudeRunner(cfg.CLI.ClaudeCode.Path))
 	cliRegistry.Register("codex", runner.NewCodexRunner(cfg.CLI.Codex.Path))
 
+	// Log availability of registered CLI runners
+	for _, name := range []string{cfg.CLI.ClaudeCode.Path, cfg.CLI.Codex.Path} {
+		if _, err := exec.LookPath(name); err != nil {
+			slog.Warn("CLI runner not found on PATH — tasks using this CLI will fail", "cli", name)
+		}
+	}
+
 	// Build CLI info map for HTTP handler
 	cliConfigs := map[string]handlers.CLIInfo{
 		"claude-code": {Name: "claude-code", BinaryPath: cfg.CLI.ClaudeCode.Path, DefaultModel: cfg.CLI.ClaudeCode.DefaultModel},
@@ -169,9 +176,10 @@ func run() error {
 		toolResolver,
 		workspaceMgr,
 		worker.ExecutorConfig{
-			WorkspaceBase:  cfg.Tasks.WorkspaceBase,
-			DefaultTimeout: cfg.Tasks.DefaultTimeout,
-			MaxTimeout:     cfg.Tasks.MaxTimeout,
+			WorkspaceBase:   cfg.Tasks.WorkspaceBase,
+			DefaultTimeout:  cfg.Tasks.DefaultTimeout,
+			MaxTimeout:      cfg.Tasks.MaxTimeout,
+			ProviderDomains: cfg.Git.ProviderDomains,
 			DefaultModels: map[string]string{
 				"claude-code": cfg.CLI.ClaudeCode.DefaultModel,
 				"codex":       cfg.CLI.Codex.DefaultModel,
@@ -220,7 +228,7 @@ func run() error {
 
 	wfStreamer := workflow.NewStreamer(rdb, time.Duration(cfg.Workflow.ContextTTLHours)*time.Hour)
 	fetchExecutor := workflow.NewFetchExecutor(keyRegistry)
-	taskExecutor := workflow.NewTaskExecutor(taskService, rdb)
+	taskExecutor := workflow.NewTaskExecutor(taskService, rdb, keyRegistry)
 	actionExecutor := workflow.NewActionExecutor(prService)
 
 	orchestrator := workflow.NewOrchestrator(
@@ -237,16 +245,13 @@ func run() error {
 		},
 	)
 
-	// Initialize reviewer
-	reviewAdapter := &reviewTaskAdapter{service: taskService, workspaceMgr: workspaceMgr, workspaceBase: cfg.Tasks.WorkspaceBase}
-	reviewer := review.NewReviewer(reviewAdapter, cliRegistry, streamer, review.ReviewerConfig{
-		DefaultModels: map[string]string{
-			"claude-code": cfg.CLI.ClaudeCode.DefaultModel,
-			"codex":       cfg.CLI.Codex.DefaultModel,
-		},
-	})
+	// Initialize webhook receiver handler for PR review
+	var webhookReceiverHandler *handlers.WebhookReceiverHandler
+	if cfg.CodeReview.WebhookSecrets.GitHub != "" || cfg.CodeReview.WebhookSecrets.GitLab != "" {
+		webhookReceiverHandler = handlers.NewWebhookReceiverHandler(taskService, rdb, cfg.CodeReview)
+	}
 
-	srv := server.New(cfg, rdb, sqliteDB, taskService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowRunStore, orchestrator, cliRegistry, cliConfigs, reviewer, version)
+	srv := server.New(cfg, rdb, sqliteDB, taskService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowRunStore, orchestrator, orchestrator, cliRegistry, cliConfigs, webhookReceiverHandler, version)
 
 	// Start background services
 	appCtx, appCancel := context.WithCancel(context.Background())
@@ -287,7 +292,7 @@ func run() error {
 	appCancel() // Signal workers and listener to stop
 	pool.Stop() // Wait for workers to drain
 
-	rdb.Close()
+	_ = rdb.Close()
 	slog.Info("shutdown complete")
 	return nil
 }

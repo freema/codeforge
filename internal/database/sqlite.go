@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -30,7 +31,7 @@ func Open(path string) (*DB, error) {
 	// SQLite supports only one concurrent writer.
 	db.SetMaxOpenConns(1)
 
-	if err := db.Ping(); err != nil {
+	if err := db.PingContext(context.Background()); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("pinging sqlite database: %w", err)
 	}
@@ -45,7 +46,7 @@ func (d *DB) Close() error {
 
 // Ping verifies the database connection is alive.
 func (d *DB) Ping() error {
-	return d.db.Ping()
+	return d.db.PingContext(context.Background())
 }
 
 // Unwrap returns the underlying *sql.DB.

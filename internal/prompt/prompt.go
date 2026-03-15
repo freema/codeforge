@@ -20,6 +20,14 @@ type TaskTypeData struct {
 	UserPrompt string
 }
 
+// PRReviewData holds template variables for the pr_review prompt.
+type PRReviewData struct {
+	UserPrompt string
+	PRNumber   int
+	PRBranch   string
+	BaseBranch string
+}
+
 // TaskTypeInfo describes a task type for the API.
 type TaskTypeInfo struct {
 	Name        string `json:"name"`
@@ -32,6 +40,7 @@ var taskTypes = []TaskTypeInfo{
 	{Name: "code", Label: "Code", Description: "Write or modify code based on the prompt"},
 	{Name: "plan", Label: "Plan", Description: "Analyze the codebase and create an implementation plan without modifying files", Template: "plan"},
 	{Name: "review", Label: "Review", Description: "Review repository code quality, security, and architecture", Template: "review"},
+	{Name: "pr_review", Label: "PR Review", Description: "Review a pull request / merge request diff and post comments", Template: "pr_review"},
 }
 
 // TaskTypes returns all available task types.
@@ -63,12 +72,18 @@ func TaskTypeTemplate(name string) string {
 
 // RenderTaskPrompt renders a task type template with the user prompt.
 // For "code" (or unknown types with no template), it returns the original prompt.
+// For "pr_review", use RenderPRReviewPrompt instead for full context.
 func RenderTaskPrompt(taskType, userPrompt string) (string, error) {
 	tmpl := TaskTypeTemplate(taskType)
 	if tmpl == "" {
 		return userPrompt, nil
 	}
 	return Render(tmpl, TaskTypeData{UserPrompt: userPrompt})
+}
+
+// RenderPRReviewPrompt renders the pr_review template with full PR context.
+func RenderPRReviewPrompt(data PRReviewData) (string, error) {
+	return Render("pr_review", data)
 }
 
 // Render loads the named template from the embedded FS and executes it with data.

@@ -21,7 +21,7 @@ func openTestDB(t *testing.T) *sql.DB {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	_, err = db.Exec(`
+	_, err = db.ExecContext(context.Background(), `
 		CREATE TABLE tasks (
 			id              TEXT PRIMARY KEY,
 			status          TEXT NOT NULL DEFAULT 'pending',
@@ -40,6 +40,7 @@ func openTestDB(t *testing.T) *sql.DB {
 			branch          TEXT NOT NULL DEFAULT '',
 			pr_number       INTEGER NOT NULL DEFAULT 0,
 			pr_url          TEXT NOT NULL DEFAULT '',
+			workflow_run_id TEXT NOT NULL DEFAULT '',
 			trace_id        TEXT NOT NULL DEFAULT '',
 			created_at      TEXT NOT NULL,
 			started_at      TEXT,
@@ -163,7 +164,9 @@ func TestSQLiteStore_UpdateStatus(t *testing.T) {
 	ctx := context.Background()
 
 	task := makeTask("task-status")
-	store.Save(ctx, task)
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 
 	now := time.Now().UTC()
 	if err := store.UpdateStatus(ctx, "task-status", StatusCompleted, &now, &now); err != nil {
@@ -187,7 +190,9 @@ func TestSQLiteStore_UpdateResult(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	store.Save(ctx, makeTask("task-result"))
+	if err := store.Save(ctx, makeTask("task-result")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 
 	changes := &gitpkg.ChangesSummary{FilesModified: 3, FilesCreated: 1}
 	usage := &UsageInfo{InputTokens: 100, OutputTokens: 200, DurationSeconds: 42}
@@ -213,7 +218,9 @@ func TestSQLiteStore_UpdatePR(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	store.Save(ctx, makeTask("task-pr"))
+	if err := store.Save(ctx, makeTask("task-pr")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 
 	if err := store.UpdatePR(ctx, "task-pr", "feature/fix-bug-abc12345", "https://github.com/user/repo/pull/42", 42); err != nil {
 		t.Fatalf("UpdatePR: %v", err)
@@ -236,7 +243,9 @@ func TestSQLiteStore_UpdateError(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	store.Save(ctx, makeTask("task-error"))
+	if err := store.Save(ctx, makeTask("task-error")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 
 	if err := store.UpdateError(ctx, "task-error", "something went wrong"); err != nil {
 		t.Fatalf("UpdateError: %v", err)
@@ -253,7 +262,9 @@ func TestSQLiteStore_SaveAndGetIterations(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	store.Save(ctx, makeTask("task-iters"))
+	if err := store.Save(ctx, makeTask("task-iters")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 
 	now := time.Now().UTC()
 	ended := now.Add(30 * time.Second)
@@ -304,16 +315,22 @@ func TestSQLiteStore_SaveIterationUpsert(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	store.Save(ctx, makeTask("task-iter-upsert"))
+	if err := store.Save(ctx, makeTask("task-iter-upsert")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 	now := time.Now().UTC()
 
 	iter := Iteration{Number: 1, Prompt: "original", Status: StatusRunning, StartedAt: now}
-	store.SaveIteration(ctx, "task-iter-upsert", iter)
+	if err := store.SaveIteration(ctx, "task-iter-upsert", iter); err != nil {
+		t.Fatalf("SaveIteration: %v", err)
+	}
 
 	// Update same iteration
 	iter.Status = StatusCompleted
 	iter.Result = "done"
-	store.SaveIteration(ctx, "task-iter-upsert", iter)
+	if err := store.SaveIteration(ctx, "task-iter-upsert", iter); err != nil {
+		t.Fatalf("SaveIteration upsert: %v", err)
+	}
 
 	iters, _ := store.GetIterations(ctx, "task-iter-upsert")
 	if len(iters) != 1 {
@@ -335,7 +352,9 @@ func TestSQLiteStore_List(t *testing.T) {
 		if i%2 == 0 {
 			task.Status = StatusCompleted
 		}
-		store.Save(ctx, task)
+		if err := store.Save(ctx, task); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
 	}
 
 	// List all
@@ -369,7 +388,9 @@ func TestSQLiteStore_ListPagination(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 10; i++ {
-		store.Save(ctx, makeTask("page-task-"+string(rune('a'+i))))
+		if err := store.Save(ctx, makeTask("page-task-"+string(rune('a'+i)))); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
 	}
 
 	page1, total, err := store.List(ctx, ListOptions{Limit: 4, Offset: 0})
@@ -414,7 +435,9 @@ func TestSQLiteStore_PromptTruncatedInList(t *testing.T) {
 	}
 	task := makeTask("task-long-prompt")
 	task.Prompt = longPrompt
-	store.Save(ctx, task)
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 
 	tasks, _, _ := store.List(ctx, ListOptions{Limit: 10})
 	if len(tasks) != 1 {

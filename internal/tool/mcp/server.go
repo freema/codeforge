@@ -10,13 +10,13 @@ import (
 //   - "stdio" (default): launches a local process (command + package + args)
 //   - "http": connects to a remote HTTP endpoint (url + headers)
 type Server struct {
-	Name      string            `json:"name"`
-	Transport string            `json:"transport,omitempty"` // "stdio" (default) or "http"
+	Name      string `json:"name"`
+	Transport string `json:"transport,omitempty"` // "stdio" (default) or "http"
 
 	// stdio fields
-	Command string   `json:"command,omitempty"` // e.g. "npx", "uvx", "docker"; defaults to "npx"
-	Package string   `json:"package,omitempty"`
-	Args    []string `json:"args,omitempty"`
+	Command string            `json:"command,omitempty"` // e.g. "npx", "uvx", "docker"; defaults to "npx"
+	Package string            `json:"package,omitempty"`
+	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
 
 	// http fields

@@ -1,0 +1,23 @@
+# Build stage — compile the Go binary
+FROM golang:1.24-alpine AS builder
+
+RUN apk add --no-cache git
+
+WORKDIR /build
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /codeforge-action ./cmd/codeforge-action
+
+# Runtime — minimal image with git + Node.js for CLI installation
+FROM alpine:3.21
+
+RUN apk add --no-cache git nodejs npm ca-certificates tzdata
+
+COPY --from=builder /codeforge-action /usr/local/bin/codeforge-action
+
+# GitHub Actions runs as root — mark all directories as safe for git
+RUN git config --global --add safe.directory '*'
+
+ENTRYPOINT ["/usr/local/bin/codeforge-action"]

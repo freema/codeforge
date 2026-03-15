@@ -3,14 +3,11 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-	"regexp"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/freema/codeforge/internal/keys"
 )
-
-var validKeyName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // KeyHandler handles key-related HTTP endpoints.
 type KeyHandler struct {
@@ -38,7 +35,7 @@ func (h *KeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name, provider, and token are required")
 		return
 	}
-	if !validKeyName.MatchString(req.Name) {
+	if !validName.MatchString(req.Name) {
 		writeError(w, http.StatusBadRequest, "name must contain only alphanumeric characters, hyphens, and underscores")
 		return
 	}

@@ -41,11 +41,11 @@ func (h *HealthHandler) SetReady(v bool) {
 }
 
 type healthResponse struct {
-	Status              string  `json:"status"`
-	Redis               string  `json:"redis"`
-	SQLite              string  `json:"sqlite"`
-	Version             string  `json:"version"`
-	Uptime              string  `json:"uptime"`
+	Status               string  `json:"status"`
+	Redis                string  `json:"redis"`
+	SQLite               string  `json:"sqlite"`
+	Version              string  `json:"version"`
+	Uptime               string  `json:"uptime"`
 	WorkspaceDiskUsageMB float64 `json:"workspace_disk_usage_mb"`
 }
 

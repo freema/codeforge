@@ -118,8 +118,8 @@ func TestValidTaskType(t *testing.T) {
 
 func TestTaskTypes(t *testing.T) {
 	types := TaskTypes()
-	if len(types) != 3 {
-		t.Fatalf("expected 3 task types, got %d", len(types))
+	if len(types) != 4 {
+		t.Fatalf("expected 4 task types, got %d", len(types))
 	}
 
 	names := map[string]bool{}
@@ -133,7 +133,7 @@ func TestTaskTypes(t *testing.T) {
 		}
 	}
 
-	for _, expected := range []string{"code", "plan", "review"} {
+	for _, expected := range []string{"code", "plan", "review", "pr_review"} {
 		if !names[expected] {
 			t.Errorf("expected task type %s in list", expected)
 		}

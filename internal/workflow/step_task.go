@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
+	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/tools"
 )
 
 // TaskCreator creates and retrieves CodeForge tasks.
@@ -23,14 +23,19 @@ type TaskCreator interface {
 type TaskExecutor struct {
 	tasks TaskCreator
 	redis *redisclient.Client
+	keys  keys.Registry
 }
 
 // NewTaskExecutor creates a new task step executor.
-func NewTaskExecutor(tasks TaskCreator, redis *redisclient.Client) *TaskExecutor {
-	return &TaskExecutor{
+func NewTaskExecutor(tasks TaskCreator, redis *redisclient.Client, keyReg ...keys.Registry) *TaskExecutor {
+	e := &TaskExecutor{
 		tasks: tasks,
 		redis: redis,
 	}
+	if len(keyReg) > 0 {
+		e.keys = keyReg[0]
+	}
+	return e
 }
 
 // Execute creates a CodeForge task and waits for it to complete via Redis done channel.
@@ -56,6 +61,8 @@ func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx
 	cli, _ := Render(cfg.CLI, tctx)
 	aiModel, _ := Render(cfg.AIModel, tctx)
 	sourceBranch, _ := Render(cfg.SourceBranch, tctx)
+	targetBranch, _ := Render(cfg.TargetBranch, tctx)
+	outputMode, _ := Render(cfg.OutputMode, tctx)
 
 	// Resolve workspace task ID from referenced step
 	var workspaceTaskID string
@@ -65,25 +72,64 @@ func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx
 		}
 	}
 
+	// Decode tools and MCP servers from raw JSON
+	var taskTools []tools.TaskTool
+	if len(cfg.Tools) > 0 {
+		_ = json.Unmarshal(cfg.Tools, &taskTools)
+	}
+	var mcpServers []task.MCPServer
+	if len(cfg.MCPServers) > 0 {
+		_ = json.Unmarshal(cfg.MCPServers, &mcpServers)
+	}
+
+	// Resolve tool key reference — inject auth_token from key registry into tool configs
+	if cfg.ToolKeyRef != "" && e.keys != nil && len(taskTools) > 0 {
+		toolKeyRef, _ := Render(cfg.ToolKeyRef, tctx)
+		if toolKeyRef != "" {
+			token, _, err := e.keys.ResolveByName(ctx, toolKeyRef)
+			if err != nil {
+				slog.Warn("failed to resolve tool key ref", "key", toolKeyRef, "error", err)
+			} else {
+				for i := range taskTools {
+					if taskTools[i].Config == nil {
+						taskTools[i].Config = make(map[string]string)
+					}
+					if _, exists := taskTools[i].Config["auth_token"]; !exists {
+						taskTools[i].Config["auth_token"] = token
+					}
+				}
+			}
+		}
+	}
+
 	// Build TaskConfig if any overrides are set
 	var taskConfig *task.TaskConfig
-	if cli != "" || aiModel != "" || workspaceTaskID != "" || sourceBranch != "" {
+	hasConfig := cli != "" || aiModel != "" || workspaceTaskID != "" || sourceBranch != "" ||
+		targetBranch != "" || cfg.PRNumber > 0 || outputMode != "" ||
+		len(taskTools) > 0 || len(mcpServers) > 0
+	if hasConfig {
 		taskConfig = &task.TaskConfig{
 			CLI:             cli,
 			AIModel:         aiModel,
 			WorkspaceTaskID: workspaceTaskID,
 			SourceBranch:    sourceBranch,
+			TargetBranch:    targetBranch,
+			PRNumber:        cfg.PRNumber,
+			OutputMode:      outputMode,
+			Tools:           taskTools,
+			MCPServers:      mcpServers,
 		}
 	}
 
 	// Create the task
 	req := task.CreateTaskRequest{
-		RepoURL:     repoURL,
-		Prompt:      prompt,
-		TaskType:    taskType,
-		ProviderKey: providerKey,
-		AccessToken: accessToken,
-		Config:      taskConfig,
+		RepoURL:       repoURL,
+		Prompt:        prompt,
+		TaskType:      taskType,
+		ProviderKey:   providerKey,
+		AccessToken:   accessToken,
+		Config:        taskConfig,
+		WorkflowRunID: tctx.RunID,
 	}
 	t, err := e.tasks.Create(ctx, req)
 	if err != nil {
@@ -95,7 +141,7 @@ func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx
 	// Subscribe to done channel and wait
 	doneKey := e.redis.Key("task", t.ID, "done")
 	pubsub := e.redis.Unwrap().Subscribe(ctx, doneKey)
-	defer pubsub.Close()
+	defer func() { _ = pubsub.Close() }()
 
 	msgCh := pubsub.Channel()
 
@@ -103,7 +149,7 @@ func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("task %s: context cancelled while waiting: %w", t.ID, ctx.Err())
+			return nil, fmt.Errorf("task %s: context canceled while waiting: %w", t.ID, ctx.Err())
 
 		case msg, ok := <-msgCh:
 			if !ok {
@@ -160,19 +206,5 @@ func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx
 				return outputs, nil
 			}
 		}
-	}
-}
-
-// WaitForTask subscribes to the done channel and waits for the task to complete.
-// This is used when a pubsub is not available (e.g., in tests).
-func WaitForTask(ctx context.Context, rdb *redis.Client, doneKey string) (string, error) {
-	pubsub := rdb.Subscribe(ctx, doneKey)
-	defer pubsub.Close()
-
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case msg := <-pubsub.Channel():
-		return msg.Payload, nil
 	}
 }

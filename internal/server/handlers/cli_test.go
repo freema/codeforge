@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -21,7 +22,7 @@ func TestCLIHandler_List(t *testing.T) {
 
 	h := NewCLIHandler(registry, configs)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/cli", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/cli", nil)
 	w := httptest.NewRecorder()
 	h.List(w, req)
 
@@ -72,7 +73,7 @@ func TestCLIHandler_Health_Available(t *testing.T) {
 
 	h := NewCLIHandler(registry, configs)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/cli/health", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/cli/health", nil)
 	w := httptest.NewRecorder()
 	h.Health(w, req)
 
@@ -99,7 +100,7 @@ func TestCLIHandler_Health_Unavailable(t *testing.T) {
 
 	h := NewCLIHandler(registry, configs)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/cli/health", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/cli/health", nil)
 	w := httptest.NewRecorder()
 	h.Health(w, req)
 
@@ -123,7 +124,7 @@ func TestCLIHandler_Health_NotConfigured(t *testing.T) {
 
 	h := NewCLIHandler(registry, configs)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/cli/health", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/cli/health", nil)
 	w := httptest.NewRecorder()
 	h.Health(w, req)
 

@@ -14,11 +14,11 @@ const (
 // ReviewResult holds the structured output of a code review.
 type ReviewResult struct {
 	Verdict         Verdict       `json:"verdict"`
-	Score           int           `json:"score"`            // 1-10
+	Score           int           `json:"score"` // 1-10
 	Summary         string        `json:"summary"`
 	Issues          []ReviewIssue `json:"issues"`
 	AutoFixable     bool          `json:"auto_fixable"`
-	ReviewedBy      string        `json:"reviewed_by"`      // "cli:model"
+	ReviewedBy      string        `json:"reviewed_by"` // "cli:model"
 	DurationSeconds float64       `json:"duration_seconds"`
 }
 

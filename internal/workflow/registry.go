@@ -8,4 +8,5 @@ type Registry interface {
 	List(ctx context.Context) ([]WorkflowDefinition, error)
 	Get(ctx context.Context, name string) (*WorkflowDefinition, error)
 	Delete(ctx context.Context, name string) error
+	DeleteBuiltin(ctx context.Context, name string) error // for cleanup of stale builtins
 }

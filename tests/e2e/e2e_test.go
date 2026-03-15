@@ -259,7 +259,7 @@ func TestE2ETaskCancel(t *testing.T) {
 
 	taskID := createTask(t, map[string]interface{}{
 		"repo_url": "file://" + repoDir,
-		"prompt":   "TIMEOUT", // will hang until cancelled
+		"prompt":   "TIMEOUT", // will hang until canceled
 		"config": map[string]interface{}{
 			"timeout_seconds": 120,
 		},
@@ -268,7 +268,7 @@ func TestE2ETaskCancel(t *testing.T) {
 
 	// Wait for running
 	waitForStatus(t, taskID, "running", 30*time.Second)
-	t.Log("task is running, cancelling...")
+	t.Log("task is running, canceling...")
 
 	resp := apiRequest(t, "POST", fmt.Sprintf("/api/v1/tasks/%s/cancel", taskID), nil)
 	resp.Body.Close()
@@ -282,7 +282,7 @@ func TestE2ETaskCancel(t *testing.T) {
 	}
 
 	errMsg, _ := result["error"].(string)
-	if !bytes.Contains([]byte(errMsg), []byte("cancelled")) {
+	if !bytes.Contains([]byte(errMsg), []byte("canceled")) {
 		t.Logf("cancel error (may vary): %s", errMsg)
 	}
 	t.Log("cancel test passed")

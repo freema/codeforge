@@ -12,9 +12,11 @@ import (
 	"github.com/go-playground/validator/v10"
 
 	"github.com/freema/codeforge/internal/apperror"
+	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/prompt"
 	"github.com/freema/codeforge/internal/review"
 	"github.com/freema/codeforge/internal/task"
+	gitpkg "github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/tool/runner"
 )
 
@@ -27,16 +29,17 @@ type Canceller interface {
 
 // TaskHandler handles task-related HTTP endpoints.
 type TaskHandler struct {
-	service     *task.Service
-	prService   *task.PRService
-	canceller   Canceller
-	cliRegistry *runner.Registry
-	reviewer    *review.Reviewer
+	service         *task.Service
+	prService       *task.PRService
+	canceller       Canceller
+	cliRegistry     *runner.Registry
+	keyRegistry     keys.Registry
+	providerDomains map[string]string
 }
 
 // NewTaskHandler creates a new task handler.
-func NewTaskHandler(service *task.Service, prService *task.PRService, canceller Canceller, cliRegistry *runner.Registry, reviewer *review.Reviewer) *TaskHandler {
-	return &TaskHandler{service: service, prService: prService, canceller: canceller, cliRegistry: cliRegistry, reviewer: reviewer}
+func NewTaskHandler(service *task.Service, prService *task.PRService, canceller Canceller, cliRegistry *runner.Registry, keyRegistry keys.Registry, providerDomains map[string]string) *TaskHandler {
+	return &TaskHandler{service: service, prService: prService, canceller: canceller, cliRegistry: cliRegistry, keyRegistry: keyRegistry, providerDomains: providerDomains}
 }
 
 // List handles GET /api/v1/tasks.
@@ -99,6 +102,17 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 				"error":  "validation_error",
 				"fields": map[string]string{"task_type": fmt.Sprintf("unknown task type: %s", req.TaskType)},
+			})
+			return
+		}
+	}
+
+	// pr_review tasks require pr_number in config
+	if req.TaskType == "pr_review" {
+		if req.Config == nil || req.Config.PRNumber <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"error":  "validation_error",
+				"fields": map[string]string{"pr_number": "pr_number is required for pr_review tasks"},
 			})
 			return
 		}
@@ -202,7 +216,7 @@ func (h *TaskHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if t.Status != task.StatusRunning && t.Status != task.StatusCloning {
+	if t.Status != task.StatusRunning && t.Status != task.StatusCloning && t.Status != task.StatusReviewing {
 		writeError(w, http.StatusConflict, fmt.Sprintf("task is not running (status: %s)", t.Status))
 		return
 	}
@@ -214,7 +228,7 @@ func (h *TaskHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]string{
 		"id":      taskID,
-		"status":  "cancelling",
+		"status":  "canceling",
 		"message": "task cancellation requested",
 	})
 }
@@ -287,13 +301,96 @@ func (h *TaskHandler) Review(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.reviewer.Review(r.Context(), taskID, req.CLI, req.Model)
+	t, err := h.service.StartReviewAsync(r.Context(), taskID, req.CLI, req.Model)
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+		"id":     t.ID,
+		"status": t.Status,
+	})
+}
+
+// PostReviewComments handles POST /api/v1/tasks/{taskID}/post-review.
+// Posts the task's ReviewResult as comments to the associated PR/MR.
+func (h *TaskHandler) PostReviewComments(w http.ResponseWriter, r *http.Request) {
+	taskID := chi.URLParam(r, "taskID")
+	if taskID == "" {
+		writeError(w, http.StatusBadRequest, "task ID is required")
+		return
+	}
+
+	var req struct {
+		PRNumber int `json:"pr_number,omitempty"` // override; defaults to task config
+	}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+	}
+
+	t, err := h.service.Get(r.Context(), taskID)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+
+	if t.ReviewResult == nil {
+		writeError(w, http.StatusBadRequest, "task has no review result — run a review first")
+		return
+	}
+
+	// Resolve PR number
+	prNumber := req.PRNumber
+	if prNumber <= 0 && t.Config != nil {
+		prNumber = t.Config.PRNumber
+	}
+	if prNumber <= 0 {
+		prNumber = t.PRNumber
+	}
+	if prNumber <= 0 {
+		writeError(w, http.StatusBadRequest, "pr_number is required (not set on task and not provided in request)")
+		return
+	}
+
+	// Resolve token
+	token := t.AccessToken
+	if token == "" && t.ProviderKey != "" && h.keyRegistry != nil {
+		resolved, _, resolveErr := h.keyRegistry.ResolveByName(r.Context(), t.ProviderKey)
+		if resolveErr != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("failed to resolve provider key: %v", resolveErr))
+			return
+		}
+		token = resolved
+	}
+	if token == "" {
+		writeError(w, http.StatusBadRequest, "no access token available — set provider_key on task")
+		return
+	}
+
+	repo, err := gitpkg.ParseRepoURL(t.RepoURL, h.providerDomains)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse repo URL: %v", err))
+		return
+	}
+
+	result, err := gitpkg.PostReviewComments(
+		r.Context(), repo, token, prNumber, t.ReviewResult,
+		review.FormatSummaryBody, review.FormatIssueComment,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to post review comments: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"review_url":      result.ReviewURL,
+		"comments_posted": result.CommentsPosted,
+		"pr_number":       prNumber,
+	})
 }
 
 // ListTaskTypes handles GET /api/v1/task-types.

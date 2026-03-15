@@ -11,12 +11,12 @@ import (
 
 // BranchOptions configures branch creation and push.
 type BranchOptions struct {
-	WorkDir      string
-	BranchName   string
-	CommitMsg    string
-	AuthorName   string
-	AuthorEmail  string
-	Token        string
+	WorkDir     string
+	BranchName  string
+	CommitMsg   string
+	AuthorName  string
+	AuthorEmail string
+	Token       string
 }
 
 // CreateBranchAndPush creates a new branch, stages all changes, commits, and pushes.
@@ -29,6 +29,11 @@ func CreateBranchAndPush(ctx context.Context, opts BranchOptions) error {
 		return fmt.Errorf("creating branch: %w", err)
 	}
 	slog.Info("branch created", "branch", opts.BranchName)
+
+	// Remove generated files that must not be committed
+	for _, f := range []string{".mcp.json"} {
+		os.Remove(workDir + "/" + f) // best-effort, ignore errors
+	}
 
 	// Stage all changes
 	if err := gitCmd(ctx, workDir, nil, "add", "-A"); err != nil {

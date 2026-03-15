@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,20 +15,24 @@ import (
 
 // OrchestratorConfig holds orchestrator configuration.
 type OrchestratorConfig struct {
-	ContextTTLHours    int
-	MaxRunDurationSec  int
+	ContextTTLHours   int
+	MaxRunDurationSec int
 }
 
 // Orchestrator manages workflow execution via a Redis FIFO queue.
 type Orchestrator struct {
-	registry      Registry
-	runStore      RunStore
-	fetchExecutor *FetchExecutor
-	taskExecutor  *TaskExecutor
+	registry       Registry
+	runStore       RunStore
+	fetchExecutor  *FetchExecutor
+	taskExecutor   *TaskExecutor
 	actionExecutor *ActionExecutor
-	streamer      *Streamer
-	redis         *redisclient.Client
-	cfg           OrchestratorConfig
+	streamer       *Streamer
+	redis          *redisclient.Client
+	cfg            OrchestratorConfig
+
+	// Per-run cancel functions for in-flight runs.
+	runCancels   map[string]context.CancelFunc
+	runCancelsMu sync.RWMutex
 }
 
 // NewOrchestrator creates a new workflow orchestrator.
@@ -50,6 +55,7 @@ func NewOrchestrator(
 		streamer:       streamer,
 		redis:          redis,
 		cfg:            cfg,
+		runCancels:     make(map[string]context.CancelFunc),
 	}
 }
 
@@ -59,7 +65,7 @@ func (o *Orchestrator) Start(ctx context.Context) {
 	slog.Info("workflow orchestrator started", "queue", queueKey)
 
 	for {
-		// BLPOP blocks until a run ID is available or context is cancelled
+		// BLPOP blocks until a run ID is available or context is canceled
 		result, err := o.redis.Unwrap().BLPop(ctx, 5*time.Second, queueKey).Result()
 		if err != nil {
 			if ctx.Err() != nil {
@@ -120,6 +126,12 @@ func (o *Orchestrator) executeRun(ctx context.Context, runID string) {
 		return
 	}
 
+	// Skip runs that were canceled while pending in queue
+	if run.Status == RunStatusCanceled || run.Status == RunStatusFailed {
+		log.Info("skipping run with terminal status", "status", run.Status)
+		return
+	}
+
 	def, err := o.registry.Get(ctx, run.WorkflowName)
 	if err != nil {
 		log.Error("failed to load workflow definition", "error", err)
@@ -131,6 +143,16 @@ func (o *Orchestrator) executeRun(ctx context.Context, runID string) {
 	timeout := time.Duration(o.cfg.MaxRunDurationSec) * time.Second
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+
+	// Register cancel func so CancelRun can stop this run
+	o.runCancelsMu.Lock()
+	o.runCancels[runID] = cancel
+	o.runCancelsMu.Unlock()
+	defer func() {
+		o.runCancelsMu.Lock()
+		delete(o.runCancels, runID)
+		o.runCancelsMu.Unlock()
+	}()
 
 	// Mark as running
 	if err := o.runStore.UpdateRunStatus(ctx, runID, RunStatusRunning, ""); err != nil {
@@ -147,6 +169,7 @@ func (o *Orchestrator) executeRun(ctx context.Context, runID string) {
 	tctx := TemplateContext{
 		Params: run.Params,
 		Steps:  make(map[string]map[string]string),
+		RunID:  runID,
 	}
 
 	// Store context in Redis for persistence
@@ -174,9 +197,27 @@ func (o *Orchestrator) executeRun(ctx context.Context, runID string) {
 
 		outputs, err := o.executeStep(runCtx, stepDef, tctx)
 		if err != nil {
-			log.Error("step failed", "error", err)
-
 			finishedAt := time.Now().UTC()
+
+			// Check if this was a cancellation
+			if runCtx.Err() != nil {
+				log.Info("step canceled", "step", stepDef.Name)
+				_ = o.runStore.UpsertStep(ctx, WorkflowRunStep{
+					RunID:      runID,
+					StepName:   stepDef.Name,
+					StepType:   stepDef.Type,
+					Status:     StepStatusFailed,
+					Error:      "canceled",
+					FinishedAt: &finishedAt,
+				})
+				_ = o.streamer.EmitSystem(ctx, runID, "step_canceled", map[string]interface{}{
+					"step": stepDef.Name,
+				})
+				o.cancelRun(ctx, runID, "canceled by user")
+				return
+			}
+
+			log.Error("step failed", "error", err)
 			_ = o.runStore.UpsertStep(ctx, WorkflowRunStep{
 				RunID:      runID,
 				StepName:   stepDef.Name,
@@ -257,6 +298,75 @@ func (o *Orchestrator) failRun(ctx context.Context, runID, errMsg string) {
 		slog.Error("failed to mark run as failed", "run_id", runID, "error", err)
 	}
 	_ = o.streamer.EmitDone(ctx, runID, RunStatusFailed)
+}
+
+// CancelRun cancels a running or pending workflow run.
+// For running runs, it cancels the context (which stops the current step).
+// For pending runs, it marks them as canceled so they are skipped when dequeued.
+// It also cancels any running task associated with the current step.
+func (o *Orchestrator) CancelRun(ctx context.Context, runID string, taskCanceller func(taskID string) error) error {
+	run, err := o.runStore.GetRun(ctx, runID)
+	if err != nil {
+		return err
+	}
+
+	switch run.Status {
+	case RunStatusPending:
+		// Mark as canceled — will be skipped when dequeued
+		return o.runStore.UpdateRunStatus(ctx, runID, RunStatusCanceled, "canceled by user")
+
+	case RunStatusRunning:
+		// Cancel the run context (stops orchestrator step loop)
+		o.runCancelsMu.RLock()
+		cancelFn, ok := o.runCancels[runID]
+		o.runCancelsMu.RUnlock()
+		if ok {
+			cancelFn()
+		}
+
+		// Also cancel any running task in this run
+		if taskCanceller != nil {
+			steps, err := o.runStore.GetSteps(ctx, runID)
+			if err == nil {
+				for _, step := range steps {
+					if step.Status == StepStatusRunning && step.TaskID != "" {
+						_ = taskCanceller(step.TaskID)
+					}
+				}
+			}
+		}
+
+		return nil // status will be set to canceled by the orchestrator goroutine
+
+	default:
+		return apperror.Conflict("run is not active (status: %s)", run.Status)
+	}
+}
+
+// CancelPendingRuns cancels all pending and running runs, optionally filtered by workflow name.
+func (o *Orchestrator) CancelPendingRuns(ctx context.Context, workflowName string, taskCanceller func(taskID string) error) (int, error) {
+	runs, err := o.runStore.ListRuns(ctx, workflowName)
+	if err != nil {
+		return 0, err
+	}
+
+	canceled := 0
+	for _, run := range runs {
+		if run.Status != RunStatusPending && run.Status != RunStatusRunning {
+			continue
+		}
+		if err := o.CancelRun(ctx, run.ID, taskCanceller); err == nil {
+			canceled++
+		}
+	}
+	return canceled, nil
+}
+
+func (o *Orchestrator) cancelRun(ctx context.Context, runID, errMsg string) {
+	if err := o.runStore.UpdateRunStatus(ctx, runID, RunStatusCanceled, errMsg); err != nil {
+		slog.Error("failed to mark run as canceled", "run_id", runID, "error", err)
+	}
+	_ = o.streamer.EmitDone(ctx, runID, RunStatusCanceled)
 }
 
 func validateParams(defs []ParameterDefinition, params map[string]string) (map[string]string, error) {

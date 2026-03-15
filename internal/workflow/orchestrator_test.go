@@ -1,24 +1,8 @@
 package workflow
 
 import (
-	"context"
 	"testing"
-
-	"github.com/freema/codeforge/internal/task"
 )
-
-type mockTaskCreator struct {
-	task *task.Task
-	err  error
-}
-
-func (m *mockTaskCreator) Create(_ context.Context, _ task.CreateTaskRequest) (*task.Task, error) {
-	return m.task, m.err
-}
-
-func (m *mockTaskCreator) Get(_ context.Context, _ string) (*task.Task, error) {
-	return m.task, m.err
-}
 
 func TestValidateParams(t *testing.T) {
 	defs := []ParameterDefinition{

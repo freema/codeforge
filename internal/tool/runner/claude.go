@@ -55,6 +55,12 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 	if opts.MaxBudgetUSD > 0 {
 		args = append(args, "--max-budget-usd", strconv.FormatFloat(opts.MaxBudgetUSD, 'f', 2, 64))
 	}
+	if opts.AppendSystemPrompt != "" {
+		args = append(args, "--append-system-prompt", opts.AppendSystemPrompt)
+	}
+	if opts.AllowedTools != "" {
+		args = append(args, "--allowedTools", opts.AllowedTools)
+	}
 
 	// Resolve the binary to its real path. If it's a Node.js script (shebang),
 	// run it via "node" directly to avoid fork/exec ENOENT issues that can occur
@@ -149,7 +155,7 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB buffer
 
-	var resultText string      // from the "result" event (authoritative if present)
+	var resultText string        // from the "result" event (authoritative if present)
 	var lastAssistantText string // from the latest "assistant" text event (fallback)
 	var inputTokens, outputTokens int
 

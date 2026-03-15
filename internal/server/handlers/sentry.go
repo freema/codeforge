@@ -124,7 +124,7 @@ func (h *SentryHandler) proxyGet(w http.ResponseWriter, r *http.Request, sentryP
 		// Pass through raw JSON
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(body)
+		_, _ = w.Write(body)
 		return
 	}
 
@@ -136,7 +136,7 @@ func (h *SentryHandler) proxyGet(w http.ResponseWriter, r *http.Request, sentryP
 	wrapped := map[string]*json.RawMessage{
 		wrapKey: &raw,
 	}
-	json.NewEncoder(w).Encode(wrapped)
+	_ = json.NewEncoder(w).Encode(wrapped)
 }
 
 // sentryGet makes an authenticated GET request to the Sentry API.

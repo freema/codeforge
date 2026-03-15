@@ -20,7 +20,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	_, err = db.Exec(`
+	_, err = db.ExecContext(context.Background(), `
 		CREATE TABLE workflow_definitions (
 			name TEXT PRIMARY KEY,
 			description TEXT NOT NULL DEFAULT '',

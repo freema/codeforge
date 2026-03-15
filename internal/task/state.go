@@ -47,18 +47,3 @@ func ValidateTransition(current, next TaskStatus) error {
 func IsFinished(s TaskStatus) bool {
 	return s == StatusCompleted || s == StatusFailed || s == StatusPRCreated
 }
-
-// ValidStatuses returns all valid status values.
-func ValidStatuses() []TaskStatus {
-	return []TaskStatus{
-		StatusPending,
-		StatusCloning,
-		StatusRunning,
-		StatusCompleted,
-		StatusFailed,
-		StatusReviewing,
-		StatusAwaitingInstruction,
-		StatusCreatingPR,
-		StatusPRCreated,
-	}
-}

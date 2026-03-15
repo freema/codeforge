@@ -20,7 +20,7 @@ type Workspace struct {
 	Path      string    `json:"path"`
 	Slug      string    `json:"slug"`
 	CreatedAt time.Time `json:"created_at"`
-	TTL       int64     `json:"ttl"`        // seconds
+	TTL       int64     `json:"ttl"` // seconds
 	SizeBytes int64     `json:"size_bytes"`
 }
 

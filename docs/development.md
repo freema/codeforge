@@ -95,15 +95,15 @@ internal/
   keys/                 Access key registry + 3-tier resolver
   logger/               Structured logging (slog)
   metrics/              Prometheus metric definitions
-  prompt/               Prompt templates (embed FS, task types + code review)
+  prompt/               Prompt templates (embed FS, task types + code/PR review)
   redisclient/          Redis client wrapper
-  review/               Code review service (reviewer, parser, models)
+  review/               Code review types, output parser, comment formatting
   server/               HTTP server + handlers + middleware
-    handlers/           Request handlers (tasks, keys, tools, workflows, stream, etc.)
+    handlers/           Request handlers (tasks, webhook receiver, keys, tools, workflows, stream, etc.)
     middleware/         Auth, logging, recovery, rate limit, metrics, tracing
   task/                 Task model, service, state machine, PR service
   tool/                 Tool subsystem namespace (low-level)
-    git/                Git operations (clone, branch, PR creation)
+    git/                Git operations (clone, branch, PR creation, review posting)
     runner/             CLI runner interface + implementations (Claude Code, Codex)
     mcp/                MCP server registry + installer
   tools/                Tool system (high-level: catalog, registry, resolver, bridge)
@@ -133,6 +133,6 @@ tasks/                  Planning documents (not code)
 - **Git auth**: `GIT_ASKPASS` helper, never URL-embedded tokens
 - **Sensitive fields**: encrypted in Redis (AES-256-GCM), never in API responses (`json:"-"`)
 - **Multi-CLI**: tasks can specify `cli: "claude-code"` or `cli: "codex"` — registry resolves to runner
-- **Task types**: `code` (default), `plan`, `review` — each wraps the user prompt with a template in the executor. New types: add template in `internal/prompt/templates/`, register in `prompt.go`
+- **Task types**: `code` (default), `plan`, `review`, `pr_review` — each wraps the user prompt with a template in the executor. New types: add template in `internal/prompt/templates/`, register in `prompt.go`
 - **Stream normalizers**: each CLI has its own normalizer (`normalizer_claude.go`, `normalizer_codex.go`) mapping raw events to `NormalizedEvent`. New CLIs need a corresponding normalizer
 - **Review as action**: code review is triggered by user via endpoint, not automatic in executor

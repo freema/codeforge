@@ -17,13 +17,12 @@ import (
 	"github.com/freema/codeforge/internal/config"
 	"github.com/freema/codeforge/internal/database"
 	"github.com/freema/codeforge/internal/keys"
-	"github.com/freema/codeforge/internal/review"
-	"github.com/freema/codeforge/internal/tool/mcp"
-	"github.com/freema/codeforge/internal/tool/runner"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/server/handlers"
 	"github.com/freema/codeforge/internal/server/middleware"
 	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/tool/mcp"
+	"github.com/freema/codeforge/internal/tool/runner"
 	"github.com/freema/codeforge/internal/tools"
 	"github.com/freema/codeforge/internal/workflow"
 	"github.com/freema/codeforge/internal/workspace"
@@ -36,7 +35,7 @@ type Server struct {
 }
 
 // New creates and configures the HTTP server with all routes and middleware.
-func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, taskService *task.Service, prService *task.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, toolRegistry tools.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowRunStore workflow.RunStore, workflowRunCreator handlers.WorkflowRunCreator, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, reviewer *review.Reviewer, version string) *Server {
+func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, taskService *task.Service, prService *task.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, toolRegistry tools.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowRunStore workflow.RunStore, workflowRunCreator handlers.WorkflowRunCreator, workflowRunCanceller handlers.WorkflowRunCanceller, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, webhookReceiverHandler *handlers.WebhookReceiverHandler, version string) *Server {
 	r := chi.NewRouter()
 
 	// Global middleware (timeout applied per-route-group, not globally, for SSE support)
@@ -67,8 +66,14 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, t
 	r.Get("/api/docs", docsHandler.SwaggerUI)
 	r.Get("/api/docs/openapi.yaml", docsHandler.OpenAPISpec)
 
+	// Webhook receiver endpoints (no Bearer auth — verified via webhook secrets)
+	if webhookReceiverHandler != nil {
+		r.Post("/api/v1/webhooks/github", webhookReceiverHandler.GitHubWebhook)
+		r.Post("/api/v1/webhooks/gitlab", webhookReceiverHandler.GitLabWebhook)
+	}
+
 	// Handlers
-	taskHandler := handlers.NewTaskHandler(taskService, prService, canceller, cliRegistry, reviewer)
+	taskHandler := handlers.NewTaskHandler(taskService, prService, canceller, cliRegistry, keyRegistry, cfg.Git.ProviderDomains)
 	cliHandler := handlers.NewCLIHandler(cliRegistry, cliConfigs)
 	streamHandler := handlers.NewStreamHandler(taskService, redis)
 	keyHandler := handlers.NewKeyHandler(keyRegistry)
@@ -77,7 +82,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, t
 	wsHandler := handlers.NewWorkspaceHandler(workspaceMgr, taskService)
 	repoHandler := handlers.NewRepoHandler(keyRegistry)
 	sentryHandler := handlers.NewSentryHandler(keyRegistry)
-	workflowHandler := handlers.NewWorkflowHandler(workflowRegistry, workflowRunStore, workflowRunCreator, redis)
+	workflowHandler := handlers.NewWorkflowHandler(workflowRegistry, workflowRunStore, workflowRunCreator, workflowRunCanceller, canceller.Cancel, redis)
 
 	// Protected API routes
 	r.Route("/api/v1", func(r chi.Router) {
@@ -105,6 +110,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, t
 				r.Post("/{taskID}/instruct", taskHandler.Instruct)
 				r.Post("/{taskID}/cancel", taskHandler.Cancel)
 				r.Post("/{taskID}/review", taskHandler.Review)
+				r.Post("/{taskID}/post-review", taskHandler.PostReviewComments)
 				r.Post("/{taskID}/create-pr", taskHandler.CreatePR)
 			})
 
@@ -161,7 +167,9 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, t
 
 			r.Route("/workflow-runs", func(r chi.Router) {
 				r.Get("/", workflowHandler.ListRuns)
+				r.Post("/cancel-all", workflowHandler.CancelAllRuns)
 				r.Get("/{runID}", workflowHandler.GetRun)
+				r.Post("/{runID}/cancel", workflowHandler.CancelRun)
 			})
 		})
 	})

@@ -8,6 +8,7 @@ import (
 
 	"github.com/freema/codeforge/internal/apperror"
 	"github.com/freema/codeforge/internal/prompt"
+	"github.com/freema/codeforge/internal/tools"
 )
 
 // codeReviewPrompt is pre-rendered at init time. The prompt template's
@@ -15,7 +16,9 @@ import (
 // the actual task prompt gets substituted at workflow runtime.
 var codeReviewPrompt = mustRenderCodeReviewPrompt()
 
-const analyzeRepoPrompt = `You are analyzing a codebase to understand its architecture, conventions, and key components.
+// AnalyzeRepoPrompt is the prompt template for analyzing a repository's structure.
+// Exported for reuse by the CI Action's knowledge_update task type.
+const AnalyzeRepoPrompt = `You are analyzing a codebase to understand its architecture, conventions, and key components.
 
 {{if .Params.focus}}Focus area: {{.Params.focus}}{{end}}
 
@@ -32,7 +35,9 @@ const analyzeRepoPrompt = `You are analyzing a codebase to understand its archit
 - Be thorough but concise in your analysis
 - Focus on information that would help a new developer understand the codebase`
 
-const updateKnowledgePrompt = `You are a technical writer creating project knowledge documentation.
+// UpdateKnowledgePrompt is the prompt template for creating/updating .codeforge/ knowledge docs.
+// Exported for reuse by the CI Action's knowledge_update task type.
+const UpdateKnowledgePrompt = `You are a technical writer creating project knowledge documentation.
 
 Based on your analysis of this codebase, create or update documentation files in the ` + "`.codeforge/`" + ` directory.
 
@@ -105,9 +110,33 @@ var BuiltinWorkflows = []WorkflowDefinition{
 				Name: "fix_bug",
 				Type: StepTypeTask,
 				Config: mustJSON(TaskStepConfig{
-					RepoURL:     "{{.Params.repo_url}}",
-					Prompt:      "Fix the following Sentry error:\n\nTitle: {{.Steps.fetch_issue.title}}\nCulprit: {{.Steps.fetch_issue.culprit}}\nMessage: {{.Steps.fetch_issue.message}}\nPlatform: {{.Steps.fetch_issue.platform}}\n\nAnalyze the code, find the root cause, and implement a fix.",
+					RepoURL: "{{.Params.repo_url}}",
+					Prompt: `Fix the following Sentry error in this codebase.
+
+## Error Details
+- **Error:** {{.Steps.fetch_issue.title}}
+- **Location:** {{.Steps.fetch_issue.culprit}}
+- **Message:** {{.Steps.fetch_issue.message}}
+- **Platform:** {{.Steps.fetch_issue.platform}}
+
+## Instructions
+1. Use the Sentry MCP tool to fetch more context about this error (stack traces, breadcrumbs, latest events)
+2. Find the code referenced in the culprit path
+3. Analyze what causes this error — read the relevant code and understand the context
+4. Determine if this is fixable in code (some errors are infrastructure/network issues that cannot be fixed in code)
+5. If fixable: implement a proper fix with error handling
+6. If NOT fixable in code (e.g., external service timeouts, network errors): do NOT create any files or changes — just explain why in your output
+
+## Rules
+- Do NOT create placeholder or stub fixes
+- Do NOT add generic try/catch wrappers that hide the error
+- If the error is from an external dependency or infrastructure, say so and make NO changes
+- Only modify files that are directly related to the fix`,
 					ProviderKey: "{{.Params.provider_key}}",
+					ToolKeyRef:  "{{.Params.key_name}}",
+					Tools: mustJSON([]tools.TaskTool{
+						{Name: "sentry"},
+					}),
 				}),
 			},
 			{
@@ -116,8 +145,8 @@ var BuiltinWorkflows = []WorkflowDefinition{
 				Config: mustJSON(ActionConfig{
 					Kind:        ActionCreatePR,
 					TaskStepRef: "fix_bug",
-					Title:       "fix: {{.Steps.fetch_issue.title}}",
-					Description: "Fixes Sentry issue: {{.Steps.fetch_issue.title}}\n\nCulprit: {{.Steps.fetch_issue.culprit}}\nMessage: {{.Steps.fetch_issue.message}}",
+					Title:       "fix(sentry): {{.Steps.fetch_issue.culprit}}",
+					Description: "## Sentry Error Fix\n\n**Error:** {{.Steps.fetch_issue.title}}\n**Location:** {{.Steps.fetch_issue.culprit}}\n**Message:** {{.Steps.fetch_issue.message}}\n\n---\n*Automated fix by CodeForge sentry-fixer workflow.*",
 				}),
 			},
 		},
@@ -204,7 +233,7 @@ var BuiltinWorkflows = []WorkflowDefinition{
 				Type: StepTypeTask,
 				Config: mustJSON(TaskStepConfig{
 					RepoURL:     "{{.Params.repo_url}}",
-					Prompt:       "Fix the following GitLab issue (!{{.Steps.fetch_issue.iid}}):\n\nTitle: {{.Steps.fetch_issue.title}}\n\n{{.Steps.fetch_issue.description}}\n\nAnalyze the codebase, understand the issue, and implement a fix.",
+					Prompt:      "Fix the following GitLab issue (!{{.Steps.fetch_issue.iid}}):\n\nTitle: {{.Steps.fetch_issue.title}}\n\n{{.Steps.fetch_issue.description}}\n\nAnalyze the codebase, understand the issue, and implement a fix.",
 					ProviderKey: "{{.Params.provider_key}}",
 				}),
 			},
@@ -276,7 +305,7 @@ var BuiltinWorkflows = []WorkflowDefinition{
 				Type: StepTypeTask,
 				Config: mustJSON(TaskStepConfig{
 					RepoURL:     "{{.Params.repo_url}}",
-					Prompt:      analyzeRepoPrompt,
+					Prompt:      AnalyzeRepoPrompt,
 					TaskType:    "plan",
 					ProviderKey: "{{.Params.provider_key}}",
 					CLI:         "{{.Params.cli}}",
@@ -287,7 +316,7 @@ var BuiltinWorkflows = []WorkflowDefinition{
 				Type: StepTypeTask,
 				Config: mustJSON(TaskStepConfig{
 					RepoURL:          "{{.Params.repo_url}}",
-					Prompt:           updateKnowledgePrompt,
+					Prompt:           UpdateKnowledgePrompt,
 					TaskType:         "code",
 					ProviderKey:      "{{.Params.provider_key}}",
 					CLI:              "{{.Params.cli}}",
@@ -315,8 +344,30 @@ var BuiltinWorkflows = []WorkflowDefinition{
 }
 
 // SeedBuiltins inserts or replaces built-in workflow definitions.
+// It also removes stale built-in workflows that are no longer defined in code.
 // This is idempotent and safe to call on every startup.
 func SeedBuiltins(ctx context.Context, reg Registry) error {
+	// Build set of current builtin names
+	currentNames := make(map[string]bool, len(BuiltinWorkflows))
+	for _, def := range BuiltinWorkflows {
+		currentNames[def.Name] = true
+	}
+
+	// Remove stale builtins that are no longer in code
+	existing, err := reg.List(ctx)
+	if err == nil {
+		for _, wf := range existing {
+			if wf.Builtin && !currentNames[wf.Name] {
+				if err := reg.DeleteBuiltin(ctx, wf.Name); err != nil {
+					slog.Warn("failed to remove stale builtin workflow", "name", wf.Name, "error", err)
+				} else {
+					slog.Info("removed stale built-in workflow", "name", wf.Name)
+				}
+			}
+		}
+	}
+
+	// Seed current builtins
 	for _, def := range BuiltinWorkflows {
 		err := reg.Create(ctx, def)
 		if err != nil {

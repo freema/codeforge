@@ -76,20 +76,17 @@ func TestActionExecutor_MissingTaskRef(t *testing.T) {
 	}
 }
 
-func TestActionExecutor_Notify(t *testing.T) {
+func TestActionExecutor_UnknownKind(t *testing.T) {
 	executor := NewActionExecutor(nil)
 
 	stepDef := StepDefinition{
-		Name:   "notify",
+		Name:   "unknown",
 		Type:   StepTypeAction,
-		Config: mustJSON(ActionConfig{Kind: ActionNotify}),
+		Config: mustJSON(ActionConfig{Kind: "notify"}),
 	}
 
-	outputs, err := executor.Execute(context.Background(), stepDef, TemplateContext{})
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if outputs["status"] != "skipped" {
-		t.Errorf("expected status=skipped, got %v", outputs)
+	_, err := executor.Execute(context.Background(), stepDef, TemplateContext{})
+	if err == nil {
+		t.Fatal("expected error for unknown action kind")
 	}
 }

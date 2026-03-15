@@ -53,9 +53,15 @@ func (c *CodexRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, err
 	if opts.Model != "" {
 		args = append(args, "-m", opts.Model)
 	}
-	// MaxTurns and MaxBudgetUSD are silently ignored — Codex does not support them.
+	// MaxTurns, MaxBudgetUSD, AllowedTools are silently ignored — Codex does not support them.
 
-	args = append(args, opts.Prompt)
+	// If AppendSystemPrompt is set, prepend it to the prompt (Codex has no system prompt flag).
+	prompt := opts.Prompt
+	if opts.AppendSystemPrompt != "" {
+		prompt = opts.AppendSystemPrompt + "\n\n---\n\n" + prompt
+	}
+
+	args = append(args, prompt)
 
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 	cmd.Dir = opts.WorkDir
