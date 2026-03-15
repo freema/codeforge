@@ -80,6 +80,12 @@ func (e *CIExecutor) Execute(ctx context.Context) int {
 
 	startTime := time.Now()
 
+	// Default allowed tools for review tasks — read-only to prevent wandering
+	allowedTools := e.cfg.AllowedTools
+	if allowedTools == "" && (e.cfg.TaskType == "pr_review" || e.cfg.TaskType == "code_review") {
+		allowedTools = "Bash,Read,Glob,Grep"
+	}
+
 	// Run CLI
 	result, err := cliRunner.Run(ctx, runner.RunOptions{
 		Prompt:             taskPrompt,
@@ -89,7 +95,7 @@ func (e *CIExecutor) Execute(ctx context.Context) int {
 		MaxTurns:           e.cfg.MaxTurns,
 		MCPConfigPath:      mcpConfigPath,
 		AppendSystemPrompt: systemContext,
-		AllowedTools:       e.cfg.AllowedTools,
+		AllowedTools:       allowedTools,
 		OnEvent: func(event json.RawMessage) {
 			// Stream events to stderr for CI log visibility
 			fmt.Fprintln(os.Stderr, string(event))
@@ -108,7 +114,15 @@ func (e *CIExecutor) Execute(ctx context.Context) int {
 		"duration", duration,
 		"input_tokens", result.InputTokens,
 		"output_tokens", result.OutputTokens,
+		"output_length", len(result.Output),
 	)
+
+	// Log raw output for debugging when it's short enough
+	if len(result.Output) > 0 && len(result.Output) < 2000 {
+		slog.Info("CLI raw output", "output", result.Output)
+	} else if len(result.Output) == 0 {
+		slog.Warn("CLI returned empty output")
+	}
 
 	// Handle result based on task type
 	return e.handleResult(ctx, ciCtx, result, duration)

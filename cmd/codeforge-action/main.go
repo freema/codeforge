@@ -67,7 +67,7 @@ func parseConfig() Config {
 		MCPConfig:     envDefault("INPUT_MCP_CONFIG", ""),
 		PostComments:  envBool("INPUT_POST_COMMENTS", true),
 		OutputFormat:  envDefault("INPUT_OUTPUT_FORMAT", "json"),
-		MaxTurns:      envInt("INPUT_MAX_TURNS", 0),
+		MaxTurns:      envInt("INPUT_MAX_TURNS", 10),
 		AllowedTools:  envDefault("INPUT_ALLOWED_TOOLS", ""),
 	}
 
