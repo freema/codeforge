@@ -11,7 +11,9 @@ fi
 # npm global installs need to be writable by codeforge user
 mkdir -p /home/codeforge/.npm
 chown -R codeforge:codeforge /home/codeforge
-chown -R codeforge:codeforge /usr/local/lib/node_modules /usr/local/bin
+# npm global prefix on Alpine — ensure codeforge can install packages
+NPM_PREFIX="$(npm config get prefix 2>/dev/null || echo /usr/local)"
+chown -R codeforge:codeforge "$NPM_PREFIX/lib" "$NPM_PREFIX/bin" 2>/dev/null || true
 
 # Mark workspace as git safe directory for codeforge user
 su-exec codeforge git config --global --add safe.directory '*'
