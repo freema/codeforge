@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/freema/codeforge/internal/review"
@@ -89,6 +90,29 @@ func (p *GitHubReviewPoster) PostPRReview(ctx context.Context, repo *RepoInfo, t
 		"comments": comments,
 	}
 
+	postResult, err := p.doPostReview(ctx, url, token, body)
+	if err != nil && len(comments) > 0 && resp422(err) {
+		// Line comments failed (lines not in PR diff) — retry without them,
+		// putting all issues into the summary body instead.
+		slog.Warn("line comments rejected by GitHub, retrying without inline comments",
+			"error", err, "comments_dropped", len(comments))
+
+		body = map[string]interface{}{
+			"body":     formatSummary(result, result.Issues),
+			"event":    event,
+			"comments": []githubReviewComment{},
+		}
+		postResult, err = p.doPostReview(ctx, url, token, body)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return postResult, nil
+}
+
+// doPostReview sends the review request to GitHub API.
+func (p *GitHubReviewPoster) doPostReview(ctx context.Context, url, token string, body map[string]interface{}) (*PostReviewResult, error) {
 	bodyJSON, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling review request: %w", err)
@@ -125,8 +149,14 @@ func (p *GitHubReviewPoster) PostPRReview(ctx context.Context, repo *RepoInfo, t
 		slog.Warn("failed to parse github review response", "error", err)
 	}
 
+	commentsField, _ := body["comments"].([]githubReviewComment)
 	return &PostReviewResult{
 		ReviewURL:      respData.HTMLURL,
-		CommentsPosted: len(comments),
+		CommentsPosted: len(commentsField),
 	}, nil
+}
+
+// resp422 checks if an error message indicates a 422 response.
+func resp422(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "422")
 }

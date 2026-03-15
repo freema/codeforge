@@ -8,6 +8,11 @@ if [ -d "$WORKSPACE" ]; then
     chown -R codeforge:codeforge "$WORKSPACE"
 fi
 
+# Fix GitHub Actions file_commands permissions (GITHUB_OUTPUT, GITHUB_STEP_SUMMARY)
+if [ -d "/github/file_commands" ]; then
+    chown -R codeforge:codeforge /github/file_commands
+fi
+
 # npm global installs need to be writable by codeforge user
 mkdir -p /home/codeforge/.npm
 chown -R codeforge:codeforge /home/codeforge
