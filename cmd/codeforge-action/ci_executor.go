@@ -80,12 +80,6 @@ func (e *CIExecutor) Execute(ctx context.Context) int {
 
 	startTime := time.Now()
 
-	// Default allowed tools for review tasks — read-only to prevent wandering
-	allowedTools := e.cfg.AllowedTools
-	if allowedTools == "" && (e.cfg.TaskType == "pr_review" || e.cfg.TaskType == "code_review") {
-		allowedTools = "Bash,Read,Glob,Grep"
-	}
-
 	// Run CLI
 	result, err := cliRunner.Run(ctx, runner.RunOptions{
 		Prompt:             taskPrompt,
@@ -95,10 +89,19 @@ func (e *CIExecutor) Execute(ctx context.Context) int {
 		MaxTurns:           e.cfg.MaxTurns,
 		MCPConfigPath:      mcpConfigPath,
 		AppendSystemPrompt: systemContext,
-		AllowedTools:       allowedTools,
+		AllowedTools:       e.cfg.AllowedTools,
 		OnEvent: func(event json.RawMessage) {
-			// Stream events to stderr for CI log visibility
-			fmt.Fprintln(os.Stderr, string(event))
+			// Log only event type for progress visibility, not full payload.
+			// Writing full events to stderr causes deadlock when pipe buffer fills.
+			var ev struct {
+				Type    string `json:"type"`
+				Subtype string `json:"subtype,omitempty"`
+			}
+			if json.Unmarshal(event, &ev) == nil && ev.Type != "" {
+				if ev.Subtype != "" {
+					slog.Info("stream event", "type", ev.Type, "subtype", ev.Subtype)
+				}
+			}
 		},
 	})
 
