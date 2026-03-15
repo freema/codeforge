@@ -14,7 +14,7 @@ chown -R codeforge:codeforge /home/codeforge
 chown -R codeforge:codeforge /usr/local/lib/node_modules /usr/local/bin
 
 # Mark workspace as git safe directory for codeforge user
-gosu codeforge git config --global --add safe.directory '*'
+su-exec codeforge git config --global --add safe.directory '*'
 
 # Drop privileges and run the action binary
-exec gosu codeforge /usr/local/bin/codeforge-action "$@"
+exec su-exec codeforge /usr/local/bin/codeforge-action "$@"
