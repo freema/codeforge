@@ -28,7 +28,8 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - uses: docker/build-push-action@v6
+      - name: Build and push server image
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: deployments/Dockerfile
@@ -42,15 +43,15 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Build and push action image
+        uses: docker/build-push-action@v6
         with:
-          generate_release_notes: true
-          body: |
-            ## Docker image
-
-            ```bash
-            docker pull ghcr.io/freema/codeforge:${{ steps.version.outputs.VERSION }}
-            ```
-
-            See [deployment docs](https://github.com/freema/codeforge/blob/main/docs/deployment.md) for full setup instructions.
+          context: .
+          file: deployments/Dockerfile.action
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/freema/codeforge-action:latest
+            ghcr.io/freema/codeforge-action:${{ steps.version.outputs.VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
