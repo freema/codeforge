@@ -15,6 +15,9 @@ chown -R codeforge:codeforge /home/codeforge
 NPM_PREFIX="$(npm config get prefix 2>/dev/null || echo /usr/local)"
 chown -R codeforge:codeforge "$NPM_PREFIX/lib" "$NPM_PREFIX/bin" 2>/dev/null || true
 
+# Ensure SHELL is set — Claude Code requires a POSIX shell
+export SHELL=/bin/bash
+
 # Mark workspace as git safe directory for codeforge user
 su-exec codeforge git config --global --add safe.directory '*'
 
