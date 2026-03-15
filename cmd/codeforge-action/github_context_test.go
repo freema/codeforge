@@ -139,6 +139,47 @@ func TestParseGitHubContext_NoEventFile(t *testing.T) {
 	}
 }
 
+func TestParseGitHubContext_WorkflowDispatch(t *testing.T) {
+	// workflow_dispatch event — PR number in inputs, not in pull_request
+	eventJSON := `{
+		"inputs": {
+			"pr_number": "5",
+			"cli": "claude-code"
+		},
+		"repository": {
+			"full_name": "owner/repo",
+			"html_url": "https://github.com/owner/repo"
+		}
+	}`
+
+	tmpDir := t.TempDir()
+	eventPath := filepath.Join(tmpDir, "event.json")
+	if err := os.WriteFile(eventPath, []byte(eventJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("GITHUB_ACTIONS", "true")
+	t.Setenv("GITHUB_EVENT_PATH", eventPath)
+	t.Setenv("GITHUB_WORKSPACE", "/workspace")
+	t.Setenv("GITHUB_REPOSITORY", "owner/repo")
+	t.Setenv("GITHUB_SERVER_URL", "https://github.com")
+	t.Setenv("GITHUB_SHA", "dispatch-sha")
+	t.Setenv("GITHUB_BASE_REF", "")
+	t.Setenv("GITHUB_HEAD_REF", "")
+
+	ctx, err := ParseGitHubContext()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if ctx.PRNumber != 5 {
+		t.Errorf("PRNumber = %d, want 5", ctx.PRNumber)
+	}
+	if ctx.RepoURL != "https://github.com/owner/repo" {
+		t.Errorf("RepoURL = %q, want %q", ctx.RepoURL, "https://github.com/owner/repo")
+	}
+}
+
 func TestParseGitHubContext_GHEServer(t *testing.T) {
 	t.Setenv("GITHUB_ACTIONS", "true")
 	t.Setenv("GITHUB_EVENT_PATH", "")

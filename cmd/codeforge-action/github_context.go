@@ -10,7 +10,10 @@ import (
 // githubEvent represents the relevant fields from the GitHub event payload.
 type githubEvent struct {
 	PullRequest *githubPR `json:"pull_request"`
-	Repository  struct {
+	Inputs      struct {
+		PRNumber json.Number `json:"pr_number"` // workflow_dispatch input
+	} `json:"inputs"`
+	Repository struct {
 		FullName string `json:"full_name"` // owner/repo
 		CloneURL string `json:"clone_url"` // https://github.com/owner/repo.git
 		HTMLURL  string `json:"html_url"`  // https://github.com/owner/repo
@@ -66,6 +69,13 @@ func ParseGitHubContext() (*CIContext, error) {
 			ctx.PRBranch = event.PullRequest.Head.Ref
 			ctx.BaseBranch = event.PullRequest.Base.Ref
 			ctx.HeadSHA = event.PullRequest.Head.SHA
+		}
+
+		// Fallback: workflow_dispatch inputs.pr_number
+		if ctx.PRNumber == 0 && event.Inputs.PRNumber != "" {
+			if n, err := event.Inputs.PRNumber.Int64(); err == nil {
+				ctx.PRNumber = int(n)
+			}
 		}
 
 		if event.Repository.HTMLURL != "" {
