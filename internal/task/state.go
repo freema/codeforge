@@ -8,7 +8,7 @@ import (
 
 // validTransitions defines valid state machine transitions.
 var validTransitions = map[TaskStatus][]TaskStatus{
-	StatusPending:             {StatusCloning, StatusFailed},
+	StatusPending:             {StatusCloning, StatusRunning, StatusFailed},
 	StatusCloning:             {StatusRunning, StatusFailed},
 	StatusRunning:             {StatusCompleted, StatusFailed},
 	StatusReviewing:           {StatusCompleted, StatusFailed},

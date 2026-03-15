@@ -11,6 +11,11 @@ import (
 	"syscall"
 )
 
+const (
+	cliClaudeCode = "claude-code"
+	cliCodex      = "codex"
+)
+
 // Config holds all configuration for a CI Action run.
 type Config struct {
 	TaskType     string // pr_review, code_review, knowledge_update, custom
@@ -56,7 +61,7 @@ func parseConfig() Config {
 	cfg := Config{
 		TaskType:      envDefault("INPUT_TASK_TYPE", "pr_review"),
 		Prompt:        envDefault("INPUT_PROMPT", ""),
-		CLI:           envDefault("INPUT_CLI", envDefault("CODEFORGE_CLI", "claude-code")),
+		CLI:           envDefault("INPUT_CLI", envDefault("CODEFORGE_CLI", cliClaudeCode)),
 		Model:         envDefault("INPUT_MODEL", ""),
 		ProviderToken: envDefault("INPUT_PROVIDER_TOKEN", ""),
 		MCPConfig:     envDefault("INPUT_MCP_CONFIG", ""),
@@ -68,9 +73,9 @@ func parseConfig() Config {
 
 	// Resolve API key based on CLI
 	switch cfg.CLI {
-	case "claude-code":
+	case cliClaudeCode:
 		cfg.APIKey = envDefault("INPUT_API_KEY", os.Getenv("ANTHROPIC_API_KEY"))
-	case "codex":
+	case cliCodex:
 		cfg.APIKey = envDefault("INPUT_API_KEY", os.Getenv("OPENAI_API_KEY"))
 	}
 
@@ -96,15 +101,15 @@ func validateConfig(cfg Config) error {
 		return fmt.Errorf("invalid task_type: %q (valid: pr_review, code_review, knowledge_update, custom)", cfg.TaskType)
 	}
 
-	if cfg.CLI != "claude-code" && cfg.CLI != "codex" {
+	if cfg.CLI != cliClaudeCode && cfg.CLI != cliCodex {
 		return fmt.Errorf("invalid cli: %q (valid: claude-code, codex)", cfg.CLI)
 	}
 
 	if cfg.APIKey == "" {
 		switch cfg.CLI {
-		case "claude-code":
+		case cliClaudeCode:
 			return fmt.Errorf("ANTHROPIC_API_KEY is required for claude-code CLI")
-		case "codex":
+		case cliCodex:
 			return fmt.Errorf("OPENAI_API_KEY is required for codex CLI")
 		}
 	}

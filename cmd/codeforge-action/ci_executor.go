@@ -118,9 +118,9 @@ func (e *CIExecutor) Execute(ctx context.Context) int {
 func (e *CIExecutor) ensureCLI(ctx context.Context) error {
 	var binaryName string
 	switch e.cfg.CLI {
-	case "claude-code":
+	case cliClaudeCode:
 		binaryName = "claude"
-	case "codex":
+	case cliCodex:
 		binaryName = "codex"
 	default:
 		return fmt.Errorf("unknown CLI: %s", e.cfg.CLI)
@@ -136,9 +136,9 @@ func (e *CIExecutor) ensureCLI(ctx context.Context) error {
 
 	var pkg string
 	switch e.cfg.CLI {
-	case "claude-code":
+	case cliClaudeCode:
 		pkg = "@anthropic-ai/claude-code"
-	case "codex":
+	case cliCodex:
 		pkg = "@openai/codex"
 	}
 
@@ -263,7 +263,7 @@ func (e *CIExecutor) buildSystemContext(workDir string) string {
 // createRunner creates the appropriate CLI runner.
 func (e *CIExecutor) createRunner() runner.Runner {
 	switch e.cfg.CLI {
-	case "codex":
+	case cliCodex:
 		return runner.NewCodexRunner("codex")
 	default:
 		return runner.NewClaudeRunner("claude")

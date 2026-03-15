@@ -12,6 +12,7 @@ func TestValidTransitions(t *testing.T) {
 		from, to TaskStatus
 	}{
 		{StatusPending, StatusCloning},
+		{StatusPending, StatusRunning},
 		{StatusPending, StatusFailed},
 		{StatusCloning, StatusRunning},
 		{StatusCloning, StatusFailed},
@@ -42,7 +43,6 @@ func TestInvalidTransitions(t *testing.T) {
 	invalid := []struct {
 		from, to TaskStatus
 	}{
-		{StatusPending, StatusRunning},
 		{StatusPending, StatusCompleted},
 		{StatusCloning, StatusPending},
 		{StatusCloning, StatusCompleted},
