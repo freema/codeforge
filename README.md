@@ -63,9 +63,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: freema/codeforge@main
+      - uses: freema/codeforge@v1
+        with:
+          api_key: ${{ secrets.ANTHROPIC_API_KEY }}
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 **Task types:** `pr_review` (default), `code_review`, `knowledge_update`, `custom`
