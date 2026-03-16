@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
+
 	"github.com/freema/codeforge/internal/review"
 )
 
@@ -16,13 +18,8 @@ func writeGitHubOutput(ciCtx *CIContext, reviewResult *review.ReviewResult, rawO
 	// Write to $GITHUB_STEP_SUMMARY (markdown rendered in Actions UI)
 	writeGitHubStepSummary(ciCtx, reviewResult, rawOutput, inputTokens, outputTokens)
 
-	// Also write to stdout for CI log
-	if reviewResult != nil && outputFormat == "json" {
-		data, _ := json.MarshalIndent(reviewResult, "", "  ")
-		fmt.Println(string(data))
-	} else {
-		fmt.Println(rawOutput)
-	}
+	// Write human-readable summary to stdout (visible in CI log)
+	writeTerminalSummary(reviewResult, rawOutput, inputTokens, outputTokens)
 }
 
 func writeGitHubOutputVars(reviewResult *review.ReviewResult, rawOutput string, outputFormat string, inputTokens, outputTokens int) {
@@ -85,6 +82,73 @@ func writeGitHubStepSummary(ciCtx *CIContext, reviewResult *review.ReviewResult,
 		}
 		fmt.Fprintf(f, "```\n%s\n```\n", rawOutput)
 	}
+}
+
+func writeTerminalSummary(r *review.ReviewResult, rawOutput string, inputTokens, outputTokens int) {
+	if r == nil {
+		// Non-review task — print truncated output
+		output := rawOutput
+		if len(output) > 2000 {
+			output = output[:2000] + "\n... (truncated, full output in $GITHUB_OUTPUT)"
+		}
+		fmt.Println(output)
+		return
+	}
+
+	fmt.Println()
+	fmt.Println("┌─────────────────────────────────────────────┐")
+	fmt.Printf("│  CodeForge Review: %-8s  Score: %d/10    │\n", strings.ToUpper(string(r.Verdict)), r.Score)
+	fmt.Println("└─────────────────────────────────────────────┘")
+	fmt.Println()
+
+	if r.Summary != "" {
+		fmt.Println(r.Summary)
+		fmt.Println()
+	}
+
+	if len(r.Issues) > 0 {
+		counts := make(map[string]int)
+		for _, issue := range r.Issues {
+			counts[issue.Severity]++
+		}
+
+		fmt.Println("Issues:")
+		for _, sev := range []string{"critical", "major", "minor", "suggestion"} {
+			if c, ok := counts[sev]; ok {
+				fmt.Printf("  %-12s %d\n", sev, c)
+			}
+		}
+		fmt.Println()
+
+		// Print top 5 issues with file:line
+		limit := 5
+		if len(r.Issues) < limit {
+			limit = len(r.Issues)
+		}
+		for i := 0; i < limit; i++ {
+			issue := r.Issues[i]
+			loc := issue.File
+			if issue.Line > 0 {
+				loc = fmt.Sprintf("%s:%d", issue.File, issue.Line)
+			}
+			desc := issue.Description
+			if len(desc) > 120 {
+				desc = desc[:120] + "..."
+			}
+			fmt.Printf("  [%s] %s\n", issue.Severity, loc)
+			fmt.Printf("    %s\n", desc)
+		}
+		if len(r.Issues) > limit {
+			fmt.Printf("  ... and %d more (see PR comments)\n", len(r.Issues)-limit)
+		}
+		fmt.Println()
+	}
+
+	fmt.Printf("Tokens: %d input / %d output\n", inputTokens, outputTokens)
+	if r.ReviewedBy != "" {
+		fmt.Printf("Model:  %s\n", r.ReviewedBy)
+	}
+	fmt.Println()
 }
 
 func writeReviewSummaryMarkdown(f *os.File, _ *CIContext, r *review.ReviewResult, inputTokens, outputTokens int) {
