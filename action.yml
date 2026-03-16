@@ -43,6 +43,10 @@ inputs:
   allowed_tools:
     description: 'Comma-separated tool allowlist for Claude Code'
     required: false
+  fail_on_request_changes:
+    description: 'Exit with code 1 when verdict is request_changes'
+    required: false
+    default: 'false'
 
 outputs:
   verdict:
@@ -53,6 +57,10 @@ outputs:
     description: 'Number of issues found'
   review:
     description: 'Full review result as JSON'
+  input_tokens:
+    description: 'Input tokens consumed'
+  output_tokens:
+    description: 'Output tokens consumed'
   output:
     description: 'Raw CLI output'
 
@@ -71,3 +79,4 @@ runs:
     INPUT_OUTPUT_FORMAT: ${{ inputs.output_format }}
     INPUT_MAX_TURNS: ${{ inputs.max_turns }}
     INPUT_ALLOWED_TOOLS: ${{ inputs.allowed_tools }}
+    INPUT_FAIL_ON_REQUEST_CHANGES: ${{ inputs.fail_on_request_changes }}

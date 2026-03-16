@@ -21,9 +21,44 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: freema/codeforge-action@v1
+      - uses: freema/codeforge@v1
+        with:
+          api_key: ${{ secrets.ANTHROPIC_API_KEY }}
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### Manual Trigger (workflow_dispatch)
+
+```yaml
+name: Code Review
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: refs/pull/${{ inputs.pr_number }}/head
+      - name: Fetch base branch
+        run: git fetch origin main
+      - uses: freema/codeforge@v1
+        with:
+          api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 ### Knowledge Update (on merge to main)
@@ -45,11 +80,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: freema/codeforge-action@v1
+      - uses: freema/codeforge@v1
         with:
           task_type: knowledge_update
+          api_key: ${{ secrets.ANTHROPIC_API_KEY }}
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 ## GitLab CI
@@ -81,6 +117,7 @@ code-review:
 | `output_format` | `json` | Output format: `json`, `markdown`, `text` |
 | `max_turns` | | Max AI conversation turns |
 | `allowed_tools` | | Comma-separated tool allowlist for Claude Code |
+| `fail_on_request_changes` | `false` | Exit with code 1 when verdict is `request_changes` |
 
 ## Outputs
 
@@ -89,6 +126,8 @@ code-review:
 | `verdict` | Review verdict: `approve`, `request_changes`, `comment` |
 | `score` | Review score (1-10) |
 | `issues_count` | Number of issues found |
+| `input_tokens` | Input tokens consumed |
+| `output_tokens` | Output tokens consumed |
 | `review` | Full review result as JSON |
 | `output` | Raw CLI output |
 
@@ -98,7 +137,9 @@ code-review:
 
 Reviews the PR/MR diff. Automatically detects PR number, branches, and commit SHA from the CI environment. Posts review comments if `post_comments=true`.
 
-Exit code: `0` for approve/comment, `1` for request_changes.
+Inline comments are validated against the PR diff — only lines within diff hunks get inline comments, other issues go into the review summary body.
+
+Exit code: `0` by default. Set `fail_on_request_changes: true` to exit with `1` on `request_changes` verdict.
 
 ### `code_review`
 
@@ -144,12 +185,6 @@ docker pull ghcr.io/freema/codeforge-action:latest
 ```
 
 ~130 MB base image (Alpine + git + Node.js). The selected CLI is installed at runtime via npm (~30s, negligible vs 2-5 min AI execution).
-
-Build locally:
-
-```bash
-task build:action
-```
 
 ## Environment Variables
 
