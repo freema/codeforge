@@ -25,10 +25,11 @@ type Config struct {
 	APIKey       string // AI provider API key
 	ProviderToken string // GitHub/GitLab token for PR operations
 	MCPConfig    string // JSON string or path to .mcp.json
-	PostComments bool   // post review as PR comments
-	OutputFormat string // json, markdown, text
-	MaxTurns     int    // max conversation turns
-	AllowedTools string // comma-separated tool allowlist
+	PostComments         bool   // post review as PR comments
+	OutputFormat         string // json, markdown, text
+	MaxTurns             int    // max conversation turns
+	AllowedTools         string // comma-separated tool allowlist
+	FailOnRequestChanges bool   // exit 1 when verdict is request_changes
 }
 
 func main() {
@@ -67,8 +68,9 @@ func parseConfig() Config {
 		MCPConfig:     envDefault("INPUT_MCP_CONFIG", ""),
 		PostComments:  envBool("INPUT_POST_COMMENTS", true),
 		OutputFormat:  envDefault("INPUT_OUTPUT_FORMAT", "json"),
-		MaxTurns:      envInt("INPUT_MAX_TURNS", 0),
-		AllowedTools:  envDefault("INPUT_ALLOWED_TOOLS", ""),
+		MaxTurns:             envInt("INPUT_MAX_TURNS", 0),
+		AllowedTools:         envDefault("INPUT_ALLOWED_TOOLS", ""),
+		FailOnRequestChanges: envBool("INPUT_FAIL_ON_REQUEST_CHANGES", false),
 	}
 
 	// Resolve API key based on CLI

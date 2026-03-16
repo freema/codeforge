@@ -5,12 +5,13 @@ set -e
 # files mounted by GitHub Actions / GitLab CI.
 WORKSPACE="${GITHUB_WORKSPACE:-${CI_PROJECT_DIR:-/github/workspace}}"
 if [ -d "$WORKSPACE" ]; then
-    chown -R codeforge:codeforge "$WORKSPACE"
+    # Use chmod instead of chown — host runner keeps ownership of bind-mounted files
+    chmod -R a+rwX "$WORKSPACE"
 fi
 
 # Fix GitHub Actions file_commands permissions (GITHUB_OUTPUT, GITHUB_STEP_SUMMARY)
 if [ -d "/github/file_commands" ]; then
-    chown -R codeforge:codeforge /github/file_commands
+    chmod -R a+rwX /github/file_commands
 fi
 
 # npm global installs need to be writable by codeforge user

@@ -9,12 +9,12 @@ import (
 )
 
 // writeGitHubOutput writes results to $GITHUB_OUTPUT and $GITHUB_STEP_SUMMARY.
-func writeGitHubOutput(ciCtx *CIContext, reviewResult *review.ReviewResult, rawOutput string, outputFormat string) {
+func writeGitHubOutput(ciCtx *CIContext, reviewResult *review.ReviewResult, rawOutput string, outputFormat string, inputTokens, outputTokens int) {
 	// Write to $GITHUB_OUTPUT (key=value pairs for downstream steps)
-	writeGitHubOutputVars(reviewResult, rawOutput, outputFormat)
+	writeGitHubOutputVars(reviewResult, rawOutput, outputFormat, inputTokens, outputTokens)
 
 	// Write to $GITHUB_STEP_SUMMARY (markdown rendered in Actions UI)
-	writeGitHubStepSummary(ciCtx, reviewResult, rawOutput)
+	writeGitHubStepSummary(ciCtx, reviewResult, rawOutput, inputTokens, outputTokens)
 
 	// Also write to stdout for CI log
 	if reviewResult != nil && outputFormat == "json" {
@@ -25,7 +25,7 @@ func writeGitHubOutput(ciCtx *CIContext, reviewResult *review.ReviewResult, rawO
 	}
 }
 
-func writeGitHubOutputVars(reviewResult *review.ReviewResult, rawOutput string, outputFormat string) {
+func writeGitHubOutputVars(reviewResult *review.ReviewResult, rawOutput string, outputFormat string, inputTokens, outputTokens int) {
 	outputPath := os.Getenv("GITHUB_OUTPUT")
 	if outputPath == "" {
 		return
@@ -50,6 +50,10 @@ func writeGitHubOutputVars(reviewResult *review.ReviewResult, rawOutput string, 
 		}
 	}
 
+	// Token usage
+	fmt.Fprintf(f, "input_tokens=%d\n", inputTokens)
+	fmt.Fprintf(f, "output_tokens=%d\n", outputTokens)
+
 	// Raw output (truncated for GitHub Actions limits)
 	output := rawOutput
 	if len(output) > 50000 {
@@ -58,7 +62,7 @@ func writeGitHubOutputVars(reviewResult *review.ReviewResult, rawOutput string, 
 	fmt.Fprintf(f, "output<<EOF\n%s\nEOF\n", output)
 }
 
-func writeGitHubStepSummary(ciCtx *CIContext, reviewResult *review.ReviewResult, rawOutput string) {
+func writeGitHubStepSummary(ciCtx *CIContext, reviewResult *review.ReviewResult, rawOutput string, inputTokens, outputTokens int) {
 	summaryPath := os.Getenv("GITHUB_STEP_SUMMARY")
 	if summaryPath == "" {
 		return
@@ -72,7 +76,7 @@ func writeGitHubStepSummary(ciCtx *CIContext, reviewResult *review.ReviewResult,
 	defer f.Close()
 
 	if reviewResult != nil {
-		writeReviewSummaryMarkdown(f, ciCtx, reviewResult)
+		writeReviewSummaryMarkdown(f, ciCtx, reviewResult, inputTokens, outputTokens)
 	} else {
 		// Non-review output
 		fmt.Fprintf(f, "## CodeForge Result\n\n")
@@ -83,7 +87,7 @@ func writeGitHubStepSummary(ciCtx *CIContext, reviewResult *review.ReviewResult,
 	}
 }
 
-func writeReviewSummaryMarkdown(f *os.File, _ *CIContext, r *review.ReviewResult) {
+func writeReviewSummaryMarkdown(f *os.File, _ *CIContext, r *review.ReviewResult, inputTokens, outputTokens int) {
 	fmt.Fprintf(f, "## CodeForge Review\n\n")
 	fmt.Fprintf(f, "**Verdict:** %s | **Score:** %d/10\n\n", r.Verdict, r.Score)
 
@@ -109,6 +113,10 @@ func writeReviewSummaryMarkdown(f *os.File, _ *CIContext, r *review.ReviewResult
 			}
 		}
 		fmt.Fprintf(f, "\n")
+	}
+
+	if inputTokens > 0 || outputTokens > 0 {
+		fmt.Fprintf(f, "\n**Tokens:** %d input, %d output\n", inputTokens, outputTokens)
 	}
 
 	fmt.Fprintf(f, "---\n*Reviewed by CodeForge (%s)*\n", r.ReviewedBy)

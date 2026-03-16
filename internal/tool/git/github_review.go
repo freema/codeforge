@@ -45,12 +45,26 @@ func (p *GitHubReviewPoster) PostPRReview(ctx context.Context, repo *RepoInfo, t
 	apiURL := repo.APIURL()
 	url := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/reviews", apiURL, repo.Owner, repo.Repo, prNumber)
 
-	// Separate issues: those with file+line go as review comments, others go in summary body
+	// Fetch diff lines to validate inline comments against actual PR diff
+	diffLines, err := FetchPRDiffLines(ctx, p.client, apiURL, repo.Owner, repo.Repo, token, prNumber)
+	if err != nil {
+		slog.Warn("failed to fetch PR diff lines, all inline comments will be in summary",
+			"error", err)
+	}
+
+	// Separate issues: those with file+line in diff go as review comments, others go in summary body
 	comments := make([]githubReviewComment, 0)
 	var nonFileIssues []review.ReviewIssue
 
 	for _, issue := range result.Issues {
 		if issue.File != "" && issue.Line > 0 {
+			// Validate line is in PR diff hunks
+			if diffLines != nil && !diffLines.Contains(issue.File, issue.Line) {
+				slog.Debug("issue line not in diff, moving to summary",
+					"file", issue.File, "line", issue.Line)
+				nonFileIssues = append(nonFileIssues, issue)
+				continue
+			}
 			comments = append(comments, githubReviewComment{
 				Path: issue.File,
 				Line: issue.Line,
@@ -61,6 +75,11 @@ func (p *GitHubReviewPoster) PostPRReview(ctx context.Context, repo *RepoInfo, t
 			nonFileIssues = append(nonFileIssues, issue)
 		}
 	}
+
+	slog.Info("review comments filtered",
+		"inline_comments", len(comments),
+		"summary_issues", len(nonFileIssues),
+	)
 
 	// Limit to 20 line comments (GitHub has limits), move rest to summary
 	const maxLineComments = 20
@@ -92,9 +111,9 @@ func (p *GitHubReviewPoster) PostPRReview(ctx context.Context, repo *RepoInfo, t
 
 	postResult, err := p.doPostReview(ctx, url, token, body)
 	if err != nil && len(comments) > 0 && resp422(err) {
-		// Line comments failed (lines not in PR diff) — retry without them,
+		// Line comments failed despite diff validation — retry without them,
 		// putting all issues into the summary body instead.
-		slog.Warn("line comments rejected by GitHub, retrying without inline comments",
+		slog.Warn("line comments rejected by GitHub despite diff validation, retrying without inline comments",
 			"error", err, "comments_dropped", len(comments))
 
 		body = map[string]interface{}{

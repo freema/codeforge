@@ -315,7 +315,7 @@ func (e *CIExecutor) handleReviewResult(ctx context.Context, ciCtx *CIContext, r
 	reviewResult.ReviewedBy = e.cfg.CLI + ":" + e.cfg.Model
 
 	// Write output based on format
-	e.writeOutput(ciCtx, reviewResult, result.Output)
+	e.writeOutput(ciCtx, reviewResult, result.Output, result.InputTokens, result.OutputTokens)
 
 	// Post comments if enabled and we have a PR
 	if e.cfg.PostComments && ciCtx.PRNumber > 0 && e.cfg.ProviderToken != "" {
@@ -325,8 +325,8 @@ func (e *CIExecutor) handleReviewResult(ctx context.Context, ciCtx *CIContext, r
 		}
 	}
 
-	// Exit code based on verdict
-	if reviewResult.Verdict == review.VerdictRequestChanges {
+	// Exit code based on verdict (only fail if explicitly configured)
+	if e.cfg.FailOnRequestChanges && reviewResult.Verdict == review.VerdictRequestChanges {
 		return 1
 	}
 	return 0
@@ -336,7 +336,7 @@ func (e *CIExecutor) handleKnowledgeResult(_ context.Context, ciCtx *CIContext, 
 	slog.Info("knowledge update completed", "output_length", len(result.Output))
 
 	// Write output
-	e.writeOutput(ciCtx, nil, result.Output)
+	e.writeOutput(ciCtx, nil, result.Output, result.InputTokens, result.OutputTokens)
 
 	if result.ExitCode != 0 {
 		return 1
@@ -345,7 +345,7 @@ func (e *CIExecutor) handleKnowledgeResult(_ context.Context, ciCtx *CIContext, 
 }
 
 func (e *CIExecutor) handleCustomResult(ciCtx *CIContext, result *runner.RunResult) int {
-	e.writeOutput(ciCtx, nil, result.Output)
+	e.writeOutput(ciCtx, nil, result.Output, result.InputTokens, result.OutputTokens)
 
 	if result.ExitCode != 0 {
 		return 1
@@ -354,10 +354,10 @@ func (e *CIExecutor) handleCustomResult(ciCtx *CIContext, result *runner.RunResu
 }
 
 // writeOutput writes results to the appropriate CI output mechanism.
-func (e *CIExecutor) writeOutput(ciCtx *CIContext, reviewResult *review.ReviewResult, rawOutput string) {
+func (e *CIExecutor) writeOutput(ciCtx *CIContext, reviewResult *review.ReviewResult, rawOutput string, inputTokens, outputTokens int) {
 	switch ciCtx.Platform {
 	case PlatformGitHub:
-		writeGitHubOutput(ciCtx, reviewResult, rawOutput, e.cfg.OutputFormat)
+		writeGitHubOutput(ciCtx, reviewResult, rawOutput, e.cfg.OutputFormat, inputTokens, outputTokens)
 	case PlatformGitLab:
 		writeGitLabOutput(reviewResult, rawOutput, e.cfg.OutputFormat)
 	default:
