@@ -6,6 +6,8 @@
 *.dylib
 bin/
 tmp/
+codeforge
+codeforge-action/codeforge-action
 
 # Test artifacts
 *.test
