@@ -169,10 +169,7 @@ func writeReviewSummaryMarkdown(f *os.File, _ *CIContext, r *review.ReviewResult
 		fmt.Fprintf(f, "| Severity | Count |\n|----------|-------|\n")
 		for _, sev := range []string{"critical", "major", "minor", "suggestion"} {
 			if c, ok := counts[sev]; ok {
-				label := sev
-				if len(label) > 0 {
-					label = string(label[0]-32) + label[1:]
-				}
+				label := strings.ToUpper(sev[:1]) + sev[1:]
 				fmt.Fprintf(f, "| %s | %d |\n", label, c)
 			}
 		}

@@ -34,6 +34,10 @@ type prFile struct {
 // FetchPRDiffLines fetches PR files from the GitHub API and returns
 // the set of valid new-file line numbers per file (lines in diff hunks).
 func FetchPRDiffLines(ctx context.Context, client *http.Client, apiURL, owner, repo, token string, prNumber int) (DiffLineSet, error) {
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+
 	result := make(DiffLineSet)
 	page := 1
 
@@ -48,10 +52,6 @@ func FetchPRDiffLines(ctx context.Context, client *http.Client, apiURL, owner, r
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Accept", "application/vnd.github+json")
 		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-
-		if client == nil {
-			client = &http.Client{Timeout: 30 * time.Second}
-		}
 
 		resp, err := client.Do(req)
 		if err != nil {
