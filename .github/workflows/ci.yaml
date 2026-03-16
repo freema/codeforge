@@ -201,3 +201,17 @@ jobs:
           tags: ghcr.io/freema/codeforge-action:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Update floating v1 tag so `uses: freema/codeforge@v1` always points to latest main
+  tag:
+    runs-on: ubuntu-latest
+    needs: [docker]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update v1 tag
+        run: |
+          git tag -f v1
+          git push origin v1 --force
