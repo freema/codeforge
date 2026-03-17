@@ -43,6 +43,9 @@ inputs:
   allowed_tools:
     description: 'Comma-separated tool allowlist for Claude Code'
     required: false
+  pr_number:
+    description: 'PR number to review (auto-detected from event, use for issue_comment trigger)'
+    required: false
   fail_on_request_changes:
     description: 'Exit with code 1 when verdict is request_changes'
     required: false
@@ -79,4 +82,5 @@ runs:
     INPUT_OUTPUT_FORMAT: ${{ inputs.output_format }}
     INPUT_MAX_TURNS: ${{ inputs.max_turns }}
     INPUT_ALLOWED_TOOLS: ${{ inputs.allowed_tools }}
+    INPUT_PR_NUMBER: ${{ inputs.pr_number }}
     INPUT_FAIL_ON_REQUEST_CHANGES: ${{ inputs.fail_on_request_changes }}

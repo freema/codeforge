@@ -4,13 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
 // githubEvent represents the relevant fields from the GitHub event payload.
 type githubEvent struct {
 	PullRequest *githubPR `json:"pull_request"`
-	Inputs      struct {
+	Issue       *struct {
+		Number      int              `json:"number"`
+		PullRequest *json.RawMessage `json:"pull_request"` // non-nil means it's a PR comment
+	} `json:"issue"`
+	Inputs struct {
 		PRNumber json.Number `json:"pr_number"` // workflow_dispatch input
 	} `json:"inputs"`
 	Repository struct {
@@ -71,6 +76,11 @@ func ParseGitHubContext() (*CIContext, error) {
 			ctx.HeadSHA = event.PullRequest.Head.SHA
 		}
 
+		// issue_comment event on a PR (e.g. /review command)
+		if ctx.PRNumber == 0 && event.Issue != nil && event.Issue.PullRequest != nil {
+			ctx.PRNumber = event.Issue.Number
+		}
+
 		// Fallback: workflow_dispatch inputs.pr_number
 		if ctx.PRNumber == 0 && event.Inputs.PRNumber != "" {
 			if n, err := event.Inputs.PRNumber.Int64(); err == nil {
@@ -80,6 +90,15 @@ func ParseGitHubContext() (*CIContext, error) {
 
 		if event.Repository.HTMLURL != "" {
 			ctx.RepoURL = event.Repository.HTMLURL
+		}
+	}
+
+	// Fallback: explicit INPUT_PR_NUMBER (from action.yml pr_number input)
+	if ctx.PRNumber == 0 {
+		if s := os.Getenv("INPUT_PR_NUMBER"); s != "" {
+			if n, err := strconv.Atoi(s); err == nil {
+				ctx.PRNumber = n
+			}
 		}
 	}
 
