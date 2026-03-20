@@ -85,10 +85,10 @@ func TraceIDFromContext(ctx context.Context) string {
 	return ""
 }
 
-// WithTaskAttributes returns a SpanStartOption with common task attributes.
-func WithTaskAttributes(taskID string, iteration int) trace.SpanStartOption {
+// WithSessionAttributes returns a SpanStartOption with common session attributes.
+func WithSessionAttributes(sessionID string, iteration int) trace.SpanStartOption {
 	return trace.WithAttributes(
-		attribute.String("task.id", taskID),
-		attribute.Int("task.iteration", iteration),
+		attribute.String("session.id", sessionID),
+		attribute.Int("session.iteration", iteration),
 	)
 }

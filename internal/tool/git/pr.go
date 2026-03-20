@@ -13,11 +13,6 @@ type PRCreateOptions struct {
 	BaseBranch  string
 }
 
-// PRCreator is the interface for creating pull/merge requests.
-type PRCreator interface {
-	Create(ctx context.Context, repo *RepoInfo, token string, opts PRCreateOptions) (*PRResult, error)
-}
-
 // CreatePR creates a PR/MR on the appropriate provider.
 func CreatePR(ctx context.Context, repo *RepoInfo, token string, opts PRCreateOptions) (*PRResult, error) {
 	switch repo.Provider {

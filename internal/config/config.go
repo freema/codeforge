@@ -116,7 +116,6 @@ type RateLimitConfig struct {
 
 type TracingConfig struct {
 	Enabled      bool    `koanf:"enabled"`
-	Exporter     string  `koanf:"exporter"`
 	Endpoint     string  `koanf:"endpoint"`
 	SamplingRate float64 `koanf:"sampling_rate"`
 }
@@ -187,7 +186,6 @@ func Defaults() *Config {
 			WebhookDedupTTL: 3600,
 		},
 		Tracing: TracingConfig{
-			Exporter:     "otlp",
 			SamplingRate: 0.1,
 		},
 		Logging: LoggingConfig{

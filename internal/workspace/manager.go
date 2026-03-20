@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/freema/codeforge/internal/redisclient"
+	slugpkg "github.com/freema/codeforge/internal/slug"
 )
 
 // Workspace holds metadata about a session workspace.
@@ -53,7 +54,7 @@ func NewManager(basePath string, redis *redisclient.Client, ttl time.Duration) *
 // Create creates a workspace directory and registers it in Redis.
 // The prompt is used to generate a human-readable slug for the directory name.
 func (m *Manager) Create(ctx context.Context, taskID, prompt string) (*Workspace, error) {
-	slug := GenerateSlug(prompt, taskID)
+	slug := slugpkg.Generate(prompt, taskID)
 	wsPath := filepath.Join(m.basePath, slug)
 
 	if err := os.MkdirAll(wsPath, 0755); err != nil {

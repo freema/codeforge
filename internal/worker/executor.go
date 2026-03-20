@@ -91,7 +91,7 @@ func (e *Executor) emitOrLog(err error, log *slog.Logger, event, taskID string) 
 // Execute runs the full task pipeline.
 func (e *Executor) Execute(ctx context.Context, t *session.Session) {
 	ctx, span := tracing.Tracer().Start(ctx, "task.execute",
-		tracing.WithTaskAttributes(t.ID, t.Iteration),
+		tracing.WithSessionAttributes(t.ID, t.Iteration),
 	)
 	defer span.End()
 
@@ -873,7 +873,7 @@ func (e *Executor) resolveWorkDir(ctx context.Context, t *session.Session) strin
 // Called when a session is dequeued with status=reviewing (enqueued by StartReviewAsync).
 func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 	ctx, span := tracing.Tracer().Start(ctx, "task.review",
-		tracing.WithTaskAttributes(t.ID, t.Iteration),
+		tracing.WithSessionAttributes(t.ID, t.Iteration),
 	)
 	defer span.End()
 

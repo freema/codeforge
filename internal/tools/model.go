@@ -6,12 +6,11 @@ import "time"
 type ToolType string
 
 const (
-	ToolTypeMCP     ToolType = "mcp"
-	ToolTypeBuiltin ToolType = "builtin"
-	ToolTypeCustom  ToolType = "custom"
+	ToolTypeMCP    ToolType = "mcp"
+	ToolTypeCustom ToolType = "custom"
 )
 
-// ToolDefinition describes a tool that can be attached to tasks.
+// ToolDefinition describes a tool that can be attached to sessions.
 type ToolDefinition struct {
 	Name           string        `json:"name"`
 	Type           ToolType      `json:"type"`
