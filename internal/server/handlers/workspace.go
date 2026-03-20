@@ -29,11 +29,12 @@ func (h *WorkspaceHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type wsInfo struct {
-		TaskID     string  `json:"task_id"`
-		SizeMB     float64 `json:"size_mb"`
-		CreatedAt  string  `json:"created_at"`
-		ExpiresAt  string  `json:"expires_at"`
-		TaskStatus string  `json:"task_status"`
+		SessionID     string  `json:"session_id"`
+		Path          string  `json:"path"`
+		SizeMB        float64 `json:"size_mb"`
+		CreatedAt     string  `json:"created_at"`
+		ExpiresAt     string  `json:"expires_at"`
+		SessionStatus string  `json:"session_status"`
 	}
 
 	var totalSize int64
@@ -47,11 +48,12 @@ func (h *WorkspaceHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 
 		items = append(items, wsInfo{
-			TaskID:     ws.TaskID,
-			SizeMB:     float64(ws.SizeBytes) / (1024 * 1024),
-			CreatedAt:  ws.CreatedAt.Format("2006-01-02T15:04:05Z"),
-			ExpiresAt:  ws.ExpiresAt().Format("2006-01-02T15:04:05Z"),
-			TaskStatus: status,
+			SessionID:     ws.TaskID,
+			Path:          ws.Path,
+			SizeMB:        float64(ws.SizeBytes) / (1024 * 1024),
+			CreatedAt:     ws.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			ExpiresAt:     ws.ExpiresAt().Format("2006-01-02T15:04:05Z"),
+			SessionStatus: status,
 		})
 	}
 
