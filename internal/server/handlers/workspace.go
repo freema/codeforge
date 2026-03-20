@@ -5,19 +5,19 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/session"
 	"github.com/freema/codeforge/internal/workspace"
 )
 
 // WorkspaceHandler handles workspace management endpoints.
 type WorkspaceHandler struct {
 	manager     *workspace.Manager
-	taskService *task.Service
+	sessionService *session.Service
 }
 
 // NewWorkspaceHandler creates a new workspace handler.
-func NewWorkspaceHandler(manager *workspace.Manager, taskService *task.Service) *WorkspaceHandler {
-	return &WorkspaceHandler{manager: manager, taskService: taskService}
+func NewWorkspaceHandler(manager *workspace.Manager, sessionService *session.Service) *WorkspaceHandler {
+	return &WorkspaceHandler{manager: manager, sessionService: sessionService}
 }
 
 // List handles GET /api/v1/workspaces.
@@ -42,7 +42,7 @@ func (h *WorkspaceHandler) List(w http.ResponseWriter, r *http.Request) {
 		totalSize += ws.SizeBytes
 
 		status := "unknown"
-		if t, err := h.taskService.Get(r.Context(), ws.TaskID); err == nil {
+		if t, err := h.sessionService.Get(r.Context(), ws.TaskID); err == nil {
 			status = string(t.Status)
 		}
 
@@ -66,13 +66,13 @@ func (h *WorkspaceHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *WorkspaceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskID")
 	if taskID == "" {
-		writeError(w, http.StatusBadRequest, "task ID is required")
+		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
 
-	// Check if task is currently running
-	if t, err := h.taskService.Get(r.Context(), taskID); err == nil {
-		if t.Status == task.StatusRunning || t.Status == task.StatusCloning || t.Status == task.StatusCreatingPR {
+	// Check if session is currently running
+	if t, err := h.sessionService.Get(r.Context(), taskID); err == nil {
+		if t.Status == session.StatusRunning || t.Status == session.StatusCloning || t.Status == session.StatusCreatingPR {
 			writeError(w, http.StatusConflict, "cannot delete workspace for a running task")
 			return
 		}

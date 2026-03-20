@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/freema/codeforge/internal/redisclient"
-	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/session"
 	gitpkg "github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/tool/runner"
 )
@@ -33,7 +33,7 @@ func NewStreamer(redis *redisclient.Client, historyTTL time.Duration) *Streamer 
 	}
 }
 
-// Emit publishes an event to the task's stream channel and persists to history.
+// Emit publishes an event to the session's stream channel and persists to history.
 func (s *Streamer) Emit(ctx context.Context, taskID string, evt StreamEvent) error {
 	evt.TS = time.Now().UTC().Format(time.RFC3339Nano)
 	data, err := json.Marshal(evt)
@@ -42,8 +42,8 @@ func (s *Streamer) Emit(ctx context.Context, taskID string, evt StreamEvent) err
 	}
 	msg := string(data)
 
-	streamKey := s.redis.Key("task", taskID, "stream")
-	historyKey := s.redis.Key("task", taskID, "history")
+	streamKey := s.redis.Key("session", taskID, "stream")
+	historyKey := s.redis.Key("session", taskID, "history")
 
 	pipe := s.redis.Unwrap().Pipeline()
 	pipe.Publish(ctx, streamKey, msg)
@@ -87,15 +87,15 @@ func (s *Streamer) EmitResult(ctx context.Context, taskID, event string, data in
 }
 
 // EmitDone publishes completion signal on the done channel and sets history TTL.
-func (s *Streamer) EmitDone(ctx context.Context, taskID string, status task.TaskStatus, summary *gitpkg.ChangesSummary) error {
+func (s *Streamer) EmitDone(ctx context.Context, taskID string, status session.Status, summary *gitpkg.ChangesSummary) error {
 	data, _ := json.Marshal(map[string]interface{}{
 		"task_id":         taskID,
 		"status":          status,
 		"changes_summary": summary,
 	})
 
-	doneKey := s.redis.Key("task", taskID, "done")
-	historyKey := s.redis.Key("task", taskID, "history")
+	doneKey := s.redis.Key("session", taskID, "done")
+	historyKey := s.redis.Key("session", taskID, "history")
 
 	pipe := s.redis.Unwrap().Pipeline()
 	pipe.Publish(ctx, doneKey, string(data))

@@ -81,3 +81,38 @@ func (h *RepoHandler) List(w http.ResponseWriter, r *http.Request) {
 		"per_page":     perPage,
 	})
 }
+
+// ListBranches handles GET /api/v1/branches?provider_key=X&repo=owner/repo.
+func (h *RepoHandler) ListBranches(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	providerKey := r.URL.Query().Get("provider_key")
+	repo := r.URL.Query().Get("repo")
+
+	if providerKey == "" || repo == "" {
+		writeError(w, http.StatusBadRequest, "provider_key and repo query params are required")
+		return
+	}
+
+	token, p, err := h.keyRegistry.ResolveByName(ctx, providerKey)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+
+	provider := gitpkg.Provider(p)
+	if provider != gitpkg.ProviderGitHub && provider != gitpkg.ProviderGitLab {
+		writeError(w, http.StatusBadRequest, "provider must be 'github' or 'gitlab'")
+		return
+	}
+
+	branches, err := gitpkg.ListBranches(ctx, provider, token, repo)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"branches": branches,
+	})
+}

@@ -15,9 +15,9 @@ sqlite:
 
 workers:
   concurrency: 3
-  queue_name: "queue:tasks"
+  queue_name: "queue:sessions"
 
-tasks:
+sessions:
   default_timeout: 300       # seconds
   max_timeout: 1800          # seconds
   workspace_ttl: 86400       # 24h
@@ -65,7 +65,7 @@ code_review:
 
 rate_limit:
   enabled: true
-  tasks_per_minute: 10
+  sessions_per_minute: 10
 
 tracing:
   enabled: false

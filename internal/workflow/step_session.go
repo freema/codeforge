@@ -9,26 +9,26 @@ import (
 
 	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/redisclient"
-	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/session"
 	"github.com/freema/codeforge/internal/tools"
 )
 
-// TaskCreator creates and retrieves CodeForge tasks.
-type TaskCreator interface {
-	Create(ctx context.Context, req task.CreateTaskRequest) (*task.Task, error)
-	Get(ctx context.Context, taskID string) (*task.Task, error)
+// SessionCreator creates and retrieves CodeForge tasks.
+type SessionCreator interface {
+	Create(ctx context.Context, req session.CreateSessionRequest) (*session.Session, error)
+	Get(ctx context.Context, taskID string) (*session.Session, error)
 }
 
-// TaskExecutor executes task steps — creates a CodeForge task and waits for completion.
-type TaskExecutor struct {
-	tasks TaskCreator
+// SessionExecutor executes task steps — creates a CodeForge task and waits for completion.
+type SessionExecutor struct {
+	tasks SessionCreator
 	redis *redisclient.Client
 	keys  keys.Registry
 }
 
-// NewTaskExecutor creates a new task step executor.
-func NewTaskExecutor(tasks TaskCreator, redis *redisclient.Client, keyReg ...keys.Registry) *TaskExecutor {
-	e := &TaskExecutor{
+// NewSessionExecutor creates a new session step executor.
+func NewSessionExecutor(tasks SessionCreator, redis *redisclient.Client, keyReg ...keys.Registry) *SessionExecutor {
+	e := &SessionExecutor{
 		tasks: tasks,
 		redis: redis,
 	}
@@ -39,11 +39,11 @@ func NewTaskExecutor(tasks TaskCreator, redis *redisclient.Client, keyReg ...key
 }
 
 // Execute creates a CodeForge task and waits for it to complete via Redis done channel.
-// Returns the task ID and result summary as outputs.
-func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx TemplateContext) (map[string]string, error) {
-	var cfg TaskStepConfig
+// Returns the session ID and result summary as outputs.
+func (e *SessionExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx TemplateContext) (map[string]string, error) {
+	var cfg SessionStepConfig
 	if err := json.Unmarshal(stepDef.Config, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing task config: %w", err)
+		return nil, fmt.Errorf("parsing session config: %w", err)
 	}
 
 	// Render templates
@@ -55,7 +55,7 @@ func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx
 	if err != nil {
 		return nil, fmt.Errorf("rendering prompt: %w", err)
 	}
-	taskType, _ := Render(cfg.TaskType, tctx)
+	taskType, _ := Render(cfg.SessionType, tctx)
 	providerKey, _ := Render(cfg.ProviderKey, tctx)
 	accessToken, _ := Render(cfg.AccessToken, tctx)
 	cli, _ := Render(cfg.CLI, tctx)
@@ -64,7 +64,7 @@ func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx
 	targetBranch, _ := Render(cfg.TargetBranch, tctx)
 	outputMode, _ := Render(cfg.OutputMode, tctx)
 
-	// Resolve workspace task ID from referenced step
+	// Resolve workspace session ID from referenced step
 	var workspaceTaskID string
 	if cfg.WorkspaceTaskRef != "" {
 		if refStep, ok := tctx.Steps[cfg.WorkspaceTaskRef]; ok {
@@ -77,7 +77,7 @@ func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx
 	if len(cfg.Tools) > 0 {
 		_ = json.Unmarshal(cfg.Tools, &taskTools)
 	}
-	var mcpServers []task.MCPServer
+	var mcpServers []session.MCPServer
 	if len(cfg.MCPServers) > 0 {
 		_ = json.Unmarshal(cfg.MCPServers, &mcpServers)
 	}
@@ -103,12 +103,12 @@ func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx
 	}
 
 	// Build TaskConfig if any overrides are set
-	var taskConfig *task.TaskConfig
+	var taskConfig *session.Config
 	hasConfig := cli != "" || aiModel != "" || workspaceTaskID != "" || sourceBranch != "" ||
 		targetBranch != "" || cfg.PRNumber > 0 || outputMode != "" ||
 		len(taskTools) > 0 || len(mcpServers) > 0
 	if hasConfig {
-		taskConfig = &task.TaskConfig{
+		taskConfig = &session.Config{
 			CLI:             cli,
 			AIModel:         aiModel,
 			WorkspaceTaskID: workspaceTaskID,
@@ -121,11 +121,11 @@ func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx
 		}
 	}
 
-	// Create the task
-	req := task.CreateTaskRequest{
+	// Create the session
+	req := session.CreateSessionRequest{
 		RepoURL:       repoURL,
 		Prompt:        prompt,
-		TaskType:      taskType,
+		SessionType:      taskType,
 		ProviderKey:   providerKey,
 		AccessToken:   accessToken,
 		Config:        taskConfig,
@@ -133,13 +133,13 @@ func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx
 	}
 	t, err := e.tasks.Create(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("creating task: %w", err)
+		return nil, fmt.Errorf("creating session: %w", err)
 	}
 
-	slog.Info("workflow task created", "task_id", t.ID, "step", stepDef.Name)
+	slog.Info("workflow session created", "session_id", t.ID, "step", stepDef.Name)
 
 	// Subscribe to done channel and wait
-	doneKey := e.redis.Key("task", t.ID, "done")
+	doneKey := e.redis.Key("session", t.ID, "done")
 	pubsub := e.redis.Unwrap().Subscribe(ctx, doneKey)
 	defer func() { _ = pubsub.Close() }()
 
@@ -149,11 +149,11 @@ func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("task %s: context canceled while waiting: %w", t.ID, ctx.Err())
+			return nil, fmt.Errorf("session %s: context canceled while waiting: %w", t.ID, ctx.Err())
 
 		case msg, ok := <-msgCh:
 			if !ok {
-				return nil, fmt.Errorf("task %s: subscription closed", t.ID)
+				return nil, fmt.Errorf("session %s: subscription closed", t.ID)
 			}
 
 			var done struct {
@@ -165,20 +165,20 @@ func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx
 				continue
 			}
 
-			if done.Status == string(task.StatusFailed) {
-				// Fetch full task to get error
+			if done.Status == string(session.StatusFailed) {
+				// Fetch full session to get error
 				ft, _ := e.tasks.Get(ctx, t.ID)
-				errMsg := "task failed"
+				errMsg := "session failed"
 				if ft != nil && ft.Error != "" {
 					errMsg = ft.Error
 				}
-				return nil, fmt.Errorf("task %s failed: %s", t.ID, errMsg)
+				return nil, fmt.Errorf("session %s failed: %s", t.ID, errMsg)
 			}
 
-			// Task completed — fetch result
+			// Session completed — fetch result
 			ft, err := e.tasks.Get(ctx, t.ID)
 			if err != nil {
-				return nil, fmt.Errorf("getting completed task: %w", err)
+				return nil, fmt.Errorf("getting completed session: %w", err)
 			}
 
 			outputs := map[string]string{
@@ -194,9 +194,9 @@ func (e *TaskExecutor) Execute(ctx context.Context, stepDef StepDefinition, tctx
 			if err != nil {
 				continue
 			}
-			if ft.Status == task.StatusCompleted || ft.Status == task.StatusFailed || ft.Status == task.StatusPRCreated {
-				if ft.Status == task.StatusFailed {
-					return nil, fmt.Errorf("task %s failed: %s", ft.ID, ft.Error)
+			if ft.Status == session.StatusCompleted || ft.Status == session.StatusFailed || ft.Status == session.StatusPRCreated {
+				if ft.Status == session.StatusFailed {
+					return nil, fmt.Errorf("session %s failed: %s", ft.ID, ft.Error)
 				}
 				outputs := map[string]string{
 					"task_id": ft.ID,

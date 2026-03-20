@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/session"
 )
 
 // CleanerConfig holds cleanup configuration.
@@ -19,15 +19,15 @@ type CleanerConfig struct {
 // Cleaner periodically removes expired workspaces.
 type Cleaner struct {
 	manager     *Manager
-	taskService *task.Service
+	sessionService *session.Service
 	cfg         CleanerConfig
 }
 
 // NewCleaner creates a new workspace cleaner.
-func NewCleaner(manager *Manager, taskService *task.Service, cfg CleanerConfig) *Cleaner {
+func NewCleaner(manager *Manager, sessionService *session.Service, cfg CleanerConfig) *Cleaner {
 	return &Cleaner{
 		manager:     manager,
-		taskService: taskService,
+		sessionService: sessionService,
 		cfg:         cfg,
 	}
 }
@@ -154,9 +154,9 @@ func (c *Cleaner) emergencyCleanup(ctx context.Context) {
 }
 
 func (c *Cleaner) isTaskRunning(ctx context.Context, taskID string) bool {
-	t, err := c.taskService.Get(ctx, taskID)
+	t, err := c.sessionService.Get(ctx, taskID)
 	if err != nil {
 		return false // task not found, safe to delete
 	}
-	return t.Status == task.StatusRunning || t.Status == task.StatusCloning || t.Status == task.StatusCreatingPR
+	return t.Status == session.StatusRunning || t.Status == session.StatusCloning || t.Status == session.StatusCreatingPR
 }

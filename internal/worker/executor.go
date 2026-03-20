@@ -21,7 +21,7 @@ import (
 	"github.com/freema/codeforge/internal/metrics"
 	"github.com/freema/codeforge/internal/prompt"
 	"github.com/freema/codeforge/internal/review"
-	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/session"
 	gitpkg "github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/tool/runner"
@@ -42,9 +42,9 @@ type ExecutorConfig struct {
 	ProviderDomains map[string]string // custom domain → provider mappings
 }
 
-// Executor orchestrates the full task lifecycle: clone → run CLI → diff → report.
+// Executor orchestrates the full session lifecycle: clone → run CLI → diff → report.
 type Executor struct {
-	taskService  *task.Service
+	sessionService  *session.Service
 	cliRegistry  *runner.Registry
 	streamer     *Streamer
 	webhook      *webhook.Sender
@@ -55,9 +55,9 @@ type Executor struct {
 	cfg          ExecutorConfig
 }
 
-// NewExecutor creates a new task executor.
+// NewExecutor creates a new session executor.
 func NewExecutor(
-	taskService *task.Service,
+	sessionService *session.Service,
 	cliRegistry *runner.Registry,
 	streamer *Streamer,
 	webhook *webhook.Sender,
@@ -68,7 +68,7 @@ func NewExecutor(
 	cfg ExecutorConfig,
 ) *Executor {
 	return &Executor{
-		taskService:  taskService,
+		sessionService:  sessionService,
 		cliRegistry:  cliRegistry,
 		streamer:     streamer,
 		webhook:      webhook,
@@ -89,7 +89,7 @@ func (e *Executor) emitOrLog(err error, log *slog.Logger, event, taskID string) 
 }
 
 // Execute runs the full task pipeline.
-func (e *Executor) Execute(ctx context.Context, t *task.Task) {
+func (e *Executor) Execute(ctx context.Context, t *session.Session) {
 	ctx, span := tracing.Tracer().Start(ctx, "task.execute",
 		tracing.WithTaskAttributes(t.ID, t.Iteration),
 	)
@@ -100,13 +100,21 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 	}
 
 	// Dispatch review tasks to dedicated flow (enqueued via StartReviewAsync)
-	if t.Status == task.StatusReviewing {
+	if t.Status == session.StatusReviewing {
 		e.executeReview(ctx, t)
 		return
 	}
 
 	log := slog.With("task_id", t.ID, "iteration", t.Iteration, "trace_id", t.TraceID)
 	startTime := time.Now().UTC()
+
+	// Emit user instruction for follow-up iterations so the UI shows what the user asked
+	if t.Iteration > 1 && t.CurrentPrompt != "" {
+		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "user_instruction", map[string]string{
+			"prompt":    t.CurrentPrompt,
+			"iteration": fmt.Sprintf("%d", t.Iteration),
+		}), log, "user_instruction", t.ID)
+	}
 
 	metrics.TasksInProgress.Inc()
 	defer func() {
@@ -140,7 +148,7 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) {
 }
 
 // resolveTimeout determines the effective task timeout in seconds.
-func (e *Executor) resolveTimeout(t *task.Task) int {
+func (e *Executor) resolveTimeout(t *session.Session) int {
 	timeout := e.cfg.DefaultTimeout
 	if t.Config != nil && t.Config.TimeoutSeconds > 0 {
 		timeout = t.Config.TimeoutSeconds
@@ -152,7 +160,7 @@ func (e *Executor) resolveTimeout(t *task.Task) int {
 }
 
 // resolveToken resolves the access token from the key registry if not already set.
-func (e *Executor) resolveToken(ctx context.Context, t *task.Task, log *slog.Logger) {
+func (e *Executor) resolveToken(ctx context.Context, t *session.Session, log *slog.Logger) {
 	if e.keyResolver == nil || t.AccessToken != "" {
 		return
 	}
@@ -166,7 +174,7 @@ func (e *Executor) resolveToken(ctx context.Context, t *task.Task, log *slog.Log
 
 // setupWorkspace resolves or clones the workspace directory.
 // Returns the workDir path or calls failTask and returns an error.
-func (e *Executor) setupWorkspace(taskCtx, parentCtx context.Context, t *task.Task, startTime time.Time, log *slog.Logger) (string, error) {
+func (e *Executor) setupWorkspace(taskCtx, parentCtx context.Context, t *session.Session, startTime time.Time, log *slog.Logger) (string, error) {
 	workDir := filepath.Join(e.cfg.WorkspaceBase, t.ID)
 	if e.workspaceMgr != nil {
 		if ws := e.workspaceMgr.Get(parentCtx, t.ID); ws != nil && ws.Path != "" {
@@ -218,7 +226,7 @@ func (e *Executor) setupWorkspace(taskCtx, parentCtx context.Context, t *task.Ta
 }
 
 // setupMCP resolves tool definitions and MCP server configs, writes .mcp.json.
-func (e *Executor) setupMCP(ctx context.Context, t *task.Task, workDir string, log *slog.Logger) string {
+func (e *Executor) setupMCP(ctx context.Context, t *session.Session, workDir string, log *slog.Logger) string {
 	// Resolve tool definitions → MCP servers
 	var toolMCPServers []mcp.Server
 	if e.toolResolver != nil && t.Config != nil && len(t.Config.Tools) > 0 {
@@ -266,7 +274,7 @@ func (e *Executor) setupMCP(ctx context.Context, t *task.Task, workDir string, l
 }
 
 // handleRunError classifies the CLI run error and calls failTask with the appropriate message.
-func (e *Executor) handleRunError(ctx, taskCtx context.Context, t *task.Task, err error, timeout int, startTime time.Time, log *slog.Logger) {
+func (e *Executor) handleRunError(ctx, taskCtx context.Context, t *session.Session, err error, timeout int, startTime time.Time, log *slog.Logger) {
 	if taskCtx.Err() == context.DeadlineExceeded {
 		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "task_timeout", map[string]interface{}{
 			"timeout_seconds": timeout,
@@ -284,7 +292,7 @@ func (e *Executor) handleRunError(ctx, taskCtx context.Context, t *task.Task, er
 
 // completeTask handles post-CLI success: changes, result storage, status transition,
 // iteration record, events, pr_review handling, and webhook delivery.
-func (e *Executor) completeTask(ctx context.Context, t *task.Task, result *runner.RunResult, workDir string, startTime time.Time, log *slog.Logger) {
+func (e *Executor) completeTask(ctx context.Context, t *session.Session, result *runner.RunResult, workDir string, startTime time.Time, log *slog.Logger) {
 	changes, err := gitpkg.CalculateChanges(ctx, workDir)
 	if err != nil {
 		log.Warn("failed to calculate changes", "error", err)
@@ -296,21 +304,21 @@ func (e *Executor) completeTask(ctx context.Context, t *task.Task, result *runne
 		}
 	}
 
-	usage := &task.UsageInfo{
+	usage := &session.UsageInfo{
 		InputTokens:     result.InputTokens,
 		OutputTokens:    result.OutputTokens,
 		DurationSeconds: int(result.Duration.Seconds()),
 	}
 
-	if err := e.taskService.SetResult(ctx, t.ID, result.Output, changes, usage); err != nil {
+	if err := e.sessionService.SetResult(ctx, t.ID, result.Output, changes, usage); err != nil {
 		log.Error("failed to store result", "error", err)
 	}
 
-	if err := e.taskService.UpdateStatus(ctx, t.ID, task.StatusCompleted); err != nil {
+	if err := e.sessionService.UpdateStatus(ctx, t.ID, session.StatusCompleted); err != nil {
 		log.Error("failed to update status to completed", "error", err)
 		return
 	}
-	metrics.TasksTotal.WithLabelValues(string(task.StatusCompleted)).Inc()
+	metrics.TasksTotal.WithLabelValues(string(session.StatusCompleted)).Inc()
 
 	// Save iteration record
 	now := time.Now().UTC()
@@ -318,11 +326,11 @@ func (e *Executor) completeTask(ctx context.Context, t *task.Task, result *runne
 	if prompt == "" {
 		prompt = t.Prompt
 	}
-	if err := e.taskService.SaveIteration(ctx, t.ID, task.Iteration{
+	if err := e.sessionService.SaveIteration(ctx, t.ID, session.Iteration{
 		Number:    t.Iteration,
 		Prompt:    prompt,
 		Result:    truncate(result.Output, 2000),
-		Status:    task.StatusCompleted,
+		Status:    session.StatusCompleted,
 		Changes:   changes,
 		Usage:     usage,
 		StartedAt: startTime,
@@ -339,11 +347,25 @@ func (e *Executor) completeTask(ctx context.Context, t *task.Task, result *runne
 	}), log, "task_completed", t.ID)
 
 	// Review post-processing BEFORE done — client may close stream after done event
-	if t.TaskType == "pr_review" || t.TaskType == "review" {
+	if t.SessionType == "pr_review" || t.SessionType == "review" {
 		e.handlePRReviewCompletion(ctx, t, result.Output, log)
 	}
 
-	e.emitOrLog(e.streamer.EmitDone(ctx, t.ID, task.StatusCompleted, changes), log, "task_done", t.ID)
+	// Auto-review after fix: if configured and this is a follow-up iteration,
+	// automatically start a review and post results back to the MR.
+	if t.Config != nil && t.Config.AutoReviewAfterFix && t.Iteration > 1 {
+		log.Info("auto-review: starting review after fix iteration", "iteration", t.Iteration)
+		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "auto_review_starting", nil), log, "auto_review_starting", t.ID)
+		cli := "claude-code"
+		if t.Config.CLI != "" {
+			cli = t.Config.CLI
+		}
+		if _, err := e.sessionService.StartReviewAsync(ctx, t.ID, cli, ""); err != nil {
+			log.Error("auto-review: failed to start", "error", err)
+		}
+	}
+
+	e.emitOrLog(e.streamer.EmitDone(ctx, t.ID, session.StatusCompleted, changes), log, "task_done", t.ID)
 
 	if t.CallbackURL != "" && e.webhook != nil {
 		e.sendWebhook(ctx, t, result.Output, changes, usage, log)
@@ -352,11 +374,11 @@ func (e *Executor) completeTask(ctx context.Context, t *task.Task, result *runne
 	log.Info("task completed", "duration", result.Duration)
 }
 
-func (e *Executor) cloneStep(ctx context.Context, t *task.Task, workDir string, log *slog.Logger) error {
+func (e *Executor) cloneStep(ctx context.Context, t *session.Session, workDir string, log *slog.Logger) error {
 	ctx, span := tracing.Tracer().Start(ctx, "task.clone")
 	defer span.End()
 
-	if err := e.taskService.UpdateStatus(ctx, t.ID, task.StatusCloning); err != nil {
+	if err := e.sessionService.UpdateStatus(ctx, t.ID, session.StatusCloning); err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
@@ -384,7 +406,7 @@ func (e *Executor) cloneStep(ctx context.Context, t *task.Task, workDir string, 
 
 	// For pr_review tasks: clone the target branch (or default), then fetch the PR ref.
 	// This handles fork PRs where the source branch doesn't exist in the origin repo.
-	if t.TaskType == "pr_review" && t.Config != nil && t.Config.PRNumber > 0 {
+	if t.SessionType == "pr_review" && t.Config != nil && t.Config.PRNumber > 0 {
 		targetBranch := t.Config.TargetBranch
 		if targetBranch == "" {
 			targetBranch = "main"
@@ -458,7 +480,7 @@ func (e *Executor) cloneStep(ctx context.Context, t *task.Task, workDir string, 
 	return nil
 }
 
-func (e *Executor) pullBranch(ctx context.Context, t *task.Task, workDir string, log *slog.Logger) {
+func (e *Executor) pullBranch(ctx context.Context, t *session.Session, workDir string, log *slog.Logger) {
 	log.Info("pulling latest changes", "branch", t.Branch)
 
 	askPassEnv, cleanup, err := gitpkg.AskPassEnv(t.AccessToken)
@@ -479,13 +501,13 @@ func (e *Executor) pullBranch(ctx context.Context, t *task.Task, workDir string,
 	}
 }
 
-func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, mcpConfigPath string, log *slog.Logger) (*runner.RunResult, error) {
+func (e *Executor) runStep(ctx context.Context, t *session.Session, workDir string, mcpConfigPath string, log *slog.Logger) (*runner.RunResult, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "task.run")
 	defer span.End()
 
 	// Transition to RUNNING — handle both fresh tasks and follow-up iterations
-	if t.Status != task.StatusRunning {
-		if err := e.taskService.UpdateStatus(ctx, t.ID, task.StatusRunning); err != nil {
+	if t.Status != session.StatusRunning {
+		if err := e.sessionService.UpdateStatus(ctx, t.ID, session.StatusRunning); err != nil {
 			span.SetStatus(codes.Error, err.Error())
 			return nil, err
 		}
@@ -569,18 +591,18 @@ func (e *Executor) runStep(ctx context.Context, t *task.Task, workDir string, mc
 }
 
 // buildPrompt constructs the prompt with conversation context for multi-turn iterations.
-func (e *Executor) buildPrompt(ctx context.Context, t *task.Task) string {
+func (e *Executor) buildPrompt(ctx context.Context, t *session.Session) string {
 	currentPrompt := t.CurrentPrompt
 	if currentPrompt == "" {
 		currentPrompt = t.Prompt
 	}
 
 	// Apply task type template for first iteration only
-	if t.Iteration <= 1 && t.TaskType != "" && t.TaskType != "code" {
+	if t.Iteration <= 1 && t.SessionType != "" && t.SessionType != "code" {
 		var rendered string
 		var err error
 
-		if t.TaskType == "pr_review" && t.Config != nil {
+		if t.SessionType == "pr_review" && t.Config != nil {
 			// PR review needs richer context (branches, PR number)
 			baseBranch := t.Config.TargetBranch
 			if baseBranch == "" {
@@ -593,12 +615,12 @@ func (e *Executor) buildPrompt(ctx context.Context, t *task.Task) string {
 				BaseBranch: baseBranch,
 			})
 		} else {
-			rendered, err = prompt.RenderTaskPrompt(t.TaskType, currentPrompt)
+			rendered, err = prompt.RenderTaskPrompt(t.SessionType, currentPrompt)
 		}
 
 		if err != nil {
-			slog.Warn("failed to render task type template, using raw prompt",
-				"task_type", t.TaskType, "error", err)
+			slog.Warn("failed to render session type template, using raw prompt",
+				"session_type", t.SessionType, "error", err)
 		} else {
 			currentPrompt = rendered
 		}
@@ -610,7 +632,7 @@ func (e *Executor) buildPrompt(ctx context.Context, t *task.Task) string {
 	}
 
 	// Load previous iterations for context
-	iterations, err := e.taskService.GetIterations(ctx, t.ID)
+	iterations, err := e.sessionService.GetIterations(ctx, t.ID)
 	if err != nil || len(iterations) == 0 {
 		return currentPrompt
 	}
@@ -640,20 +662,20 @@ func (e *Executor) buildPrompt(ctx context.Context, t *task.Task) string {
 	return ctx2.String()
 }
 
-func (e *Executor) failTask(ctx context.Context, t *task.Task, errMsg string, startTime time.Time, log *slog.Logger) {
+func (e *Executor) failTask(ctx context.Context, t *session.Session, errMsg string, startTime time.Time, log *slog.Logger) {
 	log.Error("task failed", "error", errMsg)
 
 	// Use a detached context for finalization — the original ctx may be canceled
 	// (e.g. user-triggered cancel), but we still need to persist the failure state.
 	finalCtx := context.WithoutCancel(ctx)
 
-	if err := e.taskService.SetError(finalCtx, t.ID, errMsg); err != nil {
+	if err := e.sessionService.SetError(finalCtx, t.ID, errMsg); err != nil {
 		log.Warn("failed to set error on task", "error", err)
 	}
-	if err := e.taskService.UpdateStatus(finalCtx, t.ID, task.StatusFailed); err != nil {
+	if err := e.sessionService.UpdateStatus(finalCtx, t.ID, session.StatusFailed); err != nil {
 		log.Warn("failed to update task status to failed", "error", err)
 	}
-	metrics.TasksTotal.WithLabelValues(string(task.StatusFailed)).Inc()
+	metrics.TasksTotal.WithLabelValues(string(session.StatusFailed)).Inc()
 
 	// Save failed iteration record
 	now := time.Now().UTC()
@@ -661,11 +683,11 @@ func (e *Executor) failTask(ctx context.Context, t *task.Task, errMsg string, st
 	if prompt == "" {
 		prompt = t.Prompt
 	}
-	if err := e.taskService.SaveIteration(finalCtx, t.ID, task.Iteration{
+	if err := e.sessionService.SaveIteration(finalCtx, t.ID, session.Iteration{
 		Number:    t.Iteration,
 		Prompt:    prompt,
 		Error:     errMsg,
-		Status:    task.StatusFailed,
+		Status:    session.StatusFailed,
 		StartedAt: startTime,
 		EndedAt:   &now,
 	}); err != nil {
@@ -675,12 +697,12 @@ func (e *Executor) failTask(ctx context.Context, t *task.Task, errMsg string, st
 	e.emitOrLog(e.streamer.EmitSystem(finalCtx, t.ID, "task_failed", map[string]string{
 		"error": errMsg,
 	}), log, "task_failed", t.ID)
-	e.emitOrLog(e.streamer.EmitDone(finalCtx, t.ID, task.StatusFailed, nil), log, "task_done_failed", t.ID)
+	e.emitOrLog(e.streamer.EmitDone(finalCtx, t.ID, session.StatusFailed, nil), log, "task_done_failed", t.ID)
 
 	if t.CallbackURL != "" && e.webhook != nil {
 		if err := e.webhook.Send(finalCtx, t.CallbackURL, webhook.Payload{
 			TaskID:     t.ID,
-			Status:     string(task.StatusFailed),
+			Status:     string(session.StatusFailed),
 			Error:      errMsg,
 			TraceID:    t.TraceID,
 			FinishedAt: time.Now().UTC(),
@@ -690,10 +712,10 @@ func (e *Executor) failTask(ctx context.Context, t *task.Task, errMsg string, st
 	}
 }
 
-func (e *Executor) sendWebhook(ctx context.Context, t *task.Task, result string, changes *gitpkg.ChangesSummary, usage *task.UsageInfo, log *slog.Logger) {
+func (e *Executor) sendWebhook(ctx context.Context, t *session.Session, result string, changes *gitpkg.ChangesSummary, usage *session.UsageInfo, log *slog.Logger) {
 	if err := e.webhook.Send(ctx, t.CallbackURL, webhook.Payload{
 		TaskID:         t.ID,
-		Status:         string(task.StatusCompleted),
+		Status:         string(session.StatusCompleted),
 		Result:         result,
 		ChangesSummary: changes,
 		Usage:          usage,
@@ -706,7 +728,7 @@ func (e *Executor) sendWebhook(ctx context.Context, t *task.Task, result string,
 
 // fetchAndCheckoutPR fetches a PR ref from origin and checks out a local branch.
 // This handles both same-repo and fork PRs via the pull/{number}/head ref.
-func (e *Executor) fetchAndCheckoutPR(ctx context.Context, t *task.Task, workDir, prRef, localBranch string, log *slog.Logger) error {
+func (e *Executor) fetchAndCheckoutPR(ctx context.Context, t *session.Session, workDir, prRef, localBranch string, log *slog.Logger) error {
 	askPassEnv, cleanup, err := gitpkg.AskPassEnv(t.AccessToken)
 	if err != nil {
 		return fmt.Errorf("creating askpass for PR fetch: %w", err)
@@ -746,7 +768,7 @@ func (e *Executor) fetchAndCheckoutPR(ctx context.Context, t *task.Task, workDir
 
 // handlePRReviewCompletion parses the CLI output as ReviewResult and optionally
 // posts review comments to the GitHub PR / GitLab MR.
-func (e *Executor) handlePRReviewCompletion(ctx context.Context, t *task.Task, output string, log *slog.Logger) {
+func (e *Executor) handlePRReviewCompletion(ctx context.Context, t *session.Session, output string, log *slog.Logger) {
 	// Parse ReviewResult from CLI output
 	reviewResult, err := review.ParseReviewOutput(output)
 	if err != nil {
@@ -770,8 +792,8 @@ func (e *Executor) handlePRReviewCompletion(ctx context.Context, t *task.Task, o
 	}
 	reviewResult.ReviewedBy = cli + ":" + model
 
-	// Store ReviewResult on the task
-	if err := e.taskService.SetReviewResult(ctx, t.ID, reviewResult); err != nil {
+	// Store ReviewResult on the session
+	if err := e.sessionService.SetReviewResult(ctx, t.ID, reviewResult); err != nil {
 		log.Error("pr_review: failed to store review result", "error", err)
 	}
 
@@ -832,8 +854,8 @@ func (e *Executor) handlePRReviewCompletion(ctx context.Context, t *task.Task, o
 	)
 }
 
-// resolveWorkDir finds the workspace directory for a task without cloning.
-func (e *Executor) resolveWorkDir(ctx context.Context, t *task.Task) string {
+// resolveWorkDir finds the workspace directory for a session without cloning.
+func (e *Executor) resolveWorkDir(ctx context.Context, t *session.Session) string {
 	if e.workspaceMgr != nil {
 		if ws := e.workspaceMgr.Get(ctx, t.ID); ws != nil && ws.Path != "" {
 			return ws.Path
@@ -848,8 +870,8 @@ func (e *Executor) resolveWorkDir(ctx context.Context, t *task.Task) string {
 }
 
 // executeReview runs a code review on an existing task workspace.
-// Called when a task is dequeued with status=reviewing (enqueued by StartReviewAsync).
-func (e *Executor) executeReview(ctx context.Context, t *task.Task) {
+// Called when a session is dequeued with status=reviewing (enqueued by StartReviewAsync).
+func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 	ctx, span := tracing.Tracer().Start(ctx, "task.review",
 		tracing.WithTaskAttributes(t.ID, t.Iteration),
 	)
@@ -975,23 +997,23 @@ func (e *Executor) executeReview(ctx context.Context, t *task.Task) {
 	reviewResult.DurationSeconds = time.Since(startTime).Seconds()
 
 	// Store raw result + usage
-	usage := &task.UsageInfo{
+	usage := &session.UsageInfo{
 		InputTokens:     result.InputTokens,
 		OutputTokens:    result.OutputTokens,
 		DurationSeconds: int(result.Duration.Seconds()),
 	}
-	if err := e.taskService.SetResult(ctx, t.ID, result.Output, nil, usage); err != nil {
+	if err := e.sessionService.SetResult(ctx, t.ID, result.Output, nil, usage); err != nil {
 		log.Error("failed to store review result", "error", err)
 	}
 
 	// Complete review: store ReviewResult + transition reviewing → completed
-	if err := e.taskService.CompleteReview(ctx, t.ID, reviewResult); err != nil {
+	if err := e.sessionService.CompleteReview(ctx, t.ID, reviewResult); err != nil {
 		log.Error("failed to complete review", "error", err)
 		e.failTask(ctx, t, fmt.Sprintf("failed to complete review: %v", err), startTime, log)
 		return
 	}
 
-	metrics.TasksTotal.WithLabelValues(string(task.StatusCompleted)).Inc()
+	metrics.TasksTotal.WithLabelValues(string(session.StatusCompleted)).Inc()
 
 	e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "review_completed", map[string]interface{}{
 		"verdict":      reviewResult.Verdict,
@@ -999,12 +1021,21 @@ func (e *Executor) executeReview(ctx context.Context, t *task.Task) {
 		"issues_count": len(reviewResult.Issues),
 		"duration":     reviewResult.DurationSeconds,
 	}), log, "review_completed", t.ID)
-	e.emitOrLog(e.streamer.EmitDone(ctx, t.ID, task.StatusCompleted, nil), log, "review_done", t.ID)
+
+	// Auto-post review to MR if configured
+	if t.Config != nil && t.Config.AutoPostReview && t.PRNumber > 0 {
+		e.autoPostReview(ctx, t, reviewResult, log)
+	} else if t.Config != nil && t.Config.AutoPostReview && t.Config.PRNumber > 0 {
+		// Use config PR number (for pr_review tasks)
+		e.autoPostReviewToPR(ctx, t, t.Config.PRNumber, reviewResult, log)
+	}
+
+	e.emitOrLog(e.streamer.EmitDone(ctx, t.ID, session.StatusCompleted, nil), log, "review_done", t.ID)
 
 	if t.CallbackURL != "" && e.webhook != nil {
 		if err := e.webhook.Send(ctx, t.CallbackURL, webhook.Payload{
 			TaskID:     t.ID,
-			Status:     string(task.StatusCompleted),
+			Status:     string(session.StatusCompleted),
 			Result:     result.Output,
 			Usage:      usage,
 			TraceID:    t.TraceID,
@@ -1018,6 +1049,58 @@ func (e *Executor) executeReview(ctx context.Context, t *task.Task) {
 		"verdict", reviewResult.Verdict,
 		"score", reviewResult.Score,
 		"duration", result.Duration,
+	)
+}
+
+// autoPostReview posts review results to the session's own PR (created via create-pr).
+func (e *Executor) autoPostReview(ctx context.Context, t *session.Session, reviewResult *review.ReviewResult, log *slog.Logger) {
+	e.autoPostReviewToPR(ctx, t, t.PRNumber, reviewResult, log)
+}
+
+// autoPostReviewToPR posts review results to a specific PR number.
+func (e *Executor) autoPostReviewToPR(ctx context.Context, t *session.Session, prNumber int, reviewResult *review.ReviewResult, log *slog.Logger) {
+	token := t.AccessToken
+	if token == "" && e.keyResolver != nil {
+		resolved, err := e.keyResolver.ResolveToken(ctx, t.RepoURL, "", t.ProviderKey)
+		if err != nil {
+			log.Error("auto-post: failed to resolve token", "error", err)
+			return
+		}
+		token = resolved
+	}
+
+	repo, err := gitpkg.ParseRepoURL(t.RepoURL, e.cfg.ProviderDomains)
+	if err != nil {
+		log.Error("auto-post: failed to parse repo URL", "error", err)
+		return
+	}
+
+	log.Info("auto-post: posting review to MR",
+		"provider", repo.Provider,
+		"pr_number", prNumber,
+		"verdict", reviewResult.Verdict,
+	)
+
+	postResult, err := gitpkg.PostReviewComments(
+		ctx, repo, token, prNumber, reviewResult,
+		review.FormatSummaryBody, review.FormatIssueComment,
+	)
+	if err != nil {
+		log.Error("auto-post: failed to post review", "error", err)
+		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "auto_review_post_failed", map[string]string{
+			"error": err.Error(),
+		}), log, "auto_review_post_failed", t.ID)
+		return
+	}
+
+	e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "auto_review_posted", map[string]interface{}{
+		"review_url":      postResult.ReviewURL,
+		"comments_posted": postResult.CommentsPosted,
+	}), log, "auto_review_posted", t.ID)
+
+	log.Info("auto-post: review posted",
+		"review_url", postResult.ReviewURL,
+		"comments_posted", postResult.CommentsPosted,
 	)
 }
 

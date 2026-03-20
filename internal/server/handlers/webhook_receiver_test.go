@@ -145,7 +145,7 @@ func TestGitHubWebhook(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			h := &WebhookReceiverHandler{
-				taskService: nil,
+				sessionService: nil,
 				cfg:         tt.cfg,
 			}
 
@@ -276,7 +276,7 @@ func TestGitLabWebhook(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			h := &WebhookReceiverHandler{
-				taskService: nil,
+				sessionService: nil,
 				cfg:         tt.cfg,
 			}
 

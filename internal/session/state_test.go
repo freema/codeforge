@@ -1,4 +1,4 @@
-package task
+package session
 
 import (
 	"errors"
@@ -9,7 +9,7 @@ import (
 
 func TestValidTransitions(t *testing.T) {
 	valid := []struct {
-		from, to TaskStatus
+		from, to Status
 	}{
 		{StatusPending, StatusCloning},
 		{StatusPending, StatusRunning},
@@ -29,7 +29,8 @@ func TestValidTransitions(t *testing.T) {
 		{StatusCreatingPR, StatusPRCreated},
 		{StatusCreatingPR, StatusFailed},
 		{StatusPRCreated, StatusAwaitingInstruction},
-		{StatusPRCreated, StatusCompleted},
+		{StatusPRCreated, StatusReviewing},
+		{StatusPRCreated, StatusCreatingPR},
 	}
 
 	for _, tt := range valid {
@@ -41,7 +42,7 @@ func TestValidTransitions(t *testing.T) {
 
 func TestInvalidTransitions(t *testing.T) {
 	invalid := []struct {
-		from, to TaskStatus
+		from, to Status
 	}{
 		{StatusPending, StatusCompleted},
 		{StatusCloning, StatusPending},
@@ -54,6 +55,8 @@ func TestInvalidTransitions(t *testing.T) {
 		{StatusFailed, StatusCompleted},
 		{StatusCompleted, StatusPending},
 		{StatusCompleted, StatusRunning},
+		{StatusPRCreated, StatusCompleted},
+		{StatusPRCreated, StatusRunning},
 	}
 
 	for _, tt := range invalid {
@@ -68,17 +71,34 @@ func TestInvalidTransitions(t *testing.T) {
 }
 
 func TestIsFinished(t *testing.T) {
-	finished := []TaskStatus{StatusCompleted, StatusFailed, StatusPRCreated}
+	// Only failed is truly terminal
+	finished := []Status{StatusFailed}
 	for _, s := range finished {
 		if !IsFinished(s) {
 			t.Errorf("%s should be finished", s)
 		}
 	}
 
-	notFinished := []TaskStatus{StatusPending, StatusCloning, StatusRunning, StatusReviewing, StatusAwaitingInstruction, StatusCreatingPR}
+	notFinished := []Status{StatusPending, StatusCloning, StatusRunning, StatusReviewing, StatusAwaitingInstruction, StatusCreatingPR, StatusCompleted, StatusPRCreated}
 	for _, s := range notFinished {
 		if IsFinished(s) {
 			t.Errorf("%s should not be finished", s)
+		}
+	}
+}
+
+func TestIsIdle(t *testing.T) {
+	idle := []Status{StatusCompleted, StatusPRCreated}
+	for _, s := range idle {
+		if !IsIdle(s) {
+			t.Errorf("%s should be idle", s)
+		}
+	}
+
+	notIdle := []Status{StatusPending, StatusCloning, StatusRunning, StatusReviewing, StatusAwaitingInstruction, StatusCreatingPR, StatusFailed}
+	for _, s := range notIdle {
+		if IsIdle(s) {
+			t.Errorf("%s should not be idle", s)
 		}
 	}
 }

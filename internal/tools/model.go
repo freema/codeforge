@@ -44,7 +44,7 @@ type ToolInstance struct {
 	Config     map[string]string
 }
 
-// TaskTool is the per-task tool request (used in CreateTaskRequest).
+// TaskTool is the per-task tool request (used in CreateSessionRequest).
 type TaskTool struct {
 	Name   string            `json:"name" validate:"required"`
 	Config map[string]string `json:"config,omitempty"`

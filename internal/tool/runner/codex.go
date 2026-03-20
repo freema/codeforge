@@ -22,7 +22,7 @@ type CodexRunner struct {
 
 // NewCodexRunner creates a runner for the Codex CLI.
 // If binaryPath contains a directory separator, it is resolved to an
-// absolute path so it remains valid when cmd.Dir is set to the task
+// absolute path so it remains valid when cmd.Dir is set to the session
 // workspace. Bare command names (e.g. "codex") are left as-is so
 // exec.Command looks them up via PATH.
 func NewCodexRunner(binaryPath string) *CodexRunner {

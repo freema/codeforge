@@ -41,7 +41,7 @@ Client (ScopeBot / curl)
 ### Task Service (`internal/task/`)
 - CRUD operations on task state stored in Redis hashes
 - State machine with validated transitions (see Task Lifecycle below)
-- FIFO queue via `RPUSH`/`BLPOP`
+- FIFO session queue via `RPUSH`/`BLPOP`
 - Iteration tracking for multi-turn conversations
 - PR service for commit/push/PR creation flow
 - Review lifecycle methods (`StartReview`, `CompleteReview`)
@@ -193,7 +193,7 @@ All keys use configurable prefix (default: `codeforge:`).
 | `task:{id}:history` | List | Event history for reconnection |
 | `task:{id}:done` | Pub/Sub | Completion signal |
 | `task:{id}:iterations` | List | Iteration records (JSON) |
-| `queue:tasks` | List | FIFO task queue (RPUSH/BLPOP) |
+| `queue:sessions` | List | FIFO session queue (RPUSH/BLPOP) |
 | `key:{name}` | Hash | Encrypted access key |
 | `keys:index` | Set | Index of all key names |
 | `mcp:global:{name}` | Hash | Global MCP server config |
@@ -204,7 +204,7 @@ All keys use configurable prefix (default: `codeforge:`).
 | `workspaces:index` | Set | Index of all workspaces |
 | `webhook:dedup:{repo}:{pr}:{sha}` | String | Webhook dedup (SETNX + TTL) |
 | `ratelimit:{token_hash}` | Sorted Set | Sliding window rate limit |
-| `input:tasks` | List | Redis-based task input channel |
+| `input:sessions` | List | Redis-based session input channel |
 | `queue:workflows` | List | FIFO workflow run queue (RPUSH/BLPOP) |
 | `workflow:{runID}:stream` | Pub/Sub | Live workflow event stream |
 | `workflow:{runID}:history` | List | Workflow event history for reconnection |

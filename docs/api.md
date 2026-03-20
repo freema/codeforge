@@ -194,7 +194,7 @@ Response `201`:
 
 Errors: `400` (validation), `429` (rate limited).
 
-Rate limiting: Sliding window per bearer token — configurable via `rate_limit.tasks_per_minute`.
+Rate limiting: Sliding window per bearer token — configurable via `rate_limit.sessions_per_minute`.
 
 ### List Tasks
 

@@ -12,27 +12,27 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/freema/codeforge/internal/redisclient"
-	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/session"
 )
 
 // StreamHandler handles SSE streaming for task events.
 type StreamHandler struct {
-	service *task.Service
+	service *session.Service
 	redis   *redisclient.Client
 }
 
 // NewStreamHandler creates a new stream handler.
-func NewStreamHandler(service *task.Service, redis *redisclient.Client) *StreamHandler {
+func NewStreamHandler(service *session.Service, redis *redisclient.Client) *StreamHandler {
 	return &StreamHandler{service: service, redis: redis}
 }
 
-// Stream handles GET /api/v1/tasks/{taskID}/stream.
+// Stream handles GET /api/v1/sessions/{taskID}/stream.
 // Streams task events via Server-Sent Events (SSE).
 // First replays historical events, then subscribes to live events via Redis Pub/Sub.
 func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskID")
 	if taskID == "" {
-		writeError(w, http.StatusBadRequest, "task ID is required")
+		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
 
@@ -61,14 +61,14 @@ func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 
 	flush := func() { flusher.Flush() }
 
-	isTerminal := t.Status == task.StatusCompleted ||
-		t.Status == task.StatusFailed ||
-		t.Status == task.StatusPRCreated
+	isTerminal := t.Status == session.StatusCompleted ||
+		t.Status == session.StatusFailed ||
+		t.Status == session.StatusPRCreated
 
 	// Subscribe to live channels BEFORE reading history to avoid missing events.
 	// For terminal tasks we skip subscription entirely.
-	streamKey := h.redis.Key("task", taskID, "stream")
-	doneKey := h.redis.Key("task", taskID, "done")
+	streamKey := h.redis.Key("session", taskID, "stream")
+	doneKey := h.redis.Key("session", taskID, "done")
 
 	subCtx, subCancel := context.WithCancel(context.Background())
 	defer subCancel()
@@ -80,7 +80,7 @@ func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		msgCh = pubsub.Channel()
 	}
 
-	// Send connected event with current task state
+	// Send connected event with current session state
 	writeSSE(w, "connected", map[string]interface{}{
 		"task_id": t.ID,
 		"status":  t.Status,
@@ -88,7 +88,7 @@ func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	flush()
 
 	// Replay history
-	historyKey := h.redis.Key("task", taskID, "history")
+	historyKey := h.redis.Key("session", taskID, "history")
 	history, err := h.redis.Unwrap().LRange(r.Context(), historyKey, 0, -1).Result()
 	if err == nil && len(history) > 0 {
 		for _, msg := range history {

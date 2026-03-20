@@ -1,6 +1,6 @@
 //go:build integration
 
-package task
+package session
 
 import (
 	"context"
@@ -54,11 +54,11 @@ func setupTestService(t *testing.T) (*Service, *redisclient.Client) {
 	return svc, rdb
 }
 
-func createTestTask(t *testing.T, svc *Service, status TaskStatus) *Task {
+func createTestTask(t *testing.T, svc *Service, status Status) *Session {
 	t.Helper()
 	ctx := context.Background()
 
-	task, err := svc.Create(ctx, CreateTaskRequest{
+	task, err := svc.Create(ctx, CreateSessionRequest{
 		RepoURL: "https://github.com/test/repo.git",
 		Prompt:  "test prompt",
 	})
@@ -136,7 +136,7 @@ func TestStartReviewAsync_FromCompleted(t *testing.T) {
 		t.Errorf("status = %s, want reviewing", got.Status)
 	}
 
-	// Verify task is in queue
+	// Verify session is in queue
 	qLen, err := rdb.Unwrap().LLen(ctx, rdb.Key("queue:test-tasks")).Result()
 	if err != nil {
 		t.Fatalf("LLen: %v", err)

@@ -1,4 +1,4 @@
-package task
+package session
 
 import (
 	"context"
@@ -22,11 +22,11 @@ type RedisInputPayload struct {
 	AccessToken   string      `json:"access_token,omitempty"`
 	Prompt        string      `json:"prompt" validate:"required,max=102400"`
 	CallbackURL   string      `json:"callback_url,omitempty" validate:"omitempty,url"`
-	Config        *TaskConfig `json:"config,omitempty"`
+	Config        *Config `json:"config,omitempty"`
 	CorrelationID string      `json:"correlation_id,omitempty"`
 }
 
-// Listener consumes task payloads from a Redis list (primary input for ScopeBot).
+// Listener consumes session payloads from a Redis list (primary input for ScopeBot).
 type Listener struct {
 	redis           *redisclient.Client
 	service         *Service
@@ -44,7 +44,7 @@ func NewListener(redis *redisclient.Client, service *Service, inputKey string) *
 	}
 }
 
-// Start begins listening for task payloads from the Redis input list.
+// Start begins listening for session payloads from the Redis input list.
 func (l *Listener) Start(ctx context.Context) {
 	slog.Info("redis input listener started", "key", l.inputKey)
 
@@ -82,7 +82,7 @@ func (l *Listener) handlePayload(ctx context.Context, raw string) {
 		return
 	}
 
-	req := CreateTaskRequest{
+	req := CreateSessionRequest{
 		RepoURL:     input.RepoURL,
 		ProviderKey: input.ProviderKey,
 		AccessToken: input.AccessToken,
@@ -93,11 +93,11 @@ func (l *Listener) handlePayload(ctx context.Context, raw string) {
 
 	t, err := l.service.Create(ctx, req)
 	if err != nil {
-		slog.Error("failed to create task from redis input", "error", err)
+		slog.Error("failed to create session from redis input", "error", err)
 		return
 	}
 
-	slog.Info("task created from redis input", "task_id", t.ID, "correlation_id", input.CorrelationID)
+	slog.Info("session created from redis input", "session_id", t.ID, "correlation_id", input.CorrelationID)
 
 	// Write result back for correlation
 	if input.CorrelationID != "" {

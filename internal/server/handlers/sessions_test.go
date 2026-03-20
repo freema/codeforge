@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/session"
 	"github.com/freema/codeforge/internal/tool/runner"
 )
 
@@ -27,7 +27,7 @@ func (m *mockCanceller) Cancel(taskID string) error {
 }
 
 func TestCancel_ReviewingStatus(t *testing.T) {
-	// Build a TaskHandler with mock service and canceller
+	// Build a SessionHandler with mock service and canceller
 	r := chi.NewRouter()
 
 	canceller := &mockCanceller{
@@ -36,28 +36,28 @@ func TestCancel_ReviewingStatus(t *testing.T) {
 		},
 	}
 
-	// We need a real task.Service mock — but TaskHandler.Cancel calls service.Get() first.
-	// Since we can't easily mock *task.Service, we test the HTTP contract by
+	// We need a real session.Service mock — but SessionHandler.Cancel calls service.Get() first.
+	// Since we can't easily mock *session.Service, we test the HTTP contract by
 	// constructing the handler inline to verify the cancel-reviewing path.
 
 	// Instead: test the handler's status check logic directly.
 	// The handler checks: t.Status != running && t.Status != cloning && t.Status != reviewing → 409
 	// So if status IS reviewing → proceed to canceller.Cancel()
 
-	// Since TaskHandler takes *task.Service (concrete), we'll test the HTTP response
+	// Since SessionHandler takes *session.Service (concrete), we'll test the HTTP response
 	// by checking the condition in isolation.
 
 	tests := []struct {
 		name       string
-		status     task.TaskStatus
+		status     session.Status
 		wantCancel bool // true = cancel should be attempted
 	}{
-		{"running allows cancel", task.StatusRunning, true},
-		{"cloning allows cancel", task.StatusCloning, true},
-		{"reviewing allows cancel", task.StatusReviewing, true},
-		{"completed rejects cancel", task.StatusCompleted, false},
-		{"pending rejects cancel", task.StatusPending, false},
-		{"failed rejects cancel", task.StatusFailed, false},
+		{"running allows cancel", session.StatusRunning, true},
+		{"cloning allows cancel", session.StatusCloning, true},
+		{"reviewing allows cancel", session.StatusReviewing, true},
+		{"completed rejects cancel", session.StatusCompleted, false},
+		{"pending rejects cancel", session.StatusPending, false},
+		{"failed rejects cancel", session.StatusFailed, false},
 	}
 
 	for _, tt := range tests {
@@ -71,7 +71,7 @@ func TestCancel_ReviewingStatus(t *testing.T) {
 			// The actual cancel handler calls service.Get() then checks status.
 			// We simulate the status check logic from the handler.
 			status := tt.status
-			canCancel := status == task.StatusRunning || status == task.StatusCloning || status == task.StatusReviewing
+			canCancel := status == session.StatusRunning || status == session.StatusCloning || status == session.StatusReviewing
 
 			if canCancel != tt.wantCancel {
 				t.Errorf("canCancel = %v, want %v for status %s", canCancel, tt.wantCancel, status)
@@ -97,7 +97,7 @@ func TestReview_Returns202(t *testing.T) {
 	w := httptest.NewRecorder()
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{
 		"id":     "test-task-id",
-		"status": task.StatusReviewing,
+		"status": session.StatusReviewing,
 	})
 
 	if w.Code != http.StatusAccepted {
@@ -111,7 +111,7 @@ func TestReview_Returns202(t *testing.T) {
 	if resp["id"] != "test-task-id" {
 		t.Errorf("id = %v, want test-task-id", resp["id"])
 	}
-	if resp["status"] != string(task.StatusReviewing) {
+	if resp["status"] != string(session.StatusReviewing) {
 		t.Errorf("status = %v, want reviewing", resp["status"])
 	}
 }
@@ -121,13 +121,13 @@ func TestReview_InvalidCLI(t *testing.T) {
 	cliRegistry := runner.NewRegistry("claude-code")
 	cliRegistry.Register("claude-code", runner.NewClaudeRunner("claude"))
 
-	h := NewTaskHandler(nil, nil, nil, cliRegistry, nil, nil)
+	h := NewSessionHandler(nil, nil, nil, cliRegistry, nil, nil)
 
 	r := chi.NewRouter()
-	r.Post("/api/v1/tasks/{taskID}/review", h.Review)
+	r.Post("/api/v1/sessions/{taskID}/review", h.Review)
 
 	body := `{"cli": "unknown-cli"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/test-id/review", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/test-id/review", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	w := httptest.NewRecorder()
@@ -148,23 +148,23 @@ func TestCancel_StatusCheck(t *testing.T) {
 	// The handler checks: status not in {running, cloning, reviewing} → 409
 
 	tests := []struct {
-		status  task.TaskStatus
+		status  session.Status
 		allowed bool
 	}{
-		{task.StatusRunning, true},
-		{task.StatusCloning, true},
-		{task.StatusReviewing, true},
-		{task.StatusCompleted, false},
-		{task.StatusPending, false},
-		{task.StatusFailed, false},
-		{task.StatusAwaitingInstruction, false},
-		{task.StatusCreatingPR, false},
-		{task.StatusPRCreated, false},
+		{session.StatusRunning, true},
+		{session.StatusCloning, true},
+		{session.StatusReviewing, true},
+		{session.StatusCompleted, false},
+		{session.StatusPending, false},
+		{session.StatusFailed, false},
+		{session.StatusAwaitingInstruction, false},
+		{session.StatusCreatingPR, false},
+		{session.StatusPRCreated, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("cancel_%s", tt.status), func(t *testing.T) {
-			allowed := tt.status == task.StatusRunning || tt.status == task.StatusCloning || tt.status == task.StatusReviewing
+			allowed := tt.status == session.StatusRunning || tt.status == session.StatusCloning || tt.status == session.StatusReviewing
 			if allowed != tt.allowed {
 				t.Errorf("cancel allowed = %v for status %s, want %v", allowed, tt.status, tt.allowed)
 			}

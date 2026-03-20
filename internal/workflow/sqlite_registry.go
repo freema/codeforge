@@ -134,6 +134,34 @@ func (r *SQLiteRegistry) DeleteBuiltin(ctx context.Context, name string) error {
 	return nil
 }
 
+// UpdateBuiltin updates an existing built-in workflow definition's steps, params, and description.
+func (r *SQLiteRegistry) UpdateBuiltin(ctx context.Context, def WorkflowDefinition) error {
+	stepsJSON, err := json.Marshal(def.Steps)
+	if err != nil {
+		return fmt.Errorf("marshaling steps: %w", err)
+	}
+	paramsJSON, err := json.Marshal(def.Parameters)
+	if err != nil {
+		return fmt.Errorf("marshaling parameters: %w", err)
+	}
+
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE workflow_definitions SET description = ?, steps_json = ?, params_json = ? WHERE name = ? AND builtin = 1`,
+		def.Description, string(stepsJSON), string(paramsJSON), def.Name,
+	)
+	if err != nil {
+		return fmt.Errorf("updating builtin workflow: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+	if rows == 0 {
+		return apperror.NotFound("builtin workflow '%s' not found", def.Name)
+	}
+	return nil
+}
+
 type rowScanner interface {
 	Scan(dest ...interface{}) error
 }

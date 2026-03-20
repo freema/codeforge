@@ -28,13 +28,13 @@ func TestMigrations_AllApply(t *testing.T) {
 		t.Fatalf("migrations failed: %v", err)
 	}
 
-	// Verify all 11 migrations were recorded
+	// Verify all migrations were recorded
 	var count int
 	if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM schema_migrations").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 11 {
-		t.Errorf("expected 11 migrations, got %d", count)
+	if count != 1 {
+		t.Errorf("expected 1 migration, got %d", count)
 	}
 }
 
@@ -90,15 +90,15 @@ func TestSchema_KeysTable(t *testing.T) {
 	}
 }
 
-func TestSchema_TasksTable(t *testing.T) {
+func TestSchema_SessionsTable(t *testing.T) {
 	db := setupTestDB(t)
 	if err := Migrate(context.Background(), db); err != nil {
 		t.Fatal(err)
 	}
 
-	cols := getColumns(t, db, "tasks")
+	cols := getColumns(t, db, "sessions")
 	required := []string{
-		"id", "status", "repo_url", "provider_key", "prompt", "task_type",
+		"id", "status", "repo_url", "provider_key", "prompt", "session_type",
 		"callback_url", "config_json", "result", "error", "changes_json",
 		"usage_json", "iteration", "current_prompt", "branch", "pr_number",
 		"pr_url", "workflow_run_id", "trace_id", "created_at", "started_at",
@@ -106,7 +106,7 @@ func TestSchema_TasksTable(t *testing.T) {
 	}
 	for _, col := range required {
 		if _, ok := cols[col]; !ok {
-			t.Errorf("tasks table missing column %q", col)
+			t.Errorf("sessions table missing column %q", col)
 		}
 	}
 }
@@ -184,7 +184,7 @@ func TestSchema_KeysRoundtrip(t *testing.T) {
 	}
 }
 
-func TestSchema_TasksRoundtrip(t *testing.T) {
+func TestSchema_SessionsRoundtrip(t *testing.T) {
 	db := setupTestDB(t)
 	if err := Migrate(context.Background(), db); err != nil {
 		t.Fatal(err)
@@ -193,12 +193,12 @@ func TestSchema_TasksRoundtrip(t *testing.T) {
 	// Insert — matches what sqlite_store.go does
 	now := "2026-03-14T12:00:00.000"
 	_, err := db.ExecContext(context.Background(), `
-		INSERT INTO tasks (id, status, repo_url, provider_key, prompt, task_type,
+		INSERT INTO sessions (id, status, repo_url, provider_key, prompt, session_type,
 			callback_url, config_json, result, error, changes_json, usage_json,
 			iteration, current_prompt, branch, pr_number, pr_url,
 			workflow_run_id, trace_id, review_result_json, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"task-1", "pending", "https://github.com/test/repo", "my-key",
+		"session-1", "pending", "https://github.com/test/repo", "my-key",
 		"do something", "code", "", "{}", "", "", "{}", "{}",
 		1, "", "", 0, "", "run-1", "", "", now, now,
 	)
@@ -207,12 +207,12 @@ func TestSchema_TasksRoundtrip(t *testing.T) {
 	}
 
 	// Select + Scan — matches sqlite_store.go Get() query
-	var id, status, repoURL, prompt, taskType, workflowRunID string
+	var id, status, repoURL, prompt, sessionType, workflowRunID string
 	var iteration int
 	err = db.QueryRowContext(context.Background(), `
-		SELECT id, status, repo_url, prompt, task_type, iteration, workflow_run_id
-		FROM tasks WHERE id = ?`, "task-1",
-	).Scan(&id, &status, &repoURL, &prompt, &taskType, &iteration, &workflowRunID)
+		SELECT id, status, repo_url, prompt, session_type, iteration, workflow_run_id
+		FROM sessions WHERE id = ?`, "session-1",
+	).Scan(&id, &status, &repoURL, &prompt, &sessionType, &iteration, &workflowRunID)
 	if err != nil {
 		t.Fatal(err)
 	}

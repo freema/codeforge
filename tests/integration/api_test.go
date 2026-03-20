@@ -66,7 +66,7 @@ func decodeJSON(t *testing.T, resp *http.Response, dst interface{}) {
 	}
 }
 
-// waitForStatus polls a task until it reaches the expected status or times out.
+// waitForStatus polls a session until it reaches the expected status or times out.
 func waitForStatus(t *testing.T, taskID string, expected string, timeout time.Duration) map[string]interface{} {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -80,7 +80,7 @@ func waitForStatus(t *testing.T, taskID string, expected string, timeout time.Du
 		default:
 		}
 
-		resp := apiRequest(t, "GET", "/api/v1/tasks/"+taskID, nil)
+		resp := apiRequest(t, "GET", "/api/v1/sessions/"+taskID, nil)
 		var result map[string]interface{}
 		decodeJSON(t, resp, &result)
 
@@ -160,7 +160,7 @@ func TestMetricsEndpoint(t *testing.T) {
 
 func TestAuthRequired(t *testing.T) {
 	// No auth token
-	req, _ := http.NewRequest("GET", baseURL()+"/api/v1/tasks/some-id", nil)
+	req, _ := http.NewRequest("GET", baseURL()+"/api/v1/sessions/some-id", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("request: %v", err)
@@ -173,7 +173,7 @@ func TestAuthRequired(t *testing.T) {
 }
 
 func TestAuthWrongToken(t *testing.T) {
-	req, _ := http.NewRequest("GET", baseURL()+"/api/v1/tasks/some-id", nil)
+	req, _ := http.NewRequest("GET", baseURL()+"/api/v1/sessions/some-id", nil)
 	req.Header.Set("Authorization", "Bearer wrong-token")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -187,7 +187,7 @@ func TestAuthWrongToken(t *testing.T) {
 }
 
 func TestGetNonExistentTask(t *testing.T) {
-	resp := apiRequest(t, "GET", "/api/v1/tasks/nonexistent-id", nil)
+	resp := apiRequest(t, "GET", "/api/v1/sessions/nonexistent-id", nil)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusNotFound {
@@ -245,7 +245,7 @@ func TestCreateTaskValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := apiRequest(t, "POST", "/api/v1/tasks", tt.body)
+			resp := apiRequest(t, "POST", "/api/v1/sessions", tt.body)
 			defer resp.Body.Close()
 			if resp.StatusCode != tt.code {
 				body, _ := io.ReadAll(resp.Body)
@@ -256,7 +256,7 @@ func TestCreateTaskValidation(t *testing.T) {
 }
 
 func TestCancelNonRunningTask(t *testing.T) {
-	resp := apiRequest(t, "POST", "/api/v1/tasks/nonexistent/cancel", nil)
+	resp := apiRequest(t, "POST", "/api/v1/sessions/nonexistent/cancel", nil)
 	defer resp.Body.Close()
 
 	// Should be 404 (task not found)
@@ -536,7 +536,7 @@ func TestToolCatalog(t *testing.T) {
 }
 
 func TestReviewNonExistentTask(t *testing.T) {
-	resp := apiRequest(t, "POST", "/api/v1/tasks/nonexistent/review", nil)
+	resp := apiRequest(t, "POST", "/api/v1/sessions/nonexistent/review", nil)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusNotFound {
@@ -545,7 +545,7 @@ func TestReviewNonExistentTask(t *testing.T) {
 }
 
 func TestReviewWithUnknownCLI(t *testing.T) {
-	resp := apiRequest(t, "POST", "/api/v1/tasks/nonexistent/review", map[string]interface{}{
+	resp := apiRequest(t, "POST", "/api/v1/sessions/nonexistent/review", map[string]interface{}{
 		"cli": "nonexistent-cli",
 	})
 	defer resp.Body.Close()
@@ -556,8 +556,8 @@ func TestReviewWithUnknownCLI(t *testing.T) {
 	}
 }
 
-func TestListTaskTypes(t *testing.T) {
-	resp := apiRequest(t, "GET", "/api/v1/task-types", nil)
+func TestListSessionTypes(t *testing.T) {
+	resp := apiRequest(t, "GET", "/api/v1/session-types", nil)
 	var result map[string]interface{}
 	decodeJSON(t, resp, &result)
 
@@ -565,35 +565,35 @@ func TestListTaskTypes(t *testing.T) {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 
-	taskTypes, ok := result["task_types"].([]interface{})
+	sessionTypes, ok := result["session_types"].([]interface{})
 	if !ok {
-		t.Fatal("expected task_types array in response")
+		t.Fatal("expected session_types array in response")
 	}
-	if len(taskTypes) != 4 {
-		t.Fatalf("expected 4 task types, got %d", len(taskTypes))
+	if len(sessionTypes) != 4 {
+		t.Fatalf("expected 4 session types, got %d", len(sessionTypes))
 	}
 
 	names := make(map[string]bool)
-	for _, tt := range taskTypes {
-		tm, _ := tt.(map[string]interface{})
-		name, _ := tm["name"].(string)
+	for _, st := range sessionTypes {
+		sm, _ := st.(map[string]interface{})
+		name, _ := sm["name"].(string)
 		names[name] = true
-		if _, ok := tm["label"]; !ok {
-			t.Errorf("task type %s missing label", name)
+		if _, ok := sm["label"]; !ok {
+			t.Errorf("session type %s missing label", name)
 		}
-		if _, ok := tm["description"]; !ok {
-			t.Errorf("task type %s missing description", name)
+		if _, ok := sm["description"]; !ok {
+			t.Errorf("session type %s missing description", name)
 		}
 	}
 
 	for _, expected := range []string{"code", "plan", "review", "pr_review"} {
 		if !names[expected] {
-			t.Errorf("expected task type %s in response", expected)
+			t.Errorf("expected session type %s in response", expected)
 		}
 	}
 }
 
-func TestCreateTaskWithTaskType(t *testing.T) {
+func TestCreateTaskWithSessionType(t *testing.T) {
 	tests := []struct {
 		name     string
 		taskType string
@@ -607,10 +607,10 @@ func TestCreateTaskWithTaskType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := apiRequest(t, "POST", "/api/v1/tasks", map[string]interface{}{
-				"repo_url":  "https://github.com/user/repo.git",
-				"prompt":    "test prompt",
-				"task_type": tt.taskType,
+			resp := apiRequest(t, "POST", "/api/v1/sessions", map[string]interface{}{
+				"repo_url":     "https://github.com/user/repo.git",
+				"prompt":       "test prompt",
+				"session_type": tt.taskType,
 			})
 			defer resp.Body.Close()
 
@@ -622,34 +622,34 @@ func TestCreateTaskWithTaskType(t *testing.T) {
 	}
 }
 
-func TestTaskTypePersistence(t *testing.T) {
-	// Create a task with plan type
-	resp := apiRequest(t, "POST", "/api/v1/tasks", map[string]interface{}{
-		"repo_url":  "https://github.com/user/repo.git",
-		"prompt":    "analyze the codebase",
-		"task_type": "plan",
+func TestSessionTypePersistence(t *testing.T) {
+	// Create a session with plan type
+	resp := apiRequest(t, "POST", "/api/v1/sessions", map[string]interface{}{
+		"repo_url":     "https://github.com/user/repo.git",
+		"prompt":       "analyze the codebase",
+		"session_type": "plan",
 	})
 	if resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("create task: expected 201, got %d: %s", resp.StatusCode, body)
+		t.Fatalf("create session: expected 201, got %d: %s", resp.StatusCode, body)
 	}
 
 	var createResult map[string]interface{}
 	decodeJSON(t, resp, &createResult)
-	taskID, _ := createResult["id"].(string)
+	sessionID, _ := createResult["id"].(string)
 
-	// Get the task and verify task_type is persisted
-	resp = apiRequest(t, "GET", "/api/v1/tasks/"+taskID, nil)
+	// Get the session and verify session_type is persisted
+	resp = apiRequest(t, "GET", "/api/v1/sessions/"+sessionID, nil)
 	var getResult map[string]interface{}
 	decodeJSON(t, resp, &getResult)
 
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("get task: expected 200, got %d", resp.StatusCode)
+		t.Fatalf("get session: expected 200, got %d", resp.StatusCode)
 	}
 
-	taskType, _ := getResult["task_type"].(string)
-	if taskType != "plan" {
-		t.Errorf("expected task_type 'plan', got %q", taskType)
+	sessionType, _ := getResult["session_type"].(string)
+	if sessionType != "plan" {
+		t.Errorf("expected session_type 'plan', got %q", sessionType)
 	}
 }
 

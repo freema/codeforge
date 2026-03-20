@@ -1,4 +1,4 @@
-package task
+package session
 
 import (
 	"encoding/json"
@@ -9,32 +9,32 @@ import (
 	"github.com/freema/codeforge/internal/tools"
 )
 
-// TaskStatus represents the current state of a task.
-type TaskStatus string
+// Status represents the current state of a session.
+type Status string
 
 const (
-	StatusPending             TaskStatus = "pending"
-	StatusCloning             TaskStatus = "cloning"
-	StatusRunning             TaskStatus = "running"
-	StatusCompleted           TaskStatus = "completed"
-	StatusFailed              TaskStatus = "failed"
-	StatusAwaitingInstruction TaskStatus = "awaiting_instruction"
-	StatusReviewing           TaskStatus = "reviewing"
-	StatusCreatingPR          TaskStatus = "creating_pr"
-	StatusPRCreated           TaskStatus = "pr_created"
+	StatusPending             Status = "pending"
+	StatusCloning             Status = "cloning"
+	StatusRunning             Status = "running"
+	StatusCompleted           Status = "completed"
+	StatusFailed              Status = "failed"
+	StatusAwaitingInstruction Status = "awaiting_instruction"
+	StatusReviewing           Status = "reviewing"
+	StatusCreatingPR          Status = "creating_pr"
+	StatusPRCreated           Status = "pr_created"
 )
 
-// Task represents a code task in the system.
-type Task struct {
+// Session represents a code session in the system.
+type Session struct {
 	ID          string      `json:"id"`
-	Status      TaskStatus  `json:"status"`
+	Status      Status  `json:"status"`
 	RepoURL     string      `json:"repo_url"`
 	ProviderKey string      `json:"provider_key,omitempty"`
 	AccessToken string      `json:"-"` // NEVER in API responses
 	Prompt      string      `json:"prompt"`
-	TaskType    string      `json:"task_type,omitempty"`
+	SessionType    string      `json:"session_type,omitempty"`
 	CallbackURL string      `json:"callback_url,omitempty"`
-	Config      *TaskConfig `json:"config,omitempty"`
+	Config      *Config `json:"config,omitempty"`
 
 	// Result fields
 	Result         string                 `json:"result,omitempty"`
@@ -49,7 +49,7 @@ type Task struct {
 	Iterations    []Iteration `json:"iterations,omitempty"`     // populated on demand via ?include=iterations
 
 	// Git integration — PRNumber is the PR created by CodeForge (via create-pr).
-	// For the input PR number on pr_review tasks, see TaskConfig.PRNumber.
+	// For the input PR number on pr_review sessions, see Config.PRNumber.
 	Branch   string `json:"branch,omitempty"`
 	PRNumber int    `json:"pr_number,omitempty"`
 	PRURL    string `json:"pr_url,omitempty"`
@@ -57,6 +57,9 @@ type Task struct {
 	// Review params (set by StartReviewAsync, consumed by executor)
 	ReviewCLI   string `json:"-"`
 	ReviewModel string `json:"-"`
+
+	// Metadata — optional key-value data (sentry URL, ticket link, etc.)
+	Metadata map[string]string `json:"metadata,omitempty"`
 
 	// Workflow linkage
 	WorkflowRunID string `json:"workflow_run_id,omitempty"`
@@ -77,8 +80,8 @@ type UsageInfo struct {
 	DurationSeconds int `json:"duration_seconds"`
 }
 
-// TaskConfig holds per-task configuration overrides.
-type TaskConfig struct {
+// Config holds per-session configuration overrides.
+type Config struct {
 	TimeoutSeconds  int              `json:"timeout_seconds,omitempty"`
 	CLI             string           `json:"cli,omitempty"`
 	AIModel         string           `json:"ai_model,omitempty"`
@@ -89,14 +92,16 @@ type TaskConfig struct {
 	MaxBudgetUSD    float64          `json:"max_budget_usd,omitempty"`
 	MCPServers      []MCPServer      `json:"mcp_servers,omitempty"`
 	Tools           []tools.TaskTool `json:"tools,omitempty"`
-	WorkspaceTaskID string           `json:"workspace_task_id,omitempty"` // reuse workspace from another task
-	PRNumber        int              `json:"pr_number,omitempty"`         // input PR/MR number to review (for pr_review tasks)
-	OutputMode      string           `json:"output_mode,omitempty"`       // "post_comments" or "api_only" (for pr_review tasks)
+	WorkspaceTaskID string           `json:"workspace_task_id,omitempty"` // reuse workspace from another session
+	PRNumber           int              `json:"pr_number,omitempty"`            // input PR/MR number to review (for pr_review sessions)
+	OutputMode         string           `json:"output_mode,omitempty"`          // "post_comments" or "api_only" (for pr_review sessions)
+	AutoReviewAfterFix bool             `json:"auto_review_after_fix,omitempty"` // auto-start review after each fix iteration
+	AutoPostReview     bool             `json:"auto_post_review,omitempty"`      // auto-post review result to MR comments
 }
 
 // UnmarshalJSON accepts ai_api_key from JSON input while json:"-" keeps it hidden in output.
-func (c *TaskConfig) UnmarshalJSON(data []byte) error {
-	type Alias TaskConfig
+func (c *Config) UnmarshalJSON(data []byte) error {
+	type Alias Config
 	aux := &struct {
 		AIApiKey string `json:"ai_api_key,omitempty"`
 		*Alias
@@ -130,15 +135,15 @@ type Iteration struct {
 	Prompt    string                 `json:"prompt"`
 	Result    string                 `json:"result,omitempty"`
 	Error     string                 `json:"error,omitempty"`
-	Status    TaskStatus             `json:"status"`
+	Status    Status             `json:"status"`
 	Changes   *gitpkg.ChangesSummary `json:"changes,omitempty"`
 	Usage     *UsageInfo             `json:"usage,omitempty"`
 	StartedAt time.Time              `json:"started_at"`
 	EndedAt   *time.Time             `json:"ended_at,omitempty"`
 }
 
-// MarshalConfig serializes TaskConfig to JSON string for Redis storage.
-func MarshalConfig(cfg *TaskConfig) string {
+// MarshalConfig serializes Config to JSON string for Redis storage.
+func MarshalConfig(cfg *Config) string {
 	if cfg == nil {
 		return ""
 	}
@@ -146,12 +151,12 @@ func MarshalConfig(cfg *TaskConfig) string {
 	return string(b)
 }
 
-// UnmarshalConfig deserializes TaskConfig from JSON string.
-func UnmarshalConfig(data string) *TaskConfig {
+// UnmarshalConfig deserializes Config from JSON string.
+func UnmarshalConfig(data string) *Config {
 	if data == "" {
 		return nil
 	}
-	var cfg TaskConfig
+	var cfg Config
 	if err := json.Unmarshal([]byte(data), &cfg); err != nil {
 		return nil
 	}

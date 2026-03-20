@@ -16,7 +16,7 @@ const (
 
 var nonAlphaNum = regexp.MustCompile(`[^a-z0-9]+`)
 
-// Generate creates a human-readable slug from a prompt and task ID.
+// Generate creates a human-readable slug from a prompt and session ID.
 // Format: "first-five-words-{shortTaskID}" (max 50 chars).
 func Generate(prompt, taskID string) string {
 	shortID := taskID

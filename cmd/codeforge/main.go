@@ -20,7 +20,7 @@ import (
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/server"
 	"github.com/freema/codeforge/internal/server/handlers"
-	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/session"
 	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/tool/runner"
 	"github.com/freema/codeforge/internal/tools"
@@ -102,14 +102,14 @@ func run() error {
 		return fmt.Errorf("initializing crypto: %w", err)
 	}
 
-	// Initialize task service
-	taskService := task.NewService(
+	// Initialize session service
+	sessionService := session.NewService(
 		rdb,
 		cryptoSvc,
 		sqliteDB.Unwrap(),
 		cfg.Workers.QueueName,
-		time.Duration(cfg.Tasks.StateTTL)*time.Second,
-		time.Duration(cfg.Tasks.ResultTTL)*time.Second,
+		time.Duration(cfg.Sessions.StateTTL)*time.Second,
+		time.Duration(cfg.Sessions.ResultTTL)*time.Second,
 	)
 
 	// Initialize webhook sender
@@ -139,9 +139,9 @@ func run() error {
 
 	// Initialize workspace manager
 	workspaceMgr := workspace.NewManager(
-		cfg.Tasks.WorkspaceBase,
+		cfg.Sessions.WorkspaceBase,
 		rdb,
-		time.Duration(cfg.Tasks.WorkspaceTTL)*time.Second,
+		time.Duration(cfg.Sessions.WorkspaceTTL)*time.Second,
 	)
 
 	// Initialize CLI registry
@@ -152,7 +152,7 @@ func run() error {
 	// Log availability of registered CLI runners
 	for _, name := range []string{cfg.CLI.ClaudeCode.Path, cfg.CLI.Codex.Path} {
 		if _, err := exec.LookPath(name); err != nil {
-			slog.Warn("CLI runner not found on PATH — tasks using this CLI will fail", "cli", name)
+			slog.Warn("CLI runner not found on PATH — sessions using this CLI will fail", "cli", name)
 		}
 	}
 
@@ -163,11 +163,11 @@ func run() error {
 	}
 
 	// Initialize streamer
-	streamer := worker.NewStreamer(rdb, time.Duration(cfg.Tasks.WorkspaceTTL)*time.Second)
+	streamer := worker.NewStreamer(rdb, time.Duration(cfg.Sessions.WorkspaceTTL)*time.Second)
 
 	// Initialize executor
 	executor := worker.NewExecutor(
-		taskService,
+		sessionService,
 		cliRegistry,
 		streamer,
 		webhookSender,
@@ -176,9 +176,9 @@ func run() error {
 		toolResolver,
 		workspaceMgr,
 		worker.ExecutorConfig{
-			WorkspaceBase:   cfg.Tasks.WorkspaceBase,
-			DefaultTimeout:  cfg.Tasks.DefaultTimeout,
-			MaxTimeout:      cfg.Tasks.MaxTimeout,
+			WorkspaceBase:   cfg.Sessions.WorkspaceBase,
+			DefaultTimeout:  cfg.Sessions.DefaultTimeout,
+			MaxTimeout:      cfg.Sessions.MaxTimeout,
 			ProviderDomains: cfg.Git.ProviderDomains,
 			DefaultModels: map[string]string{
 				"claude-code": cfg.CLI.ClaudeCode.DefaultModel,
@@ -191,7 +191,7 @@ func run() error {
 	pool := worker.NewPool(
 		rdb,
 		executor,
-		taskService,
+		sessionService,
 		cfg.Workers.QueueName,
 		cfg.Workers.Concurrency,
 	)
@@ -200,8 +200,8 @@ func run() error {
 	analyzer := runner.NewAnalyzer()
 
 	// Initialize PR service
-	prService := task.NewPRService(taskService, analyzer, workspaceMgr, keyResolver, task.PRServiceConfig{
-		WorkspaceBase:   cfg.Tasks.WorkspaceBase,
+	prService := session.NewPRService(sessionService, analyzer, workspaceMgr, keyResolver, session.PRServiceConfig{
+		WorkspaceBase:   cfg.Sessions.WorkspaceBase,
 		BranchPrefix:    cfg.Git.BranchPrefix,
 		CommitAuthor:    cfg.Git.CommitAuthor,
 		CommitEmail:     cfg.Git.CommitEmail,
@@ -209,13 +209,13 @@ func run() error {
 	})
 
 	// Initialize Redis input listener
-	listener := task.NewListener(rdb, taskService, "input:tasks")
+	listener := session.NewListener(rdb, sessionService, "input:sessions")
 
 	// Initialize workspace cleaner
-	wsCleaner := workspace.NewCleaner(workspaceMgr, taskService, workspace.CleanerConfig{
+	wsCleaner := workspace.NewCleaner(workspaceMgr, sessionService, workspace.CleanerConfig{
 		Interval:              10 * time.Minute,
-		DiskWarningThreshold:  int64(cfg.Tasks.DiskWarningThresholdGB) * 1024 * 1024 * 1024,
-		DiskCriticalThreshold: int64(cfg.Tasks.DiskCriticalThresholdGB) * 1024 * 1024 * 1024,
+		DiskWarningThreshold:  int64(cfg.Sessions.DiskWarningThresholdGB) * 1024 * 1024 * 1024,
+		DiskCriticalThreshold: int64(cfg.Sessions.DiskCriticalThresholdGB) * 1024 * 1024 * 1024,
 	})
 
 	// Initialize workflow subsystem
@@ -228,14 +228,14 @@ func run() error {
 
 	wfStreamer := workflow.NewStreamer(rdb, time.Duration(cfg.Workflow.ContextTTLHours)*time.Hour)
 	fetchExecutor := workflow.NewFetchExecutor(keyRegistry)
-	taskExecutor := workflow.NewTaskExecutor(taskService, rdb, keyRegistry)
+	sessionExecutor := workflow.NewSessionExecutor(sessionService, rdb, keyRegistry)
 	actionExecutor := workflow.NewActionExecutor(prService)
 
 	orchestrator := workflow.NewOrchestrator(
 		workflowRegistry,
 		workflowRunStore,
 		fetchExecutor,
-		taskExecutor,
+		sessionExecutor,
 		actionExecutor,
 		wfStreamer,
 		rdb,
@@ -248,10 +248,10 @@ func run() error {
 	// Initialize webhook receiver handler for PR review
 	var webhookReceiverHandler *handlers.WebhookReceiverHandler
 	if cfg.CodeReview.WebhookSecrets.GitHub != "" || cfg.CodeReview.WebhookSecrets.GitLab != "" {
-		webhookReceiverHandler = handlers.NewWebhookReceiverHandler(taskService, rdb, cfg.CodeReview)
+		webhookReceiverHandler = handlers.NewWebhookReceiverHandler(sessionService, rdb, cfg.CodeReview)
 	}
 
-	srv := server.New(cfg, rdb, sqliteDB, taskService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowRunStore, orchestrator, orchestrator, cliRegistry, cliConfigs, webhookReceiverHandler, version)
+	srv := server.New(cfg, rdb, sqliteDB, sessionService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowRunStore, orchestrator, orchestrator, cliRegistry, cliConfigs, webhookReceiverHandler, version)
 
 	// Start background services
 	appCtx, appCancel := context.WithCancel(context.Background())

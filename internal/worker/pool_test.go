@@ -3,23 +3,23 @@ package worker
 import (
 	"testing"
 
-	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/session"
 )
 
 func TestShouldProcess(t *testing.T) {
 	tests := []struct {
-		status task.TaskStatus
+		status session.Status
 		want   bool
 	}{
-		{task.StatusPending, true},
-		{task.StatusAwaitingInstruction, true},
-		{task.StatusReviewing, true},
-		{task.StatusCompleted, false},
-		{task.StatusFailed, false},
-		{task.StatusRunning, false},
-		{task.StatusCloning, false},
-		{task.StatusCreatingPR, false},
-		{task.StatusPRCreated, false},
+		{session.StatusPending, true},
+		{session.StatusAwaitingInstruction, true},
+		{session.StatusReviewing, true},
+		{session.StatusCompleted, false},
+		{session.StatusFailed, false},
+		{session.StatusRunning, false},
+		{session.StatusCloning, false},
+		{session.StatusCreatingPR, false},
+		{session.StatusPRCreated, false},
 	}
 
 	for _, tt := range tests {

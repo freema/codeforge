@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"time"
 )
 
@@ -97,6 +98,107 @@ func listGitHubRepos(ctx context.Context, token string, page, perPage int) ([]Re
 	}
 
 	return repos, nil
+}
+
+// Branch represents a git branch from a provider.
+type Branch struct {
+	Name    string `json:"name"`
+	Default bool   `json:"default"`
+}
+
+// ListBranches lists branches for a repository from a provider using the given token.
+func ListBranches(ctx context.Context, provider Provider, token string, repoFullName string) ([]Branch, error) {
+	switch provider {
+	case ProviderGitHub:
+		return listGitHubBranches(ctx, token, repoFullName)
+	case ProviderGitLab:
+		return listGitLabBranches(ctx, token, repoFullName)
+	default:
+		return nil, fmt.Errorf("unsupported provider: %s", provider)
+	}
+}
+
+func listGitHubBranches(ctx context.Context, token string, repoFullName string) ([]Branch, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/branches?per_page=100", repoFullName)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("github API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github API returned %d: %s", resp.StatusCode, truncateBytes(body, 500))
+	}
+
+	var ghBranches []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(body, &ghBranches); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+
+	branches := make([]Branch, 0, len(ghBranches))
+	for _, b := range ghBranches {
+		branches = append(branches, Branch{Name: b.Name})
+	}
+	return branches, nil
+}
+
+func listGitLabBranches(ctx context.Context, token string, repoFullName string) ([]Branch, error) {
+	// GitLab uses URL-encoded project path (e.g. "user/repo" -> "user%2Frepo")
+	encoded := neturl.PathEscape(repoFullName)
+	url := fmt.Sprintf("https://gitlab.com/api/v4/projects/%s/repository/branches?per_page=100", encoded)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("PRIVATE-TOKEN", token)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("gitlab API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gitlab API returned %d: %s", resp.StatusCode, truncateBytes(body, 500))
+	}
+
+	var glBranches []struct {
+		Name    string `json:"name"`
+		Default bool   `json:"default"`
+	}
+	if err := json.Unmarshal(body, &glBranches); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+
+	branches := make([]Branch, 0, len(glBranches))
+	for _, b := range glBranches {
+		branches = append(branches, Branch{Name: b.Name, Default: b.Default})
+	}
+	return branches, nil
 }
 
 func listGitLabRepos(ctx context.Context, token string, page, perPage int) ([]Repository, error) {

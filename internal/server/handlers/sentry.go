@@ -13,7 +13,11 @@ import (
 	"github.com/freema/codeforge/internal/keys"
 )
 
-const sentryBaseURL = "https://sentry.io"
+// sentryRegions maps region names to their base API URLs.
+var sentryRegions = map[string]string{
+	"us": "https://sentry.io",
+	"eu": "https://de.sentry.io",
+}
 
 // SentryHandler proxies requests to the Sentry API using stored auth tokens.
 type SentryHandler struct {
@@ -32,8 +36,52 @@ func NewSentryHandler(keyRegistry keys.Registry) *SentryHandler {
 }
 
 // ListOrganizations handles GET /api/v1/sentry/organizations.
+// Queries all Sentry regions (US + EU) and merges results, adding a "region"
+// field to each org so subsequent calls can target the correct endpoint.
 func (h *SentryHandler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
-	h.proxyGet(w, r, "/api/0/organizations/", "organizations")
+	keyName := r.URL.Query().Get("key_name")
+	if keyName == "" {
+		writeError(w, http.StatusBadRequest, "key_name query param is required")
+		return
+	}
+
+	token, provider, err := h.keyRegistry.ResolveByName(r.Context(), keyName)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	if provider != "sentry" {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("key '%s' is a %s key, not a sentry key", keyName, provider))
+		return
+	}
+
+	type sentryOrg struct {
+		Slug   string `json:"slug"`
+		Name   string `json:"name"`
+		Region string `json:"region"`
+	}
+
+	var allOrgs []sentryOrg
+	for region, baseURL := range sentryRegions {
+		body, fetchErr := h.sentryGetFrom(r.Context(), token, baseURL, "/api/0/organizations/")
+		if fetchErr != nil {
+			continue
+		}
+		var orgs []struct {
+			Slug string `json:"slug"`
+			Name string `json:"name"`
+		}
+		if jsonErr := json.Unmarshal(body, &orgs); jsonErr != nil {
+			continue
+		}
+		for _, o := range orgs {
+			allOrgs = append(allOrgs, sentryOrg{Slug: o.Slug, Name: o.Name, Region: region})
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{"organizations": allOrgs})
 }
 
 // ListProjects handles GET /api/v1/sentry/projects.
@@ -94,6 +142,16 @@ func (h *SentryHandler) GetLatestEvent(w http.ResponseWriter, r *http.Request) {
 	h.proxyGet(w, r, fmt.Sprintf("/api/0/issues/%s/events/latest/", issueID), "")
 }
 
+// regionBaseURL resolves the base URL for the given region query param.
+// Falls back to US if unknown or empty.
+func regionBaseURL(r *http.Request) string {
+	region := r.URL.Query().Get("region")
+	if base, ok := sentryRegions[region]; ok {
+		return base
+	}
+	return sentryRegions["us"]
+}
+
 // proxyGet resolves a Sentry auth token from key_name, proxies a GET request
 // to the Sentry API, and forwards the response. If wrapKey is non-empty, the
 // response array is wrapped in {"<wrapKey>": <body>}.
@@ -114,21 +172,20 @@ func (h *SentryHandler) proxyGet(w http.ResponseWriter, r *http.Request, sentryP
 		return
 	}
 
-	body, err := h.sentryGet(r.Context(), token, sentryPath)
+	baseURL := regionBaseURL(r)
+	body, err := h.sentryGetFrom(r.Context(), token, baseURL, sentryPath)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 
 	if wrapKey == "" {
-		// Pass through raw JSON
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(body)
 		return
 	}
 
-	// Wrap array response in named object
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
@@ -139,9 +196,9 @@ func (h *SentryHandler) proxyGet(w http.ResponseWriter, r *http.Request, sentryP
 	_ = json.NewEncoder(w).Encode(wrapped)
 }
 
-// sentryGet makes an authenticated GET request to the Sentry API.
-func (h *SentryHandler) sentryGet(ctx context.Context, token, path string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sentryBaseURL+path, nil)
+// sentryGetFrom makes an authenticated GET request to a specific Sentry region.
+func (h *SentryHandler) sentryGetFrom(ctx context.Context, token, baseURL, path string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}

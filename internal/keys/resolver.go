@@ -22,7 +22,7 @@ func NewResolver(registry Registry, providerDomains map[string]string) *Resolver
 	return &Resolver{registry: registry, providerDomains: providerDomains}
 }
 
-// ResolveToken resolves the access token for a task.
+// ResolveToken resolves the access token for a session.
 func (r *Resolver) ResolveToken(ctx context.Context, repoURL, accessToken, providerKey string) (string, error) {
 	// 1. Inline token
 	if accessToken != "" {

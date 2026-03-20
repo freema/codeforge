@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/session"
 )
 
 // PRCreator creates pull requests for completed tasks.
 type PRCreator interface {
-	CreatePR(ctx context.Context, taskID string, req task.CreatePRRequest) (*task.CreatePRResponse, error)
+	CreatePR(ctx context.Context, taskID string, req session.CreatePRRequest) (*session.CreatePRResponse, error)
 }
 
 // ActionExecutor executes action steps — built-in operations like create_pr.
@@ -40,7 +40,7 @@ func (e *ActionExecutor) Execute(ctx context.Context, stepDef StepDefinition, tc
 }
 
 func (e *ActionExecutor) executeCreatePR(ctx context.Context, cfg ActionConfig, tctx TemplateContext) (map[string]string, error) {
-	// Resolve task ID from the referenced task step
+	// Resolve session ID from the referenced task step
 	refStep, ok := tctx.Steps[cfg.TaskStepRef]
 	if !ok {
 		return nil, fmt.Errorf("task step ref '%s' not found in context", cfg.TaskStepRef)
@@ -64,7 +64,7 @@ func (e *ActionExecutor) executeCreatePR(ctx context.Context, cfg ActionConfig, 
 		title = title[:69] + "..."
 	}
 
-	result, err := e.prCreator.CreatePR(ctx, taskID, task.CreatePRRequest{
+	result, err := e.prCreator.CreatePR(ctx, taskID, session.CreatePRRequest{
 		Title:       title,
 		Description: description,
 	})

@@ -14,7 +14,7 @@ import (
 	"github.com/freema/codeforge/internal/redisclient"
 )
 
-// Workspace holds metadata about a task workspace.
+// Workspace holds metadata about a session workspace.
 type Workspace struct {
 	TaskID    string    `json:"task_id"`
 	Path      string    `json:"path"`
@@ -85,7 +85,7 @@ func (m *Manager) Create(ctx context.Context, taskID, prompt string) (*Workspace
 	return ws, nil
 }
 
-// WorkspacePath returns the filesystem path for a task workspace.
+// WorkspacePath returns the filesystem path for a session workspace.
 // Returns empty string if workspace is not found.
 func (m *Manager) WorkspacePath(ctx context.Context, taskID string) string {
 	if ws := m.Get(ctx, taskID); ws != nil && ws.Path != "" {

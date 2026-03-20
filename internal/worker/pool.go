@@ -13,14 +13,14 @@ import (
 
 	"github.com/freema/codeforge/internal/metrics"
 	"github.com/freema/codeforge/internal/redisclient"
-	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/session"
 )
 
 // Pool is a worker pool that consumes tasks from a Redis queue.
 type Pool struct {
 	redis       *redisclient.Client
 	executor    *Executor
-	taskService *task.Service
+	sessionService *session.Service
 	queueName   string
 	concurrency int
 	wg          sync.WaitGroup
@@ -34,14 +34,14 @@ type Pool struct {
 func NewPool(
 	redis *redisclient.Client,
 	executor *Executor,
-	taskService *task.Service,
+	sessionService *session.Service,
 	queueName string,
 	concurrency int,
 ) *Pool {
 	return &Pool{
 		redis:       redis,
 		executor:    executor,
-		taskService: taskService,
+		sessionService: sessionService,
 		queueName:   queueName,
 		concurrency: concurrency,
 		cancels:     make(map[string]context.CancelFunc),
@@ -84,11 +84,11 @@ func (p *Pool) Cancel(taskID string) error {
 	return nil
 }
 
-// shouldProcess returns true if a task status is actionable by the worker pool.
+// shouldProcess returns true if a session status is actionable by the worker pool.
 // Tasks in other states are stale queue entries that should be skipped.
-func shouldProcess(s task.TaskStatus) bool {
+func shouldProcess(s session.Status) bool {
 	switch s {
-	case task.StatusPending, task.StatusAwaitingInstruction, task.StatusReviewing:
+	case session.StatusPending, session.StatusAwaitingInstruction, session.StatusReviewing:
 		return true
 	}
 	return false
@@ -129,7 +129,7 @@ func (p *Pool) worker(ctx context.Context, id int) {
 		}
 
 		// Load task from Redis
-		t, err := p.taskService.Get(ctx, taskID)
+		t, err := p.sessionService.Get(ctx, taskID)
 		if err != nil {
 			log.Warn("failed to load task, skipping", "task_id", taskID, "error", err)
 			p.activeCount.Add(-1)
@@ -152,7 +152,7 @@ func (p *Pool) worker(ctx context.Context, id int) {
 		p.cancels[taskID] = taskCancel
 		p.cancelsMu.Unlock()
 
-		// Execute the task
+		// Execute the session
 		p.executor.Execute(taskCtx, t)
 
 		// Deregister cancel func

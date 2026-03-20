@@ -98,7 +98,7 @@ func TestRenderTaskPrompt_Empty(t *testing.T) {
 	}
 }
 
-func TestValidTaskType(t *testing.T) {
+func TestValidSessionType(t *testing.T) {
 	tests := []struct {
 		name  string
 		valid bool
@@ -110,14 +110,14 @@ func TestValidTaskType(t *testing.T) {
 		{"", false},
 	}
 	for _, tt := range tests {
-		if got := ValidTaskType(tt.name); got != tt.valid {
-			t.Errorf("ValidTaskType(%q) = %v, want %v", tt.name, got, tt.valid)
+		if got := ValidSessionType(tt.name); got != tt.valid {
+			t.Errorf("ValidSessionType(%q) = %v, want %v", tt.name, got, tt.valid)
 		}
 	}
 }
 
-func TestTaskTypes(t *testing.T) {
-	types := TaskTypes()
+func TestSessionTypes(t *testing.T) {
+	types := SessionTypes()
 	if len(types) != 4 {
 		t.Fatalf("expected 4 task types, got %d", len(types))
 	}
@@ -140,17 +140,17 @@ func TestTaskTypes(t *testing.T) {
 	}
 }
 
-func TestTaskTypeTemplate(t *testing.T) {
-	if tmpl := TaskTypeTemplate("code"); tmpl != "" {
+func TestSessionTypeTemplate(t *testing.T) {
+	if tmpl := SessionTypeTemplate("code"); tmpl != "" {
 		t.Errorf("code should have no template, got %q", tmpl)
 	}
-	if tmpl := TaskTypeTemplate("plan"); tmpl != "plan" {
+	if tmpl := SessionTypeTemplate("plan"); tmpl != "plan" {
 		t.Errorf("plan template should be 'plan', got %q", tmpl)
 	}
-	if tmpl := TaskTypeTemplate("review"); tmpl != "review" {
+	if tmpl := SessionTypeTemplate("review"); tmpl != "review" {
 		t.Errorf("review template should be 'review', got %q", tmpl)
 	}
-	if tmpl := TaskTypeTemplate("unknown"); tmpl != "" {
+	if tmpl := SessionTypeTemplate("unknown"); tmpl != "" {
 		t.Errorf("unknown type should have no template, got %q", tmpl)
 	}
 }

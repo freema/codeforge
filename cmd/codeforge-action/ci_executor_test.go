@@ -61,7 +61,7 @@ func TestBuildSystemContext_NoFiles(t *testing.T) {
 
 func TestBuildPrompt_Custom(t *testing.T) {
 	executor := NewCIExecutor(Config{
-		TaskType: "custom",
+		SessionType: "custom",
 		Prompt:   "fix the bug",
 	})
 
@@ -76,7 +76,7 @@ func TestBuildPrompt_Custom(t *testing.T) {
 
 func TestBuildPrompt_PRReview(t *testing.T) {
 	executor := NewCIExecutor(Config{
-		TaskType: "pr_review",
+		SessionType: "pr_review",
 	})
 
 	ciCtx := &CIContext{
@@ -106,7 +106,7 @@ func TestBuildPrompt_PRReview(t *testing.T) {
 
 func TestBuildPrompt_CodeReview(t *testing.T) {
 	executor := NewCIExecutor(Config{
-		TaskType: "code_review",
+		SessionType: "code_review",
 	})
 
 	ciCtx := &CIContext{
@@ -125,7 +125,7 @@ func TestBuildPrompt_CodeReview(t *testing.T) {
 
 func TestBuildPrompt_KnowledgeUpdate(t *testing.T) {
 	executor := NewCIExecutor(Config{
-		TaskType: "knowledge_update",
+		SessionType: "knowledge_update",
 	})
 
 	prompt, err := executor.buildPrompt(&CIContext{})
@@ -143,7 +143,7 @@ func TestBuildPrompt_KnowledgeUpdate(t *testing.T) {
 
 func TestBuildPrompt_InvalidType(t *testing.T) {
 	executor := NewCIExecutor(Config{
-		TaskType: "invalid",
+		SessionType: "invalid",
 	})
 
 	_, err := executor.buildPrompt(&CIContext{})

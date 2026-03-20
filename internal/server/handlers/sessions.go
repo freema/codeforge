@@ -15,7 +15,7 @@ import (
 	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/prompt"
 	"github.com/freema/codeforge/internal/review"
-	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/session"
 	gitpkg "github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/tool/runner"
 )
@@ -27,25 +27,25 @@ type Canceller interface {
 	Cancel(taskID string) error
 }
 
-// TaskHandler handles task-related HTTP endpoints.
-type TaskHandler struct {
-	service         *task.Service
-	prService       *task.PRService
+// SessionHandler handles task-related HTTP endpoints.
+type SessionHandler struct {
+	service         *session.Service
+	prService       *session.PRService
 	canceller       Canceller
 	cliRegistry     *runner.Registry
 	keyRegistry     keys.Registry
 	providerDomains map[string]string
 }
 
-// NewTaskHandler creates a new task handler.
-func NewTaskHandler(service *task.Service, prService *task.PRService, canceller Canceller, cliRegistry *runner.Registry, keyRegistry keys.Registry, providerDomains map[string]string) *TaskHandler {
-	return &TaskHandler{service: service, prService: prService, canceller: canceller, cliRegistry: cliRegistry, keyRegistry: keyRegistry, providerDomains: providerDomains}
+// NewSessionHandler creates a new session handler.
+func NewSessionHandler(service *session.Service, prService *session.PRService, canceller Canceller, cliRegistry *runner.Registry, keyRegistry keys.Registry, providerDomains map[string]string) *SessionHandler {
+	return &SessionHandler{service: service, prService: prService, canceller: canceller, cliRegistry: cliRegistry, keyRegistry: keyRegistry, providerDomains: providerDomains}
 }
 
-// List handles GET /api/v1/tasks.
+// List handles GET /api/v1/sessions.
 // Supports optional ?status= filter and ?limit=&offset= pagination.
-func (h *TaskHandler) List(w http.ResponseWriter, r *http.Request) {
-	opts := task.ListOptions{
+func (h *SessionHandler) List(w http.ResponseWriter, r *http.Request) {
+	opts := session.ListOptions{
 		Status: r.URL.Query().Get("status"),
 	}
 	if v := r.URL.Query().Get("limit"); v != "" {
@@ -61,19 +61,19 @@ func (h *TaskHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	tasks, total, err := h.service.List(r.Context(), opts)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list tasks")
+		writeError(w, http.StatusInternalServerError, "failed to list sessions")
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"tasks": tasks,
+		"sessions": tasks,
 		"total": total,
 	})
 }
 
-// Create handles POST /api/v1/tasks.
-func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
-	var req task.CreateTaskRequest
+// Create handles POST /api/v1/sessions.
+func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
+	var req session.CreateSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
@@ -96,23 +96,23 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate task_type
-	if req.TaskType != "" {
-		if !prompt.ValidTaskType(req.TaskType) {
+	// Validate session_type
+	if req.SessionType != "" {
+		if !prompt.ValidSessionType(req.SessionType) {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 				"error":  "validation_error",
-				"fields": map[string]string{"task_type": fmt.Sprintf("unknown task type: %s", req.TaskType)},
+				"fields": map[string]string{"session_type": fmt.Sprintf("unknown session type: %s", req.SessionType)},
 			})
 			return
 		}
 	}
 
-	// pr_review tasks require pr_number in config
-	if req.TaskType == "pr_review" {
+	// pr_review sessions require pr_number in config
+	if req.SessionType == "pr_review" {
 		if req.Config == nil || req.Config.PRNumber <= 0 {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 				"error":  "validation_error",
-				"fields": map[string]string{"pr_number": "pr_number is required for pr_review tasks"},
+				"fields": map[string]string{"pr_number": "pr_number is required for pr_review sessions"},
 			})
 			return
 		}
@@ -142,12 +142,12 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Get handles GET /api/v1/tasks/{taskID}.
+// Get handles GET /api/v1/sessions/{taskID}.
 // Supports ?include=iterations to load full iteration history.
-func (h *TaskHandler) Get(w http.ResponseWriter, r *http.Request) {
+func (h *SessionHandler) Get(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskID")
 	if taskID == "" {
-		writeError(w, http.StatusBadRequest, "task ID is required")
+		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
 
@@ -168,11 +168,11 @@ func (h *TaskHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
-// Instruct handles POST /api/v1/tasks/{taskID}/instruct.
-func (h *TaskHandler) Instruct(w http.ResponseWriter, r *http.Request) {
+// Instruct handles POST /api/v1/sessions/{taskID}/instruct.
+func (h *SessionHandler) Instruct(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskID")
 	if taskID == "" {
-		writeError(w, http.StatusBadRequest, "task ID is required")
+		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
 
@@ -201,11 +201,11 @@ func (h *TaskHandler) Instruct(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Cancel handles POST /api/v1/tasks/{taskID}/cancel.
-func (h *TaskHandler) Cancel(w http.ResponseWriter, r *http.Request) {
+// Cancel handles POST /api/v1/sessions/{taskID}/cancel.
+func (h *SessionHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskID")
 	if taskID == "" {
-		writeError(w, http.StatusBadRequest, "task ID is required")
+		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
 
@@ -216,32 +216,32 @@ func (h *TaskHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if t.Status != task.StatusRunning && t.Status != task.StatusCloning && t.Status != task.StatusReviewing {
-		writeError(w, http.StatusConflict, fmt.Sprintf("task is not running (status: %s)", t.Status))
+	if t.Status != session.StatusRunning && t.Status != session.StatusCloning && t.Status != session.StatusReviewing {
+		writeError(w, http.StatusConflict, fmt.Sprintf("session is not running (status: %s)", t.Status))
 		return
 	}
 
 	if err := h.canceller.Cancel(taskID); err != nil {
-		writeError(w, http.StatusConflict, "task is not currently running")
+		writeError(w, http.StatusConflict, "session is not currently running")
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
 		"id":      taskID,
 		"status":  "canceling",
-		"message": "task cancellation requested",
+		"message": "session cancellation requested",
 	})
 }
 
-// CreatePR handles POST /api/v1/tasks/{taskID}/create-pr.
-func (h *TaskHandler) CreatePR(w http.ResponseWriter, r *http.Request) {
+// CreatePR handles POST /api/v1/sessions/{taskID}/create-pr.
+func (h *SessionHandler) CreatePR(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskID")
 	if taskID == "" {
-		writeError(w, http.StatusBadRequest, "task ID is required")
+		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
 
-	var req task.CreatePRRequest
+	var req session.CreatePRRequest
 	if r.ContentLength > 0 {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -271,11 +271,11 @@ func (h *TaskHandler) CreatePR(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// Review handles POST /api/v1/tasks/{taskID}/review.
-func (h *TaskHandler) Review(w http.ResponseWriter, r *http.Request) {
+// Review handles POST /api/v1/sessions/{taskID}/review.
+func (h *SessionHandler) Review(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskID")
 	if taskID == "" {
-		writeError(w, http.StatusBadRequest, "task ID is required")
+		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
 
@@ -313,12 +313,12 @@ func (h *TaskHandler) Review(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// PostReviewComments handles POST /api/v1/tasks/{taskID}/post-review.
-// Posts the task's ReviewResult as comments to the associated PR/MR.
-func (h *TaskHandler) PostReviewComments(w http.ResponseWriter, r *http.Request) {
+// PostReviewComments handles POST /api/v1/sessions/{taskID}/post-review.
+// Posts the session's ReviewResult as comments to the associated PR/MR.
+func (h *SessionHandler) PostReviewComments(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskID")
 	if taskID == "" {
-		writeError(w, http.StatusBadRequest, "task ID is required")
+		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
 
@@ -339,7 +339,7 @@ func (h *TaskHandler) PostReviewComments(w http.ResponseWriter, r *http.Request)
 	}
 
 	if t.ReviewResult == nil {
-		writeError(w, http.StatusBadRequest, "task has no review result — run a review first")
+		writeError(w, http.StatusBadRequest, "session has no review result — run a review first")
 		return
 	}
 
@@ -352,7 +352,7 @@ func (h *TaskHandler) PostReviewComments(w http.ResponseWriter, r *http.Request)
 		prNumber = t.PRNumber
 	}
 	if prNumber <= 0 {
-		writeError(w, http.StatusBadRequest, "pr_number is required (not set on task and not provided in request)")
+		writeError(w, http.StatusBadRequest, "pr_number is required (not set on session and not provided in request)")
 		return
 	}
 
@@ -367,7 +367,7 @@ func (h *TaskHandler) PostReviewComments(w http.ResponseWriter, r *http.Request)
 		token = resolved
 	}
 	if token == "" {
-		writeError(w, http.StatusBadRequest, "no access token available — set provider_key on task")
+		writeError(w, http.StatusBadRequest, "no access token available — set provider_key on session")
 		return
 	}
 
@@ -393,10 +393,10 @@ func (h *TaskHandler) PostReviewComments(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// ListTaskTypes handles GET /api/v1/task-types.
-func (h *TaskHandler) ListTaskTypes(w http.ResponseWriter, r *http.Request) {
+// ListSessionTypes handles GET /api/v1/session-types.
+func (h *SessionHandler) ListSessionTypes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"task_types": prompt.TaskTypes(),
+		"session_types": prompt.SessionTypes(),
 	})
 }
 

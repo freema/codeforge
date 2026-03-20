@@ -23,7 +23,7 @@ type ClaudeRunner struct {
 
 // NewClaudeRunner creates a runner for the Claude Code CLI.
 // If binaryPath contains a directory separator, it is resolved to an
-// absolute path so it remains valid when cmd.Dir is set to the task
+// absolute path so it remains valid when cmd.Dir is set to the session
 // workspace. Bare command names (e.g. "claude") are left as-is so
 // exec.Command looks them up via PATH.
 func NewClaudeRunner(binaryPath string) *ClaudeRunner {

@@ -10,13 +10,13 @@ import (
 
 var builtinTools = []ToolDefinition{
 	{
-		Name:         "sentry",
-		Type:         ToolTypeMCP,
-		Description:  "Sentry error tracking — search issues, get stack traces, resolve errors",
-		MCPTransport: "http",
-		MCPURL:       "https://mcp.sentry.dev/mcp",
+		Name:        "sentry",
+		Type:        ToolTypeMCP,
+		Description: "Sentry error tracking — search issues, get stack traces, resolve errors",
+		MCPPackage:  "@sentry/mcp-server",
+		MCPCommand:  "npx",
 		RequiredConfig: []ConfigField{
-			{Name: "auth_token", Description: "Sentry authentication token", Type: "secret", EnvVar: "SENTRY_AUTH_TOKEN", Sensitive: true},
+			{Name: "auth_token", Description: "Sentry authentication token", Type: "secret", EnvVar: "SENTRY_ACCESS_TOKEN", Sensitive: true},
 		},
 		Capabilities: []string{"error-tracking", "issues"},
 		Builtin:      true,

@@ -1,17 +1,17 @@
 name: 'CodeForge'
-description: 'AI-powered code review & tasks for GitHub and GitLab — multi-CLI, auto-knowledge, review posting'
+description: 'AI-powered code review & sessions for GitHub and GitLab — multi-CLI, auto-knowledge, review posting'
 author: 'freema'
 branding:
   icon: 'code'
   color: 'blue'
 
 inputs:
-  task_type:
-    description: 'Task type: pr_review, code_review, knowledge_update, custom'
+  session_type:
+    description: 'Session type: pr_review, code_review, knowledge_update, custom'
     required: false
     default: 'pr_review'
   prompt:
-    description: 'Custom prompt (required for task_type=custom, optional for reviews)'
+    description: 'Custom prompt (required for session_type=custom, optional for reviews)'
     required: false
   cli:
     description: 'AI CLI tool: claude-code or codex'
@@ -71,7 +71,7 @@ runs:
   using: 'docker'
   image: 'docker://ghcr.io/freema/codeforge-action:latest'
   env:
-    INPUT_TASK_TYPE: ${{ inputs.task_type }}
+    INPUT_SESSION_TYPE: ${{ inputs.session_type }}
     INPUT_PROMPT: ${{ inputs.prompt }}
     INPUT_CLI: ${{ inputs.cli }}
     INPUT_MODEL: ${{ inputs.model }}

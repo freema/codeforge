@@ -1,4 +1,4 @@
-package task
+package session
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	gitpkg "github.com/freema/codeforge/internal/tool/git"
 )
 
-// openTestDB opens an in-memory SQLite database and runs the task schema migration.
+// openTestDB opens an in-memory SQLite database and runs the session schema migration.
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
@@ -22,13 +22,13 @@ func openTestDB(t *testing.T) *sql.DB {
 	t.Cleanup(func() { db.Close() })
 
 	_, err = db.ExecContext(context.Background(), `
-		CREATE TABLE tasks (
+		CREATE TABLE sessions (
 			id              TEXT PRIMARY KEY,
 			status          TEXT NOT NULL DEFAULT 'pending',
 			repo_url        TEXT NOT NULL,
 			provider_key    TEXT NOT NULL DEFAULT '',
 			prompt          TEXT NOT NULL,
-			task_type       TEXT NOT NULL DEFAULT 'code',
+			session_type    TEXT NOT NULL DEFAULT 'code',
 			callback_url    TEXT NOT NULL DEFAULT '',
 			config_json     TEXT NOT NULL DEFAULT '{}',
 			result          TEXT NOT NULL DEFAULT '',
@@ -48,9 +48,9 @@ func openTestDB(t *testing.T) *sql.DB {
 			updated_at      TEXT NOT NULL,
 			review_result_json TEXT NOT NULL DEFAULT '{}'
 		);
-		CREATE TABLE task_iterations (
+		CREATE TABLE session_iterations (
 			id          INTEGER PRIMARY KEY AUTOINCREMENT,
-			task_id     TEXT NOT NULL,
+			session_id  TEXT NOT NULL,
 			number      INTEGER NOT NULL,
 			prompt      TEXT NOT NULL,
 			result      TEXT NOT NULL DEFAULT '',
@@ -60,8 +60,8 @@ func openTestDB(t *testing.T) *sql.DB {
 			usage_json  TEXT NOT NULL DEFAULT '{}',
 			started_at  TEXT NOT NULL,
 			ended_at    TEXT,
-			FOREIGN KEY (task_id) REFERENCES tasks(id),
-			UNIQUE(task_id, number)
+			FOREIGN KEY (session_id) REFERENCES sessions(id),
+			UNIQUE(session_id, number)
 		);
 	`)
 	if err != nil {
@@ -71,9 +71,9 @@ func openTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func makeTask(id string) *Task {
+func makeSession(id string) *Session {
 	now := time.Now().UTC()
-	return &Task{
+	return &Session{
 		ID:          id,
 		Status:      StatusPending,
 		RepoURL:     "https://github.com/user/repo.git",
@@ -91,7 +91,7 @@ func TestSQLiteStore_SaveAndGet(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	task := makeTask("task-1")
+	task := makeSession("task-1")
 	if err := store.Save(ctx, task); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestSQLiteStore_SaveUpsert(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	task := makeTask("task-upsert")
+	task := makeSession("task-upsert")
 	if err := store.Save(ctx, task); err != nil {
 		t.Fatalf("first Save: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestSQLiteStore_UpdateStatus(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	task := makeTask("task-status")
+	task := makeSession("task-status")
 	if err := store.Save(ctx, task); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestSQLiteStore_UpdateResult(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	if err := store.Save(ctx, makeTask("task-result")); err != nil {
+	if err := store.Save(ctx, makeSession("task-result")); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -218,7 +218,7 @@ func TestSQLiteStore_UpdatePR(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	if err := store.Save(ctx, makeTask("task-pr")); err != nil {
+	if err := store.Save(ctx, makeSession("task-pr")); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -243,7 +243,7 @@ func TestSQLiteStore_UpdateError(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	if err := store.Save(ctx, makeTask("task-error")); err != nil {
+	if err := store.Save(ctx, makeSession("task-error")); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -262,7 +262,7 @@ func TestSQLiteStore_SaveAndGetIterations(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	if err := store.Save(ctx, makeTask("task-iters")); err != nil {
+	if err := store.Save(ctx, makeSession("task-iters")); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -315,7 +315,7 @@ func TestSQLiteStore_SaveIterationUpsert(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	if err := store.Save(ctx, makeTask("task-iter-upsert")); err != nil {
+	if err := store.Save(ctx, makeSession("task-iter-upsert")); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	now := time.Now().UTC()
@@ -348,7 +348,7 @@ func TestSQLiteStore_List(t *testing.T) {
 
 	// Insert multiple tasks
 	for i := 0; i < 5; i++ {
-		task := makeTask("list-task-" + string(rune('a'+i)))
+		task := makeSession("list-task-" + string(rune('a'+i)))
 		if i%2 == 0 {
 			task.Status = StatusCompleted
 		}
@@ -388,7 +388,7 @@ func TestSQLiteStore_ListPagination(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 10; i++ {
-		if err := store.Save(ctx, makeTask("page-task-"+string(rune('a'+i)))); err != nil {
+		if err := store.Save(ctx, makeSession("page-task-"+string(rune('a'+i)))); err != nil {
 			t.Fatalf("Save: %v", err)
 		}
 	}
@@ -433,7 +433,7 @@ func TestSQLiteStore_PromptTruncatedInList(t *testing.T) {
 	for i := range longPrompt {
 		longPrompt = longPrompt[:i] + "x" + longPrompt[i+1:]
 	}
-	task := makeTask("task-long-prompt")
+	task := makeSession("task-long-prompt")
 	task.Prompt = longPrompt
 	if err := store.Save(ctx, task); err != nil {
 		t.Fatalf("Save: %v", err)

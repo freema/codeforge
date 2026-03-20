@@ -15,7 +15,7 @@ var (
 		[]string{"status"},
 	)
 
-	// TaskDuration tracks task execution duration in seconds.
+	// TaskDuration tracks session execution duration in seconds.
 	TaskDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "codeforge_tasks_duration_seconds",

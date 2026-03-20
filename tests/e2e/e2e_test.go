@@ -1,6 +1,6 @@
 //go:build integration
 
-// E2E tests for the full task lifecycle.
+// E2E tests for the full session lifecycle.
 // Run with: task test:e2e
 //
 // These tests require:
@@ -121,7 +121,7 @@ func waitForTerminal(t *testing.T, taskID string, timeout time.Duration) map[str
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		resp := apiRequest(t, "GET", "/api/v1/tasks/"+taskID, nil)
+		resp := apiRequest(t, "GET", "/api/v1/sessions/"+taskID, nil)
 		var result map[string]interface{}
 		decodeJSON(t, resp, &result)
 		status := result["status"].(string)
@@ -138,7 +138,7 @@ func waitForStatus(t *testing.T, taskID, expected string, timeout time.Duration)
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		resp := apiRequest(t, "GET", "/api/v1/tasks/"+taskID, nil)
+		resp := apiRequest(t, "GET", "/api/v1/sessions/"+taskID, nil)
 		var result map[string]interface{}
 		decodeJSON(t, resp, &result)
 		if result["status"] == expected {
@@ -152,7 +152,7 @@ func waitForStatus(t *testing.T, taskID, expected string, timeout time.Duration)
 
 func createTask(t *testing.T, body map[string]interface{}) string {
 	t.Helper()
-	resp := apiRequest(t, "POST", "/api/v1/tasks", body)
+	resp := apiRequest(t, "POST", "/api/v1/sessions", body)
 	if resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create task: expected 201, got %d: %s", resp.StatusCode, b)
@@ -206,7 +206,7 @@ func TestE2ETaskSuccess(t *testing.T) {
 		t.Errorf("expected iteration 1, got %v", result["iteration"])
 	}
 
-	t.Log("SUCCESS: full task lifecycle completed")
+	t.Log("SUCCESS: full session lifecycle completed")
 }
 
 func TestE2ETaskCLIFailure(t *testing.T) {
@@ -268,9 +268,9 @@ func TestE2ETaskCancel(t *testing.T) {
 
 	// Wait for running
 	waitForStatus(t, taskID, "running", 30*time.Second)
-	t.Log("task is running, canceling...")
+	t.Log("session is running, canceling...")
 
-	resp := apiRequest(t, "POST", fmt.Sprintf("/api/v1/tasks/%s/cancel", taskID), nil)
+	resp := apiRequest(t, "POST", fmt.Sprintf("/api/v1/sessions/%s/cancel", taskID), nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Logf("cancel returned %d (might already be done)", resp.StatusCode)
@@ -303,7 +303,7 @@ func TestE2EFollowUp(t *testing.T) {
 	}
 
 	// Send follow-up
-	resp := apiRequest(t, "POST", fmt.Sprintf("/api/v1/tasks/%s/instruct", taskID), map[string]string{
+	resp := apiRequest(t, "POST", fmt.Sprintf("/api/v1/sessions/%s/instruct", taskID), map[string]string{
 		"prompt": "Now add tests",
 	})
 	if resp.StatusCode != http.StatusOK {
@@ -324,7 +324,7 @@ func TestE2EFollowUp(t *testing.T) {
 	}
 
 	// Verify iterations
-	resp = apiRequest(t, "GET", fmt.Sprintf("/api/v1/tasks/%s?include=iterations", taskID), nil)
+	resp = apiRequest(t, "GET", fmt.Sprintf("/api/v1/sessions/%s?include=iterations", taskID), nil)
 	var full map[string]interface{}
 	decodeJSON(t, resp, &full)
 

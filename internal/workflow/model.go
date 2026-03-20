@@ -10,7 +10,7 @@ type StepType string
 
 const (
 	StepTypeFetch  StepType = "fetch"
-	StepTypeTask   StepType = "task"
+	StepTypeSession   StepType = "session"
 	StepTypeAction StepType = "action"
 )
 
@@ -69,11 +69,11 @@ type FetchConfig struct {
 	Outputs map[string]string `json:"outputs"` // field name → JSONPath expression
 }
 
-// TaskStepConfig is the configuration for a task step.
-type TaskStepConfig struct {
+// SessionStepConfig is the configuration for a session step.
+type SessionStepConfig struct {
 	RepoURL          string `json:"repo_url"`
 	Prompt           string `json:"prompt"`
-	TaskType         string `json:"task_type,omitempty"` // task type override: "code", "plan", "review", "pr_review"
+	SessionType         string `json:"session_type,omitempty"` // session type override: "code", "plan", "review", "pr_review"
 	ProviderKey      string `json:"provider_key,omitempty"`
 	AccessToken      string `json:"access_token,omitempty"`
 	CLI              string `json:"cli,omitempty"`                // CLI runner override (e.g. "claude-code", "codex")
@@ -86,9 +86,9 @@ type TaskStepConfig struct {
 	PRNumber   int    `json:"pr_number,omitempty"`   // PR/MR number (for pr_review tasks)
 	OutputMode string `json:"output_mode,omitempty"` // "post_comments" or "api_only" (for pr_review tasks)
 
-	// Tool/MCP overrides (raw JSON, forwarded to task.CreateTaskRequest as-is)
+	// Tool/MCP overrides (raw JSON, forwarded to session.CreateSessionRequest as-is)
 	Tools      json.RawMessage `json:"tools,omitempty"`        // per-task tool requests ([]tools.TaskTool)
-	MCPServers json.RawMessage `json:"mcp_servers,omitempty"`  // per-task MCP servers ([]task.MCPServer)
+	MCPServers json.RawMessage `json:"mcp_servers,omitempty"`  // per-task MCP servers ([]session.MCPServer)
 	ToolKeyRef string          `json:"tool_key_ref,omitempty"` // key name → resolve token as auth_token for tools
 }
 

@@ -74,7 +74,7 @@ func (e *CIExecutor) Execute(ctx context.Context) int {
 	slog.Info("running CLI",
 		"cli", e.cfg.CLI,
 		"model", e.cfg.Model,
-		"task_type", e.cfg.TaskType,
+		"session_type", e.cfg.SessionType,
 		"has_system_context", systemContext != "",
 	)
 
@@ -199,7 +199,7 @@ func (e *CIExecutor) writeMCPConfig(workDir string) (string, error) {
 
 // buildPrompt constructs the prompt based on task type and CI context.
 func (e *CIExecutor) buildPrompt(ciCtx *CIContext) (string, error) {
-	switch e.cfg.TaskType {
+	switch e.cfg.SessionType {
 	case "pr_review":
 		return e.buildPRReviewPrompt(ciCtx)
 	case "code_review":
@@ -209,7 +209,7 @@ func (e *CIExecutor) buildPrompt(ciCtx *CIContext) (string, error) {
 	case "custom":
 		return e.cfg.Prompt, nil
 	default:
-		return "", fmt.Errorf("unknown task type: %s", e.cfg.TaskType)
+		return "", fmt.Errorf("unknown task type: %s", e.cfg.SessionType)
 	}
 }
 
@@ -289,7 +289,7 @@ func (e *CIExecutor) createRunner() runner.Runner {
 
 // handleResult processes the CLI output based on task type.
 func (e *CIExecutor) handleResult(ctx context.Context, ciCtx *CIContext, result *runner.RunResult, duration time.Duration) int {
-	switch e.cfg.TaskType {
+	switch e.cfg.SessionType {
 	case "pr_review", "code_review":
 		return e.handleReviewResult(ctx, ciCtx, result, duration)
 	case "knowledge_update":

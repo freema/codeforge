@@ -4,21 +4,21 @@ import (
 	"context"
 	"testing"
 
-	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/session"
 )
 
 type mockPRCreator struct {
-	result *task.CreatePRResponse
+	result *session.CreatePRResponse
 	err    error
 }
 
-func (m *mockPRCreator) CreatePR(_ context.Context, _ string, _ task.CreatePRRequest) (*task.CreatePRResponse, error) {
+func (m *mockPRCreator) CreatePR(_ context.Context, _ string, _ session.CreatePRRequest) (*session.CreatePRResponse, error) {
 	return m.result, m.err
 }
 
 func TestActionExecutor_CreatePR(t *testing.T) {
 	pr := &mockPRCreator{
-		result: &task.CreatePRResponse{
+		result: &session.CreatePRResponse{
 			PRURL:    "https://github.com/owner/repo/pull/1",
 			PRNumber: 1,
 			Branch:   "codeforge/fix-bug",

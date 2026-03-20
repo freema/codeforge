@@ -11,8 +11,8 @@ func TestParseConfig_Defaults(t *testing.T) {
 
 	cfg := parseConfig()
 
-	if cfg.TaskType != "pr_review" {
-		t.Errorf("TaskType = %q, want %q", cfg.TaskType, "pr_review")
+	if cfg.SessionType != "pr_review" {
+		t.Errorf("SessionType = %q, want %q", cfg.SessionType, "pr_review")
 	}
 	if cfg.CLI != "claude-code" {
 		t.Errorf("CLI = %q, want %q", cfg.CLI, "claude-code")
@@ -41,8 +41,8 @@ func TestParseConfig_InputOverrides(t *testing.T) {
 
 	cfg := parseConfig()
 
-	if cfg.TaskType != "custom" {
-		t.Errorf("TaskType = %q, want %q", cfg.TaskType, "custom")
+	if cfg.SessionType != "custom" {
+		t.Errorf("SessionType = %q, want %q", cfg.SessionType, "custom")
 	}
 	if cfg.CLI != "codex" {
 		t.Errorf("CLI = %q, want %q", cfg.CLI, "codex")
@@ -100,7 +100,7 @@ func TestValidateConfig(t *testing.T) {
 		{
 			name: "valid pr_review",
 			cfg: Config{
-				TaskType: "pr_review",
+				SessionType: "pr_review",
 				CLI:      "claude-code",
 				APIKey:   "key",
 			},
@@ -109,7 +109,7 @@ func TestValidateConfig(t *testing.T) {
 		{
 			name: "valid custom with prompt",
 			cfg: Config{
-				TaskType: "custom",
+				SessionType: "custom",
 				CLI:      "claude-code",
 				APIKey:   "key",
 				Prompt:   "do something",
@@ -117,19 +117,19 @@ func TestValidateConfig(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "invalid task type",
+			name: "invalid session type",
 			cfg: Config{
-				TaskType: "invalid",
+				SessionType: "invalid",
 				CLI:      "claude-code",
 				APIKey:   "key",
 			},
 			wantErr: true,
-			errMsg:  "invalid task_type",
+			errMsg:  "invalid session_type",
 		},
 		{
 			name: "invalid CLI",
 			cfg: Config{
-				TaskType: "pr_review",
+				SessionType: "pr_review",
 				CLI:      "unknown",
 				APIKey:   "key",
 			},
@@ -139,7 +139,7 @@ func TestValidateConfig(t *testing.T) {
 		{
 			name: "missing API key claude",
 			cfg: Config{
-				TaskType: "pr_review",
+				SessionType: "pr_review",
 				CLI:      "claude-code",
 			},
 			wantErr: true,
@@ -148,7 +148,7 @@ func TestValidateConfig(t *testing.T) {
 		{
 			name: "missing API key codex",
 			cfg: Config{
-				TaskType: "pr_review",
+				SessionType: "pr_review",
 				CLI:      "codex",
 			},
 			wantErr: true,
@@ -157,7 +157,7 @@ func TestValidateConfig(t *testing.T) {
 		{
 			name: "custom without prompt",
 			cfg: Config{
-				TaskType: "custom",
+				SessionType: "custom",
 				CLI:      "claude-code",
 				APIKey:   "key",
 			},
@@ -167,7 +167,7 @@ func TestValidateConfig(t *testing.T) {
 		{
 			name: "valid knowledge_update",
 			cfg: Config{
-				TaskType: "knowledge_update",
+				SessionType: "knowledge_update",
 				CLI:      "claude-code",
 				APIKey:   "key",
 			},
@@ -176,7 +176,7 @@ func TestValidateConfig(t *testing.T) {
 		{
 			name: "valid code_review",
 			cfg: Config{
-				TaskType: "code_review",
+				SessionType: "code_review",
 				CLI:      "codex",
 				APIKey:   "key",
 			},

@@ -13,7 +13,7 @@ type AnalysisResult struct {
 	Description string
 }
 
-// Analyzer generates PR metadata from a task prompt.
+// Analyzer generates PR metadata from a session prompt.
 type Analyzer struct{}
 
 // NewAnalyzer creates a prompt analyzer.

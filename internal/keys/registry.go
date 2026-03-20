@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -93,39 +94,65 @@ func verifyGitHub(ctx context.Context, token string) *VerifyResult {
 }
 
 func verifySentry(ctx context.Context, token string) *VerifyResult {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://sentry.io/api/0/organizations/", nil)
-	if err != nil {
-		return &VerifyResult{Valid: false, Error: "failed to create request"}
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return &VerifyResult{Valid: false, Error: "connection failed"}
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return &VerifyResult{Valid: false, Error: "invalid or expired token"}
-	}
-	if resp.StatusCode != http.StatusOK {
-		return &VerifyResult{Valid: false, Error: fmt.Sprintf("unexpected status %d", resp.StatusCode)}
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-	if err != nil {
-		return &VerifyResult{Valid: true}
-	}
-
-	var orgs []struct {
+	type sentryOrg struct {
 		Slug string `json:"slug"`
 		Name string `json:"name"`
 	}
-	_ = json.Unmarshal(body, &orgs)
+
+	// Sentry has regional endpoints — US (default) and EU.
+	// A user's orgs may be spread across regions.
+	regions := []string{
+		"https://sentry.io/api/0/organizations/",
+		"https://de.sentry.io/api/0/organizations/",
+	}
+
+	var allOrgs []sentryOrg
+	validated := false
+
+	for _, regionURL := range regions {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, regionURL, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			continue
+		}
+
+		if !validated {
+			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+				resp.Body.Close()
+				return &VerifyResult{Valid: false, Error: "invalid or expired token"}
+			}
+			validated = true
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+			resp.Body.Close()
+			if err == nil {
+				var orgs []sentryOrg
+				_ = json.Unmarshal(body, &orgs)
+				allOrgs = append(allOrgs, orgs...)
+			}
+		} else {
+			resp.Body.Close()
+		}
+	}
+
+	if !validated {
+		return &VerifyResult{Valid: false, Error: "connection failed"}
+	}
 
 	scopes := ""
-	if len(orgs) > 0 {
-		scopes = fmt.Sprintf("%d organization(s)", len(orgs))
+	if len(allOrgs) > 0 {
+		names := make([]string, len(allOrgs))
+		for i, o := range allOrgs {
+			names[i] = o.Slug
+		}
+		scopes = fmt.Sprintf("%d organization(s): %s", len(allOrgs), strings.Join(names, ", "))
 	}
 
 	return &VerifyResult{

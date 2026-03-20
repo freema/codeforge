@@ -18,7 +18,7 @@ const (
 
 // Config holds all configuration for a CI Action run.
 type Config struct {
-	TaskType     string // pr_review, code_review, knowledge_update, custom
+	SessionType     string // pr_review, code_review, knowledge_update, custom
 	Prompt       string // user prompt (or auto-detect from PR)
 	CLI          string // claude-code, codex
 	Model        string // AI model override
@@ -60,7 +60,7 @@ func run() int {
 // In GitLab CI, they come from CI/CD variables.
 func parseConfig() Config {
 	cfg := Config{
-		TaskType:      envDefault("INPUT_TASK_TYPE", "pr_review"),
+		SessionType:      envDefault("INPUT_SESSION_TYPE", envDefault("INPUT_TASK_TYPE", "pr_review")),
 		Prompt:        envDefault("INPUT_PROMPT", ""),
 		CLI:           envDefault("INPUT_CLI", envDefault("CODEFORGE_CLI", cliClaudeCode)),
 		Model:         envDefault("INPUT_MODEL", ""),
@@ -99,8 +99,8 @@ func validateConfig(cfg Config) error {
 		"knowledge_update": true,
 		"custom":           true,
 	}
-	if !validTypes[cfg.TaskType] {
-		return fmt.Errorf("invalid task_type: %q (valid: pr_review, code_review, knowledge_update, custom)", cfg.TaskType)
+	if !validTypes[cfg.SessionType] {
+		return fmt.Errorf("invalid session_type: %q (valid: pr_review, code_review, knowledge_update, custom)", cfg.SessionType)
 	}
 
 	if cfg.CLI != cliClaudeCode && cfg.CLI != cliCodex {
@@ -116,8 +116,8 @@ func validateConfig(cfg Config) error {
 		}
 	}
 
-	if cfg.TaskType == "custom" && cfg.Prompt == "" {
-		return fmt.Errorf("prompt is required for task_type=custom")
+	if cfg.SessionType == "custom" && cfg.Prompt == "" {
+		return fmt.Errorf("prompt is required for session_type=custom")
 	}
 
 	return nil

@@ -37,20 +37,20 @@ Set `CODEFORGE_CONFIG` to specify a YAML config file path, or use environment va
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CODEFORGE_WORKERS__CONCURRENCY` | `3` | Number of worker goroutines |
-| `CODEFORGE_WORKERS__QUEUE_NAME` | `queue:tasks` | Redis queue name |
+| `CODEFORGE_WORKERS__QUEUE_NAME` | `queue:sessions` | Redis queue name |
 
-### Tasks
+### Sessions
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CODEFORGE_TASKS__DEFAULT_TIMEOUT` | `300` | Default task timeout (seconds) |
-| `CODEFORGE_TASKS__MAX_TIMEOUT` | `1800` | Maximum task timeout (seconds) |
-| `CODEFORGE_TASKS__WORKSPACE_BASE` | `/data/workspaces` | Workspace directory |
-| `CODEFORGE_TASKS__WORKSPACE_TTL` | `86400` | Workspace TTL (seconds) |
-| `CODEFORGE_TASKS__STATE_TTL` | `604800` | Task state TTL (seconds) |
-| `CODEFORGE_TASKS__RESULT_TTL` | `604800` | Task result TTL (seconds) |
-| `CODEFORGE_TASKS__DISK_WARNING_THRESHOLD_GB` | `10` | Disk usage warning threshold (GB) |
-| `CODEFORGE_TASKS__DISK_CRITICAL_THRESHOLD_GB` | `20` | Disk usage critical threshold (GB) |
+| `CODEFORGE_SESSIONS__DEFAULT_TIMEOUT` | `300` | Default session timeout (seconds) |
+| `CODEFORGE_SESSIONS__MAX_TIMEOUT` | `1800` | Maximum session timeout (seconds) |
+| `CODEFORGE_SESSIONS__WORKSPACE_BASE` | `/data/workspaces` | Workspace directory |
+| `CODEFORGE_SESSIONS__WORKSPACE_TTL` | `86400` | Workspace TTL (seconds) |
+| `CODEFORGE_SESSIONS__STATE_TTL` | `604800` | Session state TTL (seconds) |
+| `CODEFORGE_SESSIONS__RESULT_TTL` | `604800` | Session result TTL (seconds) |
+| `CODEFORGE_SESSIONS__DISK_WARNING_THRESHOLD_GB` | `10` | Disk usage warning threshold (GB) |
+| `CODEFORGE_SESSIONS__DISK_CRITICAL_THRESHOLD_GB` | `20` | Disk usage critical threshold (GB) |
 
 ### CLI
 
@@ -84,7 +84,7 @@ Set `CODEFORGE_CONFIG` to specify a YAML config file path, or use environment va
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CODEFORGE_RATE_LIMIT__ENABLED` | `true` | Enable rate limiting |
-| `CODEFORGE_RATE_LIMIT__TASKS_PER_MINUTE` | `10` | Rate limit per token |
+| `CODEFORGE_RATE_LIMIT__SESSIONS_PER_MINUTE` | `10` | Rate limit per token |
 
 ### Workflow
 
@@ -142,7 +142,7 @@ encryption:
 workers:
   concurrency: 3
 
-tasks:
+sessions:
   default_timeout: 300
   max_timeout: 1800
   workspace_base: "/data/workspaces"

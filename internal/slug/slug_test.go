@@ -49,7 +49,7 @@ func TestGenerate(t *testing.T) {
 			want:   "task-aabbccdd",
 		},
 		{
-			name:   "short task ID",
+			name:   "short session ID",
 			prompt: "Fix bug",
 			taskID: "abc",
 			want:   "fix-bug-abc",

@@ -20,7 +20,7 @@ import (
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/server/handlers"
 	"github.com/freema/codeforge/internal/server/middleware"
-	"github.com/freema/codeforge/internal/task"
+	"github.com/freema/codeforge/internal/session"
 	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/tool/runner"
 	"github.com/freema/codeforge/internal/tools"
@@ -35,7 +35,7 @@ type Server struct {
 }
 
 // New creates and configures the HTTP server with all routes and middleware.
-func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, taskService *task.Service, prService *task.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, toolRegistry tools.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowRunStore workflow.RunStore, workflowRunCreator handlers.WorkflowRunCreator, workflowRunCanceller handlers.WorkflowRunCanceller, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, webhookReceiverHandler *handlers.WebhookReceiverHandler, version string) *Server {
+func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, sessionService *session.Service, prService *session.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, toolRegistry tools.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowRunStore workflow.RunStore, workflowRunCreator handlers.WorkflowRunCreator, workflowRunCanceller handlers.WorkflowRunCanceller, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, webhookReceiverHandler *handlers.WebhookReceiverHandler, version string) *Server {
 	r := chi.NewRouter()
 
 	// Global middleware (timeout applied per-route-group, not globally, for SSE support)
@@ -47,8 +47,8 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, t
 
 	// Rate limiter
 	var rateLimitMw func(http.Handler) http.Handler
-	if cfg.RateLimit.Enabled && cfg.RateLimit.TasksPerMinute > 0 {
-		rl := middleware.NewRateLimiter(redis, cfg.RateLimit.TasksPerMinute, time.Minute)
+	if cfg.RateLimit.Enabled && cfg.RateLimit.SessionsPerMinute > 0 {
+		rl := middleware.NewRateLimiter(redis, cfg.RateLimit.SessionsPerMinute, time.Minute)
 		rateLimitMw = rl.Middleware()
 	}
 
@@ -73,13 +73,13 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, t
 	}
 
 	// Handlers
-	taskHandler := handlers.NewTaskHandler(taskService, prService, canceller, cliRegistry, keyRegistry, cfg.Git.ProviderDomains)
+	sessionHandler := handlers.NewSessionHandler(sessionService, prService, canceller, cliRegistry, keyRegistry, cfg.Git.ProviderDomains)
 	cliHandler := handlers.NewCLIHandler(cliRegistry, cliConfigs)
-	streamHandler := handlers.NewStreamHandler(taskService, redis)
+	streamHandler := handlers.NewStreamHandler(sessionService, redis)
 	keyHandler := handlers.NewKeyHandler(keyRegistry)
 	mcpHandler := handlers.NewMCPHandler(mcpRegistry)
 	toolHandler := handlers.NewToolHandler(toolRegistry)
-	wsHandler := handlers.NewWorkspaceHandler(workspaceMgr, taskService)
+	wsHandler := handlers.NewWorkspaceHandler(workspaceMgr, sessionService)
 	repoHandler := handlers.NewRepoHandler(keyRegistry)
 	sentryHandler := handlers.NewSentryHandler(keyRegistry)
 	workflowHandler := handlers.NewWorkflowHandler(workflowRegistry, workflowRunStore, workflowRunCreator, workflowRunCanceller, canceller.Cancel, redis)
@@ -92,29 +92,29 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, t
 		r.Get("/auth/verify", healthHandler.AuthVerify)
 
 		// SSE stream endpoints — no timeout middleware (long-lived connection)
-		r.Get("/tasks/{taskID}/stream", streamHandler.Stream)
+		r.Get("/sessions/{taskID}/stream", streamHandler.Stream)
 		r.Get("/workflow-runs/{runID}/stream", workflowHandler.StreamRun)
 
 		// All other routes — with timeout
 		r.Group(func(r chi.Router) {
 			r.Use(chimw.Timeout(60 * time.Second))
 
-			r.Route("/tasks", func(r chi.Router) {
-				r.Get("/", taskHandler.List)
+			r.Route("/sessions", func(r chi.Router) {
+				r.Get("/", sessionHandler.List)
 				if rateLimitMw != nil {
-					r.With(rateLimitMw).Post("/", taskHandler.Create)
+					r.With(rateLimitMw).Post("/", sessionHandler.Create)
 				} else {
-					r.Post("/", taskHandler.Create)
+					r.Post("/", sessionHandler.Create)
 				}
-				r.Get("/{taskID}", taskHandler.Get)
-				r.Post("/{taskID}/instruct", taskHandler.Instruct)
-				r.Post("/{taskID}/cancel", taskHandler.Cancel)
-				r.Post("/{taskID}/review", taskHandler.Review)
-				r.Post("/{taskID}/post-review", taskHandler.PostReviewComments)
-				r.Post("/{taskID}/create-pr", taskHandler.CreatePR)
+				r.Get("/{taskID}", sessionHandler.Get)
+				r.Post("/{taskID}/instruct", sessionHandler.Instruct)
+				r.Post("/{taskID}/cancel", sessionHandler.Cancel)
+				r.Post("/{taskID}/review", sessionHandler.Review)
+				r.Post("/{taskID}/post-review", sessionHandler.PostReviewComments)
+				r.Post("/{taskID}/create-pr", sessionHandler.CreatePR)
 			})
 
-			r.Get("/task-types", taskHandler.ListTaskTypes)
+			r.Get("/session-types", sessionHandler.ListSessionTypes)
 
 			r.Route("/cli", func(r chi.Router) {
 				r.Get("/", cliHandler.List)
@@ -148,6 +148,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, t
 			})
 
 			r.Get("/repositories", repoHandler.List)
+			r.Get("/branches", repoHandler.ListBranches)
 
 			r.Route("/sentry", func(r chi.Router) {
 				r.Get("/organizations", sentryHandler.ListOrganizations)

@@ -7,14 +7,8 @@ import (
 	"log/slog"
 
 	"github.com/freema/codeforge/internal/apperror"
-	"github.com/freema/codeforge/internal/prompt"
 	"github.com/freema/codeforge/internal/tools"
 )
-
-// codeReviewPrompt is pre-rendered at init time. The prompt template's
-// {{.OriginalPrompt}} is filled with a workflow template expression so
-// the actual task prompt gets substituted at workflow runtime.
-var codeReviewPrompt = mustRenderCodeReviewPrompt()
 
 // AnalyzeRepoPrompt is the prompt template for analyzing a repository's structure.
 // Exported for reuse by the CI Action's knowledge_update task type.
@@ -74,64 +68,43 @@ Create these files in ` + "`.codeforge/`" + ` directory at the project root:
 - Use markdown with clear headers
 - If the repo already has good docs (README, CONTRIBUTING), reference them rather than duplicating`
 
-func mustRenderCodeReviewPrompt() string {
-	s, err := prompt.Render("code_review", prompt.CodeReviewData{
-		OriginalPrompt: "{{.Params.prompt}}",
-	})
-	if err != nil {
-		panic("code_review prompt: " + err.Error())
-	}
-	return s
-}
-
 // BuiltinWorkflows defines the set of built-in workflow definitions.
 var BuiltinWorkflows = []WorkflowDefinition{
 	{
 		Name:        "sentry-fixer",
-		Description: "Fetches a Sentry issue, creates a task to fix it, then creates a PR",
+		Description: "Analyze and fix unresolved Sentry errors in a project, then create a PR with all fixes",
 		Builtin:     true,
 		Steps: []StepDefinition{
 			{
-				Name: "fetch_issue",
-				Type: StepTypeFetch,
-				Config: mustJSON(FetchConfig{
-					URL:     "{{.Params.sentry_url}}/api/0/issues/{{.Params.issue_id}}/",
-					Method:  "GET",
-					KeyName: "{{.Params.key_name}}",
-					Outputs: map[string]string{
-						"title":    "$.title",
-						"culprit":  "$.culprit",
-						"message":  "$.metadata.value",
-						"platform": "$.platform",
-					},
-				}),
-			},
-			{
-				Name: "fix_bug",
-				Type: StepTypeTask,
-				Config: mustJSON(TaskStepConfig{
+				Name: "fix_bugs",
+				Type: StepTypeSession,
+				Config: mustJSON(SessionStepConfig{
 					RepoURL: "{{.Params.repo_url}}",
-					Prompt: `Fix the following Sentry error in this codebase.
+					Prompt: `You are fixing Sentry errors for a project.
 
-## Error Details
-- **Error:** {{.Steps.fetch_issue.title}}
-- **Location:** {{.Steps.fetch_issue.culprit}}
-- **Message:** {{.Steps.fetch_issue.message}}
-- **Platform:** {{.Steps.fetch_issue.platform}}
+## Sentry Project
+- **Organization:** {{.Params.sentry_org}}
+- **Project:** {{.Params.sentry_project}}
 
 ## Instructions
-1. Use the Sentry MCP tool to fetch more context about this error (stack traces, breadcrumbs, latest events)
-2. Find the code referenced in the culprit path
-3. Analyze what causes this error — read the relevant code and understand the context
-4. Determine if this is fixable in code (some errors are infrastructure/network issues that cannot be fixed in code)
-5. If fixable: implement a proper fix with error handling
-6. If NOT fixable in code (e.g., external service timeouts, network errors): do NOT create any files or changes — just explain why in your output
+1. Use the Sentry MCP tools to list unresolved issues for this project:
+   - Call list_sentry_issues with organization "{{.Params.sentry_org}}" and project "{{.Params.sentry_project}}" to get all unresolved errors
+2. Prioritize issues by occurrence count and severity (fatal > error > warning)
+3. For each promising issue:
+   a. Call get_sentry_issue to get full details (title, culprit, message)
+   b. Call get_sentry_issue_events to get the latest event with stack trace, breadcrumbs, and context
+   c. Analyze the stack trace — find the relevant code in this repository
+   d. Determine if it's fixable in code (skip infrastructure/network/external service errors)
+   e. If fixable: implement the fix and create a separate git commit with message "fix(sentry): <short description>"
+4. After processing issues, summarize what you fixed and what you skipped (and why)
 
 ## Rules
 - Do NOT create placeholder or stub fixes
-- Do NOT add generic try/catch wrappers that hide the error
-- If the error is from an external dependency or infrastructure, say so and make NO changes
-- Only modify files that are directly related to the fix`,
+- Do NOT add generic try/catch wrappers that hide errors
+- If an error is from an external dependency or infrastructure, skip it and explain why
+- Only modify files directly related to each fix
+- Each fix should be a SEPARATE commit so the PR is easy to review
+- If no issues are fixable in code, make NO changes and explain why`,
 					ProviderKey: "{{.Params.provider_key}}",
 					ToolKeyRef:  "{{.Params.key_name}}",
 					Tools: mustJSON([]tools.TaskTool{
@@ -144,15 +117,15 @@ var BuiltinWorkflows = []WorkflowDefinition{
 				Type: StepTypeAction,
 				Config: mustJSON(ActionConfig{
 					Kind:        ActionCreatePR,
-					TaskStepRef: "fix_bug",
-					Title:       "fix(sentry): {{.Steps.fetch_issue.culprit}}",
-					Description: "## Sentry Error Fix\n\n**Error:** {{.Steps.fetch_issue.title}}\n**Location:** {{.Steps.fetch_issue.culprit}}\n**Message:** {{.Steps.fetch_issue.message}}\n\n---\n*Automated fix by CodeForge sentry-fixer workflow.*",
+					TaskStepRef: "fix_bugs",
+					Title:       "fix(sentry): automated error fixes for {{.Params.sentry_project}}",
+					Description: "## Sentry Error Fixes\n\nAutomated fixes for unresolved errors in **{{.Params.sentry_org}}/{{.Params.sentry_project}}**.\n\nSee individual commits for details on each fix.\n\n---\n*Automated by CodeForge sentry-fixer workflow.*",
 				}),
 			},
 		},
 		Parameters: []ParameterDefinition{
-			{Name: "sentry_url", Required: true},
-			{Name: "issue_id", Required: true},
+			{Name: "sentry_org", Required: true},
+			{Name: "sentry_project", Required: true},
 			{Name: "repo_url", Required: true},
 			{Name: "key_name", Required: true},
 			{Name: "provider_key", Required: false},
@@ -160,7 +133,7 @@ var BuiltinWorkflows = []WorkflowDefinition{
 	},
 	{
 		Name:        "github-issue-fixer",
-		Description: "Fetches a GitHub issue, creates a task to fix it, then creates a PR",
+		Description: "Fetches a GitHub issue, creates a session to fix it, then creates a PR",
 		Builtin:     true,
 		Steps: []StepDefinition{
 			{
@@ -183,8 +156,8 @@ var BuiltinWorkflows = []WorkflowDefinition{
 			},
 			{
 				Name: "fix_issue",
-				Type: StepTypeTask,
-				Config: mustJSON(TaskStepConfig{
+				Type: StepTypeSession,
+				Config: mustJSON(SessionStepConfig{
 					RepoURL:     "{{.Params.repo_url}}",
 					Prompt:      "Fix the following GitHub issue (#{{.Steps.fetch_issue.number}}):\n\nTitle: {{.Steps.fetch_issue.title}}\n\n{{.Steps.fetch_issue.body}}\n\nAnalyze the codebase, understand the issue, and implement a fix.",
 					ProviderKey: "{{.Params.provider_key}}",
@@ -210,7 +183,7 @@ var BuiltinWorkflows = []WorkflowDefinition{
 	},
 	{
 		Name:        "gitlab-issue-fixer",
-		Description: "Fetches a GitLab issue, creates a task to fix it, then creates a merge request",
+		Description: "Fetches a GitLab issue, creates a session to fix it, then creates a merge request",
 		Builtin:     true,
 		Steps: []StepDefinition{
 			{
@@ -230,8 +203,8 @@ var BuiltinWorkflows = []WorkflowDefinition{
 			},
 			{
 				Name: "fix_issue",
-				Type: StepTypeTask,
-				Config: mustJSON(TaskStepConfig{
+				Type: StepTypeSession,
+				Config: mustJSON(SessionStepConfig{
 					RepoURL:     "{{.Params.repo_url}}",
 					Prompt:      "Fix the following GitLab issue (!{{.Steps.fetch_issue.iid}}):\n\nTitle: {{.Steps.fetch_issue.title}}\n\n{{.Steps.fetch_issue.description}}\n\nAnalyze the codebase, understand the issue, and implement a fix.",
 					ProviderKey: "{{.Params.provider_key}}",
@@ -256,68 +229,28 @@ var BuiltinWorkflows = []WorkflowDefinition{
 		},
 	},
 	{
-		Name:        "code-review",
-		Description: "Executes a task then runs a code review on the changes in the same workspace",
-		Builtin:     true,
-		Steps: []StepDefinition{
-			{
-				Name: "execute_task",
-				Type: StepTypeTask,
-				Config: mustJSON(TaskStepConfig{
-					RepoURL:      "{{.Params.repo_url}}",
-					Prompt:       "{{.Params.prompt}}",
-					ProviderKey:  "{{.Params.provider_key}}",
-					AccessToken:  "{{.Params.access_token}}",
-					CLI:          "{{.Params.cli}}",
-					SourceBranch: "{{.Params.source_branch}}",
-				}),
-			},
-			{
-				Name: "code_review",
-				Type: StepTypeTask,
-				Config: mustJSON(TaskStepConfig{
-					RepoURL:          "{{.Params.repo_url}}",
-					Prompt:           codeReviewPrompt,
-					ProviderKey:      "{{.Params.provider_key}}",
-					AccessToken:      "{{.Params.access_token}}",
-					CLI:              "{{.Params.review_cli}}",
-					WorkspaceTaskRef: "execute_task",
-				}),
-			},
-		},
-		Parameters: []ParameterDefinition{
-			{Name: "repo_url", Required: true},
-			{Name: "prompt", Required: true},
-			{Name: "provider_key", Required: false},
-			{Name: "access_token", Required: false},
-			{Name: "source_branch", Required: false},
-			{Name: "cli", Required: false, Default: "claude-code"},
-			{Name: "review_cli", Required: false, Default: "codex"},
-		},
-	},
-	{
 		Name:        "knowledge-update",
 		Description: "Analyze a repository and create/update .codeforge/ knowledge documentation via PR",
 		Builtin:     true,
 		Steps: []StepDefinition{
 			{
 				Name: "analyze_repo",
-				Type: StepTypeTask,
-				Config: mustJSON(TaskStepConfig{
+				Type: StepTypeSession,
+				Config: mustJSON(SessionStepConfig{
 					RepoURL:     "{{.Params.repo_url}}",
 					Prompt:      AnalyzeRepoPrompt,
-					TaskType:    "plan",
+					SessionType:    "plan",
 					ProviderKey: "{{.Params.provider_key}}",
 					CLI:         "{{.Params.cli}}",
 				}),
 			},
 			{
 				Name: "update_knowledge",
-				Type: StepTypeTask,
-				Config: mustJSON(TaskStepConfig{
+				Type: StepTypeSession,
+				Config: mustJSON(SessionStepConfig{
 					RepoURL:          "{{.Params.repo_url}}",
 					Prompt:           UpdateKnowledgePrompt,
-					TaskType:         "code",
+					SessionType:         "code",
 					ProviderKey:      "{{.Params.provider_key}}",
 					CLI:              "{{.Params.cli}}",
 					WorkspaceTaskRef: "analyze_repo",
@@ -367,13 +300,18 @@ func SeedBuiltins(ctx context.Context, reg Registry) error {
 		}
 	}
 
-	// Seed current builtins
+	// Seed current builtins (upsert: create new, update existing)
 	for _, def := range BuiltinWorkflows {
 		err := reg.Create(ctx, def)
 		if err != nil {
 			var appErr *apperror.AppError
 			if errors.As(err, &appErr) && errors.Is(appErr, apperror.ErrConflict) {
-				slog.Debug("built-in workflow already exists, skipping", "name", def.Name)
+				// Already exists — update it so code changes propagate
+				if updateErr := reg.UpdateBuiltin(ctx, def); updateErr != nil {
+					slog.Warn("failed to update built-in workflow", "name", def.Name, "error", updateErr)
+				} else {
+					slog.Info("updated built-in workflow", "name", def.Name)
+				}
 				continue
 			}
 			return err

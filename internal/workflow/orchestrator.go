@@ -24,7 +24,7 @@ type Orchestrator struct {
 	registry       Registry
 	runStore       RunStore
 	fetchExecutor  *FetchExecutor
-	taskExecutor   *TaskExecutor
+	sessionExecutor   *SessionExecutor
 	actionExecutor *ActionExecutor
 	streamer       *Streamer
 	redis          *redisclient.Client
@@ -40,7 +40,7 @@ func NewOrchestrator(
 	registry Registry,
 	runStore RunStore,
 	fetchExecutor *FetchExecutor,
-	taskExecutor *TaskExecutor,
+	sessionExecutor *SessionExecutor,
 	actionExecutor *ActionExecutor,
 	streamer *Streamer,
 	redis *redisclient.Client,
@@ -50,7 +50,7 @@ func NewOrchestrator(
 		registry:       registry,
 		runStore:       runStore,
 		fetchExecutor:  fetchExecutor,
-		taskExecutor:   taskExecutor,
+		sessionExecutor:   sessionExecutor,
 		actionExecutor: actionExecutor,
 		streamer:       streamer,
 		redis:          redis,
@@ -284,8 +284,8 @@ func (o *Orchestrator) executeStep(ctx context.Context, stepDef StepDefinition, 
 	switch stepDef.Type {
 	case StepTypeFetch:
 		return o.fetchExecutor.Execute(ctx, stepDef, tctx)
-	case StepTypeTask:
-		return o.taskExecutor.Execute(ctx, stepDef, tctx)
+	case StepTypeSession:
+		return o.sessionExecutor.Execute(ctx, stepDef, tctx)
 	case StepTypeAction:
 		return o.actionExecutor.Execute(ctx, stepDef, tctx)
 	default:

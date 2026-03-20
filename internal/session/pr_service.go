@@ -1,4 +1,4 @@
-package task
+package session
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/freema/codeforge/internal/tool/runner"
 )
 
-// WorkspacePathResolver resolves the filesystem path for a task workspace.
+// WorkspacePathResolver resolves the filesystem path for a session workspace.
 type WorkspacePathResolver interface {
 	WorkspacePath(ctx context.Context, taskID string) string
 }
@@ -32,7 +32,7 @@ type TokenResolver interface {
 
 // PRService orchestrates the PR/MR creation workflow.
 type PRService struct {
-	taskService       *Service
+	sessionService       *Service
 	analyzer          *runner.Analyzer
 	workspaceResolver WorkspacePathResolver
 	tokenResolver     TokenResolver
@@ -40,9 +40,9 @@ type PRService struct {
 }
 
 // NewPRService creates a PR service.
-func NewPRService(taskService *Service, analyzer *runner.Analyzer, workspaceResolver WorkspacePathResolver, tokenResolver TokenResolver, cfg PRServiceConfig) *PRService {
+func NewPRService(sessionService *Service, analyzer *runner.Analyzer, workspaceResolver WorkspacePathResolver, tokenResolver TokenResolver, cfg PRServiceConfig) *PRService {
 	return &PRService{
-		taskService:       taskService,
+		sessionService:       sessionService,
 		analyzer:          analyzer,
 		workspaceResolver: workspaceResolver,
 		tokenResolver:     tokenResolver,
@@ -50,7 +50,7 @@ func NewPRService(taskService *Service, analyzer *runner.Analyzer, workspaceReso
 	}
 }
 
-// CreatePRRequest is the request body for POST /tasks/:id/create-pr.
+// CreatePRRequest is the request body for POST /sessions/:id/create-pr.
 type CreatePRRequest struct {
 	Title        string `json:"title,omitempty"`
 	Description  string `json:"description,omitempty"`
@@ -67,7 +67,7 @@ type CreatePRResponse struct {
 // CreatePR orchestrates the full PR creation: analyze → branch → commit → push → create PR.
 func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRRequest) (*CreatePRResponse, error) {
 	// Load task
-	t, err := s.taskService.Get(ctx, taskID)
+	t, err := s.sessionService.Get(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 	}
 
 	// Transition to CREATING_PR
-	if err := s.taskService.UpdateStatus(ctx, taskID, StatusCreatingPR); err != nil {
+	if err := s.sessionService.UpdateStatus(ctx, taskID, StatusCreatingPR); err != nil {
 		return nil, fmt.Errorf("transitioning to creating_pr: %w", err)
 	}
 
@@ -182,20 +182,20 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 		return nil, fmt.Errorf("creating PR: %w", err)
 	}
 
-	// Update task state with PR info
-	stateKey := s.taskService.redis.Key("task", taskID, "state")
-	s.taskService.redis.Unwrap().HSet(ctx, stateKey, map[string]interface{}{
+	// Update session state with PR info
+	stateKey := s.sessionService.redis.Key("session", taskID, "state")
+	s.sessionService.redis.Unwrap().HSet(ctx, stateKey, map[string]interface{}{
 		"branch":    branchName,
 		"pr_url":    prResult.URL,
 		"pr_number": prResult.Number,
 	})
 
-	s.taskService.persistToSQLite(func() error {
-		return s.taskService.sqlite.UpdatePR(ctx, taskID, branchName, prResult.URL, prResult.Number)
+	s.sessionService.persistToSQLite(func() error {
+		return s.sessionService.sqlite.UpdatePR(ctx, taskID, branchName, prResult.URL, prResult.Number)
 	})
 
 	// Transition to PR_CREATED
-	if err := s.taskService.UpdateStatus(ctx, taskID, StatusPRCreated); err != nil {
+	if err := s.sessionService.UpdateStatus(ctx, taskID, StatusPRCreated); err != nil {
 		slog.Error("failed to transition to pr_created", "task_id", taskID, "error", err)
 	}
 
@@ -210,6 +210,6 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 
 func (s *PRService) failPR(ctx context.Context, taskID string, err error) {
 	slog.Error("PR creation failed", "task_id", taskID, "error", err)
-	_ = s.taskService.SetError(ctx, taskID, fmt.Sprintf("PR creation failed: %v", err))
-	_ = s.taskService.UpdateStatus(ctx, taskID, StatusFailed)
+	_ = s.sessionService.SetError(ctx, taskID, fmt.Sprintf("PR creation failed: %v", err))
+	_ = s.sessionService.UpdateStatus(ctx, taskID, StatusFailed)
 }

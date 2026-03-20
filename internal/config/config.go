@@ -16,7 +16,7 @@ type Config struct {
 	Redis      RedisConfig      `koanf:"redis"`
 	SQLite     SQLiteConfig     `koanf:"sqlite"`
 	Workers    WorkersConfig    `koanf:"workers"`
-	Tasks      TasksConfig      `koanf:"tasks"`
+	Sessions   SessionsConfig   `koanf:"sessions"`
 	CLI        CLIConfig        `koanf:"cli"`
 	Git        GitConfig        `koanf:"git"`
 	Encryption EncryptionConfig `koanf:"encryption"`
@@ -47,7 +47,7 @@ type WorkersConfig struct {
 	QueueName   string `koanf:"queue_name"`
 }
 
-type TasksConfig struct {
+type SessionsConfig struct {
 	DefaultTimeout          int    `koanf:"default_timeout"`
 	MaxTimeout              int    `koanf:"max_timeout"`
 	WorkspaceTTL            int    `koanf:"workspace_ttl"`
@@ -111,7 +111,7 @@ type WebhookSecretsConfig struct {
 
 type RateLimitConfig struct {
 	Enabled        bool `koanf:"enabled"`
-	TasksPerMinute int  `koanf:"tasks_per_minute"`
+	SessionsPerMinute int  `koanf:"sessions_per_minute"`
 }
 
 type TracingConfig struct {
@@ -140,9 +140,9 @@ func Defaults() *Config {
 		},
 		Workers: WorkersConfig{
 			Concurrency: 3,
-			QueueName:   "queue:tasks",
+			QueueName:   "queue:sessions",
 		},
-		Tasks: TasksConfig{
+		Sessions: SessionsConfig{
 			DefaultTimeout:          300,
 			MaxTimeout:              1800,
 			WorkspaceTTL:            86400,
@@ -175,7 +175,7 @@ func Defaults() *Config {
 		},
 		RateLimit: RateLimitConfig{
 			Enabled:        true,
-			TasksPerMinute: 10,
+			SessionsPerMinute: 10,
 		},
 		Workflow: WorkflowConfig{
 			ContextTTLHours:   24,
