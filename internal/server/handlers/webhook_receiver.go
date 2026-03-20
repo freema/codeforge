@@ -87,7 +87,7 @@ type gitlabNoteEvent struct {
 	ObjectKind       string `json:"object_kind"`
 	ObjectAttributes struct {
 		Note         string `json:"note"`
-		NoteableType string `json:"noteable_type"`
+		NoteableType string `json:"noteable_type"` //nolint:misspell // GitLab API uses "noteable_type"
 	} `json:"object_attributes"`
 	MergeRequest *struct {
 		IID          int    `json:"iid"`

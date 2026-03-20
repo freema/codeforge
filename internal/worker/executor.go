@@ -31,7 +31,10 @@ import (
 	"github.com/freema/codeforge/internal/workspace"
 )
 
-const defaultMaxContextChars = 50000
+const (
+	defaultMaxContextChars = 50000
+	defaultCLI             = "claude-code"
+)
 
 // ExecutorConfig holds executor configuration.
 type ExecutorConfig struct {
@@ -356,7 +359,7 @@ func (e *Executor) completeTask(ctx context.Context, t *session.Session, result 
 	if t.Config != nil && t.Config.AutoReviewAfterFix && t.Iteration > 1 {
 		log.Info("auto-review: starting review after fix iteration", "iteration", t.Iteration)
 		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "auto_review_starting", nil), log, "auto_review_starting", t.ID)
-		cli := "claude-code"
+		cli := defaultCLI
 		if t.Config.CLI != "" {
 			cli = t.Config.CLI
 		}
@@ -528,14 +531,14 @@ func (e *Executor) runStep(ctx context.Context, t *session.Session, workDir stri
 	// resolved "" to the default CLI).
 	resolvedCLI := cliName
 	if resolvedCLI == "" {
-		resolvedCLI = "claude-code"
+		resolvedCLI = defaultCLI
 	}
 	span.SetAttributes(attribute.String("cli.name", resolvedCLI))
 
 	// Select stream normalizer for the resolved CLI
 	var normalizer runner.StreamNormalizer
 	switch resolvedCLI {
-	case "claude-code":
+	case defaultCLI:
 		normalizer = runner.NewClaudeNormalizer()
 	case "codex":
 		normalizer = runner.NewCodexNormalizer()
@@ -778,7 +781,7 @@ func (e *Executor) handlePRReviewCompletion(ctx context.Context, t *session.Sess
 	}
 
 	// Resolve CLI + model for reviewed_by
-	cli := "claude-code"
+	cli := defaultCLI
 	model := e.cfg.DefaultModels[cli]
 	if t.Config != nil {
 		if t.Config.CLI != "" {
@@ -898,7 +901,7 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 	}
 
 	// Resolve CLI: review param → task config → default
-	cli := "claude-code"
+	cli := defaultCLI
 	if t.ReviewCLI != "" {
 		cli = t.ReviewCLI
 	} else if t.Config != nil && t.Config.CLI != "" {
@@ -936,7 +939,7 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 	// Select stream normalizer for CLI output
 	var normalizer runner.StreamNormalizer
 	switch cli {
-	case "claude-code":
+	case defaultCLI:
 		normalizer = runner.NewClaudeNormalizer()
 	case "codex":
 		normalizer = runner.NewCodexNormalizer()
