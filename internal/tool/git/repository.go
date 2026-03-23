@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	neturl "net/url"
+	"strings"
 	"time"
 )
 
@@ -22,7 +23,8 @@ type Repository struct {
 }
 
 // ListRepos lists repositories from a provider using the given token.
-func ListRepos(ctx context.Context, provider Provider, token string, page, perPage int) ([]Repository, error) {
+// baseURL is optional — when set, it overrides the default API URL (for self-hosted instances).
+func ListRepos(ctx context.Context, provider Provider, token, baseURL string, page, perPage int) ([]Repository, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -32,16 +34,20 @@ func ListRepos(ctx context.Context, provider Provider, token string, page, perPa
 
 	switch provider {
 	case ProviderGitHub:
-		return listGitHubRepos(ctx, token, page, perPage)
+		return listGitHubRepos(ctx, token, baseURL, page, perPage)
 	case ProviderGitLab:
-		return listGitLabRepos(ctx, token, page, perPage)
+		return listGitLabRepos(ctx, token, baseURL, page, perPage)
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", provider)
 	}
 }
 
-func listGitHubRepos(ctx context.Context, token string, page, perPage int) ([]Repository, error) {
-	url := fmt.Sprintf("https://api.github.com/user/repos?per_page=%d&page=%d&sort=updated&type=all", perPage, page)
+func listGitHubRepos(ctx context.Context, token, baseURL string, page, perPage int) ([]Repository, error) {
+	apiBase := "https://api.github.com"
+	if baseURL != "" {
+		apiBase = strings.TrimRight(baseURL, "/") + "/api/v3"
+	}
+	url := fmt.Sprintf("%s/user/repos?per_page=%d&page=%d&sort=updated&type=all", apiBase, perPage, page)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -107,19 +113,23 @@ type Branch struct {
 }
 
 // ListBranches lists branches for a repository from a provider using the given token.
-func ListBranches(ctx context.Context, provider Provider, token string, repoFullName string) ([]Branch, error) {
+func ListBranches(ctx context.Context, provider Provider, token, baseURL string, repoFullName string) ([]Branch, error) {
 	switch provider {
 	case ProviderGitHub:
-		return listGitHubBranches(ctx, token, repoFullName)
+		return listGitHubBranches(ctx, token, baseURL, repoFullName)
 	case ProviderGitLab:
-		return listGitLabBranches(ctx, token, repoFullName)
+		return listGitLabBranches(ctx, token, baseURL, repoFullName)
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", provider)
 	}
 }
 
-func listGitHubBranches(ctx context.Context, token string, repoFullName string) ([]Branch, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/branches?per_page=100", repoFullName)
+func listGitHubBranches(ctx context.Context, token, baseURL string, repoFullName string) ([]Branch, error) {
+	apiBase := "https://api.github.com"
+	if baseURL != "" {
+		apiBase = strings.TrimRight(baseURL, "/") + "/api/v3"
+	}
+	url := fmt.Sprintf("%s/repos/%s/branches?per_page=100", apiBase, repoFullName)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -159,10 +169,14 @@ func listGitHubBranches(ctx context.Context, token string, repoFullName string) 
 	return branches, nil
 }
 
-func listGitLabBranches(ctx context.Context, token string, repoFullName string) ([]Branch, error) {
+func listGitLabBranches(ctx context.Context, token, baseURL string, repoFullName string) ([]Branch, error) {
+	apiBase := "https://gitlab.com"
+	if baseURL != "" {
+		apiBase = strings.TrimRight(baseURL, "/")
+	}
 	// GitLab uses URL-encoded project path (e.g. "user/repo" -> "user%2Frepo")
 	encoded := neturl.PathEscape(repoFullName)
-	url := fmt.Sprintf("https://gitlab.com/api/v4/projects/%s/repository/branches?per_page=100", encoded)
+	url := fmt.Sprintf("%s/api/v4/projects/%s/repository/branches?per_page=100", apiBase, encoded)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -201,8 +215,12 @@ func listGitLabBranches(ctx context.Context, token string, repoFullName string) 
 	return branches, nil
 }
 
-func listGitLabRepos(ctx context.Context, token string, page, perPage int) ([]Repository, error) {
-	url := fmt.Sprintf("https://gitlab.com/api/v4/projects?membership=true&per_page=%d&page=%d&order_by=last_activity_at", perPage, page)
+func listGitLabRepos(ctx context.Context, token, baseURL string, page, perPage int) ([]Repository, error) {
+	apiBase := "https://gitlab.com"
+	if baseURL != "" {
+		apiBase = strings.TrimRight(baseURL, "/")
+	}
+	url := fmt.Sprintf("%s/api/v4/projects?membership=true&per_page=%d&page=%d&order_by=last_activity_at", apiBase, perPage, page)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

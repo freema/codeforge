@@ -142,6 +142,11 @@ func (e *Executor) Execute(ctx context.Context, t *session.Session) {
 	// Phase 3: run CLI
 	result, err := e.runStep(taskCtx, t, workDir, mcpConfigPath, log)
 	if err != nil {
+		// Timeout: complete gracefully with partial result instead of failing
+		if taskCtx.Err() == context.DeadlineExceeded {
+			e.handleTimeout(ctx, t, result, workDir, timeout, startTime, log)
+			return
+		}
 		e.handleRunError(ctx, taskCtx, t, err, timeout, startTime, log)
 		return
 	}
@@ -276,15 +281,35 @@ func (e *Executor) setupMCP(ctx context.Context, t *session.Session, workDir str
 	return ""
 }
 
+// handleTimeout gracefully completes a timed-out session instead of failing it.
+// The workspace is preserved so the user can create a PR or send a follow-up instruction.
+func (e *Executor) handleTimeout(ctx context.Context, t *session.Session, result *runner.RunResult, workDir string, timeout int, startTime time.Time, log *slog.Logger) {
+	finalCtx := context.WithoutCancel(ctx)
+	log.Warn("session timed out, completing gracefully", "timeout_seconds", timeout)
+
+	e.emitOrLog(e.streamer.EmitSystem(finalCtx, t.ID, "task_timeout", map[string]interface{}{
+		"timeout_seconds": timeout,
+		"graceful":        true,
+	}), log, "task_timeout", t.ID)
+
+	// Build a partial result from whatever CLI produced
+	if result == nil {
+		result = &runner.RunResult{
+			Output:   fmt.Sprintf("[Session timed out after %ds. Work in progress was preserved. You can continue with a follow-up instruction or create a PR from current changes.]", timeout),
+			Duration: time.Since(startTime),
+		}
+	} else if result.Output == "" {
+		result.Output = fmt.Sprintf("[Session timed out after %ds with no output captured.]", timeout)
+	} else {
+		result.Output += fmt.Sprintf("\n\n[Session timed out after %ds. Partial output above.]", timeout)
+	}
+
+	// Complete normally — this allows the user to instruct or create PR
+	e.completeTask(finalCtx, t, result, workDir, startTime, log)
+}
+
 // handleRunError classifies the CLI run error and calls failTask with the appropriate message.
 func (e *Executor) handleRunError(ctx, taskCtx context.Context, t *session.Session, err error, timeout int, startTime time.Time, log *slog.Logger) {
-	if taskCtx.Err() == context.DeadlineExceeded {
-		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "task_timeout", map[string]interface{}{
-			"timeout_seconds": timeout,
-		}), log, "task_timeout", t.ID)
-		e.failTask(ctx, t, fmt.Sprintf("task timed out after %ds", timeout), startTime, log)
-		return
-	}
 	if ctx.Err() == context.Canceled {
 		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "task_canceled", nil), log, "task_canceled", t.ID)
 		e.failTask(context.Background(), t, "canceled by user", startTime, log)
@@ -564,6 +589,17 @@ func (e *Executor) runStep(ctx context.Context, t *session.Session, workDir stri
 		apiKey = t.Config.AIApiKey
 		maxTurns = t.Config.MaxTurns
 		maxBudget = t.Config.MaxBudgetUSD
+	}
+
+	// If no per-session AI key, try to resolve from key registry.
+	if apiKey == "" && e.keyResolver != nil {
+		aiProvider := "anthropic" // default for claude-code
+		if resolvedCLI == "codex" {
+			aiProvider = "openai"
+		}
+		if resolved, err := e.keyResolver.ResolveAIKey(ctx, aiProvider); err == nil {
+			apiKey = resolved
+		}
 	}
 
 	result, err := cliRunner.Run(ctx, runner.RunOptions{
@@ -948,6 +984,17 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 	apiKey := ""
 	if t.Config != nil {
 		apiKey = t.Config.AIApiKey
+	}
+
+	// If no per-session AI key, try to resolve from key registry.
+	if apiKey == "" && e.keyResolver != nil {
+		aiProvider := "anthropic" // default for claude-code
+		if cli == "codex" {
+			aiProvider = "openai"
+		}
+		if resolved, resolveErr := e.keyResolver.ResolveAIKey(ctx, aiProvider); resolveErr == nil {
+			apiKey = resolved
+		}
 	}
 
 	// Run CLI with streaming

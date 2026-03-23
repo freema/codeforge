@@ -26,6 +26,7 @@ func (h *KeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Provider string `json:"provider" validate:"required"`
 		Token    string `json:"token" validate:"required"`
 		Scope    string `json:"scope,omitempty"`
+		BaseURL  string `json:"base_url,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -45,6 +46,7 @@ func (h *KeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Provider: req.Provider,
 		Token:    req.Token,
 		Scope:    req.Scope,
+		BaseURL:  req.BaseURL,
 	}
 
 	if err := h.registry.Create(r.Context(), key); err != nil {

@@ -123,7 +123,8 @@ func run() error {
 	}
 
 	// Initialize key registry and resolver
-	keyRegistry := keys.NewSQLiteRegistry(sqliteDB.Unwrap(), cryptoSvc)
+	sqliteKeyRegistry := keys.NewSQLiteRegistry(sqliteDB.Unwrap(), cryptoSvc)
+	keyRegistry := keys.NewEnvAwareRegistry(sqliteKeyRegistry)
 	keyResolver := keys.NewResolver(keyRegistry, cfg.Git.ProviderDomains)
 
 	// Initialize MCP registry and installer
@@ -135,7 +136,7 @@ func run() error {
 	if err := tools.SeedBuiltins(context.Background(), toolRegistry); err != nil {
 		return fmt.Errorf("seeding builtin tools: %w", err)
 	}
-	toolResolver := tools.NewResolver(toolRegistry)
+	toolResolver := tools.NewResolver(toolRegistry, keyRegistry)
 
 	// Initialize workspace manager
 	workspaceMgr := workspace.NewManager(
@@ -221,6 +222,7 @@ func run() error {
 	// Initialize workflow subsystem
 	workflowRegistry := workflow.NewSQLiteRegistry(sqliteDB.Unwrap())
 	workflowRunStore := workflow.NewSQLiteRunStore(sqliteDB.Unwrap())
+	workflowConfigStore := workflow.NewSQLiteConfigStore(sqliteDB.Unwrap())
 
 	if err := workflow.SeedBuiltins(context.Background(), workflowRegistry); err != nil {
 		return fmt.Errorf("seeding builtin workflows: %w", err)
@@ -251,7 +253,7 @@ func run() error {
 		webhookReceiverHandler = handlers.NewWebhookReceiverHandler(sessionService, rdb, cfg.CodeReview)
 	}
 
-	srv := server.New(cfg, rdb, sqliteDB, sessionService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowRunStore, orchestrator, orchestrator, cliRegistry, cliConfigs, webhookReceiverHandler, version)
+	srv := server.New(cfg, rdb, sqliteDB, sessionService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowRunStore, orchestrator, orchestrator, workflowConfigStore, cliRegistry, cliConfigs, webhookReceiverHandler, version)
 
 	// Start background services
 	appCtx, appCancel := context.WithCancel(context.Background())

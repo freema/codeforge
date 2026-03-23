@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/freema/codeforge/internal/keys"
@@ -102,11 +103,19 @@ func (e *SessionExecutor) Execute(ctx context.Context, stepDef StepDefinition, t
 		}
 	}
 
+	// Resolve timeout from workflow params (_timeout_seconds is injected by workflow config handler)
+	var timeoutSeconds int
+	if ts, ok := tctx.Params["_timeout_seconds"]; ok && ts != "" {
+		if v, err := strconv.Atoi(ts); err == nil && v > 0 {
+			timeoutSeconds = v
+		}
+	}
+
 	// Build TaskConfig if any overrides are set
 	var taskConfig *session.Config
 	hasConfig := cli != "" || aiModel != "" || workspaceTaskID != "" || sourceBranch != "" ||
 		targetBranch != "" || cfg.PRNumber > 0 || outputMode != "" ||
-		len(taskTools) > 0 || len(mcpServers) > 0
+		len(taskTools) > 0 || len(mcpServers) > 0 || timeoutSeconds > 0
 	if hasConfig {
 		taskConfig = &session.Config{
 			CLI:             cli,
@@ -118,6 +127,7 @@ func (e *SessionExecutor) Execute(ctx context.Context, stepDef StepDefinition, t
 			OutputMode:      outputMode,
 			Tools:           taskTools,
 			MCPServers:      mcpServers,
+			TimeoutSeconds:  timeoutSeconds,
 		}
 	}
 

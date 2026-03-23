@@ -35,7 +35,7 @@ type Server struct {
 }
 
 // New creates and configures the HTTP server with all routes and middleware.
-func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, sessionService *session.Service, prService *session.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, toolRegistry tools.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowRunStore workflow.RunStore, workflowRunCreator handlers.WorkflowRunCreator, workflowRunCanceller handlers.WorkflowRunCanceller, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, webhookReceiverHandler *handlers.WebhookReceiverHandler, version string) *Server {
+func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, sessionService *session.Service, prService *session.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, toolRegistry tools.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowRunStore workflow.RunStore, workflowRunCreator handlers.WorkflowRunCreator, workflowRunCanceller handlers.WorkflowRunCanceller, workflowConfigStore workflow.ConfigStore, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, webhookReceiverHandler *handlers.WebhookReceiverHandler, version string) *Server {
 	r := chi.NewRouter()
 
 	// Global middleware (timeout applied per-route-group, not globally, for SSE support)
@@ -83,6 +83,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 	repoHandler := handlers.NewRepoHandler(keyRegistry)
 	sentryHandler := handlers.NewSentryHandler(keyRegistry)
 	workflowHandler := handlers.NewWorkflowHandler(workflowRegistry, workflowRunStore, workflowRunCreator, workflowRunCanceller, canceller.Cancel, redis)
+	workflowConfigHandler := handlers.NewWorkflowConfigHandler(workflowConfigStore, workflowRunCreator)
 
 	// Protected API routes
 	r.Route("/api/v1", func(r chi.Router) {
@@ -171,6 +172,14 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 				r.Post("/cancel-all", workflowHandler.CancelAllRuns)
 				r.Get("/{runID}", workflowHandler.GetRun)
 				r.Post("/{runID}/cancel", workflowHandler.CancelRun)
+			})
+
+			r.Route("/workflow-configs", func(r chi.Router) {
+				r.Post("/", workflowConfigHandler.Create)
+				r.Get("/", workflowConfigHandler.List)
+				r.Get("/{id}", workflowConfigHandler.Get)
+				r.Delete("/{id}", workflowConfigHandler.Delete)
+				r.Post("/{id}/run", workflowConfigHandler.Run)
 			})
 		})
 	})

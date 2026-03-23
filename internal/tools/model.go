@@ -35,6 +35,7 @@ type ConfigField struct {
 	Type        string `json:"type"`
 	EnvVar      string `json:"env_var"`
 	Sensitive   bool   `json:"sensitive"`
+	ProviderKey string `json:"provider_key,omitempty"` // auto-resolve from this provider in key registry (e.g. "sentry", "github")
 }
 
 // ToolInstance is a resolved tool definition paired with user-supplied config values.

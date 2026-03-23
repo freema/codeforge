@@ -85,12 +85,13 @@ var BuiltinWorkflows = []WorkflowDefinition{
 ## Sentry Project
 - **Organization:** {{.Params.sentry_org}}
 - **Project:** {{.Params.sentry_project}}
+{{if .Params.max_issues}}- **Max issues to fix:** {{.Params.max_issues}}{{end}}
 
 ## Instructions
 1. Use the Sentry MCP tools to list unresolved issues for this project:
    - Call list_sentry_issues with organization "{{.Params.sentry_org}}" and project "{{.Params.sentry_project}}" to get all unresolved errors
 2. Prioritize issues by occurrence count and severity (fatal > error > warning)
-3. For each promising issue:
+3. {{if .Params.max_issues}}Process the top {{.Params.max_issues}} most important issues only.{{else}}Process all promising issues.{{end}} For each:
    a. Call get_sentry_issue to get full details (title, culprit, message)
    b. Call get_sentry_issue_events to get the latest event with stack trace, breadcrumbs, and context
    c. Analyze the stack trace — find the relevant code in this repository
@@ -129,6 +130,7 @@ var BuiltinWorkflows = []WorkflowDefinition{
 			{Name: "repo_url", Required: true},
 			{Name: "key_name", Required: true},
 			{Name: "provider_key", Required: false},
+			{Name: "max_issues", Default: "5"},
 		},
 	},
 	{

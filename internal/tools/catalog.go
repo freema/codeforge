@@ -16,7 +16,7 @@ var builtinTools = []ToolDefinition{
 		MCPPackage:  "@sentry/mcp-server",
 		MCPCommand:  "npx",
 		RequiredConfig: []ConfigField{
-			{Name: "auth_token", Description: "Sentry authentication token", Type: "secret", EnvVar: "SENTRY_ACCESS_TOKEN", Sensitive: true},
+			{Name: "auth_token", Description: "Sentry authentication token", Type: "secret", EnvVar: "SENTRY_ACCESS_TOKEN", Sensitive: true, ProviderKey: "sentry"},
 		},
 		Capabilities: []string{"error-tracking", "issues"},
 		Builtin:      true,
@@ -51,7 +51,7 @@ var builtinTools = []ToolDefinition{
 		MCPPackage:  "@modelcontextprotocol/server-github",
 		MCPCommand:  "npx",
 		RequiredConfig: []ConfigField{
-			{Name: "token", Description: "GitHub personal access token", Type: "secret", EnvVar: "GITHUB_PERSONAL_ACCESS_TOKEN", Sensitive: true},
+			{Name: "token", Description: "GitHub personal access token", Type: "secret", EnvVar: "GITHUB_PERSONAL_ACCESS_TOKEN", Sensitive: true, ProviderKey: "github"},
 		},
 		Capabilities: []string{"github", "issues", "pull-requests"},
 		Builtin:      true,

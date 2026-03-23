@@ -70,6 +70,10 @@ func (m *mockRegistry) ResolveByName(_ context.Context, name string) (string, st
 	return "", "", nil
 }
 
+func (m *mockRegistry) ResolveFullByName(_ context.Context, name string) (string, string, string, error) {
+	return "", "", "", nil
+}
+
 func TestKeyHandler_Create(t *testing.T) {
 	tests := []struct {
 		name       string

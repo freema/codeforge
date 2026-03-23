@@ -16,6 +16,8 @@ type Key struct {
 	Provider  string    `json:"provider"`
 	Token     string    `json:"token,omitempty"` // only in create request, never in responses
 	Scope     string    `json:"scope,omitempty"`
+	BaseURL   string    `json:"base_url,omitempty"`
+	Source    string    `json:"source,omitempty"` // "db" or "env"
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -38,23 +40,33 @@ type Registry interface {
 	// ResolveByName looks up a key by name (regardless of provider) and returns
 	// the decrypted token and provider.
 	ResolveByName(ctx context.Context, name string) (token, provider string, err error)
+	// ResolveFullByName looks up a key by name and returns token, provider, and base URL.
+	ResolveFullByName(ctx context.Context, name string) (token, provider, baseURL string, err error)
 }
 
-func verifyToken(ctx context.Context, provider, token string) *VerifyResult {
+func verifyToken(ctx context.Context, provider, token, baseURL string) *VerifyResult {
 	switch provider {
 	case "github":
-		return verifyGitHub(ctx, token)
+		return verifyGitHub(ctx, token, baseURL)
 	case "gitlab":
-		return verifyGitLab(ctx, token)
+		return verifyGitLab(ctx, token, baseURL)
 	case "sentry":
-		return verifySentry(ctx, token)
+		return verifySentry(ctx, token, baseURL)
+	case "anthropic":
+		return verifyAnthropic(ctx, token, baseURL)
+	case "openai":
+		return verifyOpenAI(ctx, token, baseURL)
 	default:
 		return &VerifyResult{Valid: false, Error: "unsupported provider"}
 	}
 }
 
-func verifyGitHub(ctx context.Context, token string) *VerifyResult {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/user", nil)
+func verifyGitHub(ctx context.Context, token, baseURL string) *VerifyResult {
+	apiURL := "https://api.github.com/user"
+	if baseURL != "" {
+		apiURL = strings.TrimRight(baseURL, "/") + "/api/v3/user"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return &VerifyResult{Valid: false, Error: "failed to create request"}
 	}
@@ -93,17 +105,22 @@ func verifyGitHub(ctx context.Context, token string) *VerifyResult {
 	}
 }
 
-func verifySentry(ctx context.Context, token string) *VerifyResult {
+func verifySentry(ctx context.Context, token, baseURL string) *VerifyResult {
 	type sentryOrg struct {
 		Slug string `json:"slug"`
 		Name string `json:"name"`
 	}
 
-	// Sentry has regional endpoints — US (default) and EU.
-	// A user's orgs may be spread across regions.
-	regions := []string{
-		"https://sentry.io/api/0/organizations/",
-		"https://de.sentry.io/api/0/organizations/",
+	var regions []string
+	if baseURL != "" {
+		regions = []string{strings.TrimRight(baseURL, "/") + "/api/0/organizations/"}
+	} else {
+		// Sentry has regional endpoints — US (default) and EU.
+		// A user's orgs may be spread across regions.
+		regions = []string{
+			"https://sentry.io/api/0/organizations/",
+			"https://de.sentry.io/api/0/organizations/",
+		}
 	}
 
 	var allOrgs []sentryOrg
@@ -161,8 +178,65 @@ func verifySentry(ctx context.Context, token string) *VerifyResult {
 	}
 }
 
-func verifyGitLab(ctx context.Context, token string) *VerifyResult {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://gitlab.com/api/v4/user", nil)
+func verifyAnthropic(ctx context.Context, token, _ string) *VerifyResult {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.anthropic.com/v1/models", nil)
+	if err != nil {
+		return &VerifyResult{Valid: false, Error: "failed to create request"}
+	}
+	req.Header.Set("x-api-key", token)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return &VerifyResult{Valid: false, Error: "connection failed"}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return &VerifyResult{Valid: false, Error: "invalid or expired API key"}
+	}
+	if resp.StatusCode != http.StatusOK {
+		return &VerifyResult{Valid: false, Error: fmt.Sprintf("unexpected status %d", resp.StatusCode)}
+	}
+
+	return &VerifyResult{
+		Valid:  true,
+		Scopes: "Anthropic API",
+	}
+}
+
+func verifyOpenAI(ctx context.Context, token, _ string) *VerifyResult {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.openai.com/v1/models", nil)
+	if err != nil {
+		return &VerifyResult{Valid: false, Error: "failed to create request"}
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return &VerifyResult{Valid: false, Error: "connection failed"}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return &VerifyResult{Valid: false, Error: "invalid or expired API key"}
+	}
+	if resp.StatusCode != http.StatusOK {
+		return &VerifyResult{Valid: false, Error: fmt.Sprintf("unexpected status %d", resp.StatusCode)}
+	}
+
+	return &VerifyResult{
+		Valid:  true,
+		Scopes: "OpenAI API",
+	}
+}
+
+func verifyGitLab(ctx context.Context, token, baseURL string) *VerifyResult {
+	apiURL := "https://gitlab.com/api/v4/user"
+	if baseURL != "" {
+		apiURL = strings.TrimRight(baseURL, "/") + "/api/v4/user"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return &VerifyResult{Valid: false, Error: "failed to create request"}
 	}

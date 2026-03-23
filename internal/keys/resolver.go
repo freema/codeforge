@@ -54,8 +54,48 @@ func (r *Resolver) ResolveToken(ctx context.Context, repoURL, accessToken, provi
 		if t := os.Getenv("GITLAB_TOKEN"); t != "" {
 			return t, nil
 		}
+	case gitpkg.ProviderUnknown:
+		// Self-hosted instances with unrecognized domains: try both env vars.
+		// GITLAB_TOKEN first — self-hosted GitLab is far more common than GitHub Enterprise.
+		if t := os.Getenv("GITLAB_TOKEN"); t != "" {
+			return t, nil
+		}
+		if t := os.Getenv("GITHUB_TOKEN"); t != "" {
+			return t, nil
+		}
 	}
 
-	return "", fmt.Errorf("no access token available for %s (provide access_token, provider_key, or set %s_TOKEN env var)",
-		repoURL, string(repo.Provider))
+	return "", fmt.Errorf("no access token available for %s (provide access_token, provider_key, or set %s env var)",
+		repoURL, envHint(repo.Provider))
+}
+
+// ResolveAIKey tries to resolve an AI provider API key from the registry.
+// It looks up keys by the well-known env-sourced name ("<provider>-env") first,
+// then falls back to any key matching the given provider.
+func (r *Resolver) ResolveAIKey(ctx context.Context, provider string) (string, error) {
+	// Try the well-known env-sourced key name first (e.g. "anthropic-env").
+	token, _, err := r.registry.ResolveByName(ctx, provider+"-env")
+	if err == nil {
+		return token, nil
+	}
+
+	// Try resolving by provider with a conventional default name.
+	token, err = r.registry.Resolve(ctx, provider, "default")
+	if err == nil {
+		return token, nil
+	}
+
+	return "", fmt.Errorf("no AI key found for provider %q", provider)
+}
+
+// envHint returns a human-readable hint for the error message about which env var to set.
+func envHint(p gitpkg.Provider) string {
+	switch p {
+	case gitpkg.ProviderGitHub:
+		return "GITHUB_TOKEN"
+	case gitpkg.ProviderGitLab:
+		return "GITLAB_TOKEN"
+	default:
+		return "GITLAB_TOKEN or GITHUB_TOKEN"
+	}
 }

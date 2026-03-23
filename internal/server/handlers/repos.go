@@ -36,6 +36,7 @@ func (h *RepoHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	var token string
 	var provider gitpkg.Provider
+	var baseURL string
 
 	providerKey := r.URL.Query().Get("provider_key")
 	providerParam := r.URL.Query().Get("provider")
@@ -43,14 +44,15 @@ func (h *RepoHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case providerKey != "":
-		// Mode 1: resolve from key registry
-		t, p, err := h.keyRegistry.ResolveByName(ctx, providerKey)
+		// Mode 1: resolve from key registry (includes base_url)
+		t, p, u, err := h.keyRegistry.ResolveFullByName(ctx, providerKey)
 		if err != nil {
 			writeAppError(w, err)
 			return
 		}
 		token = t
 		provider = gitpkg.Provider(p)
+		baseURL = u
 
 	case providerParam != "" && inlineToken != "":
 		// Mode 2: inline token
@@ -67,7 +69,7 @@ func (h *RepoHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repos, err := gitpkg.ListRepos(ctx, provider, token, page, perPage)
+	repos, err := gitpkg.ListRepos(ctx, provider, token, baseURL, page, perPage)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -94,7 +96,7 @@ func (h *RepoHandler) ListBranches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, p, err := h.keyRegistry.ResolveByName(ctx, providerKey)
+	token, p, baseURL, err := h.keyRegistry.ResolveFullByName(ctx, providerKey)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -106,7 +108,7 @@ func (h *RepoHandler) ListBranches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	branches, err := gitpkg.ListBranches(ctx, provider, token, repo)
+	branches, err := gitpkg.ListBranches(ctx, provider, token, baseURL, repo)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return

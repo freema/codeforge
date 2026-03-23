@@ -23,8 +23,11 @@ func NewSQLiteRegistry(db *sql.DB, cryptoSvc *crypto.Service) *SQLiteRegistry {
 }
 
 func (r *SQLiteRegistry) Create(ctx context.Context, key Key) error {
-	if key.Provider != "github" && key.Provider != "gitlab" && key.Provider != "sentry" {
-		return apperror.Validation("provider must be 'github', 'gitlab', or 'sentry'")
+	switch key.Provider {
+	case "github", "gitlab", "sentry", "anthropic", "openai":
+		// valid
+	default:
+		return apperror.Validation("provider must be 'github', 'gitlab', 'sentry', 'anthropic', or 'openai'")
 	}
 
 	encrypted, err := r.crypto.Encrypt(key.Token)
@@ -33,8 +36,8 @@ func (r *SQLiteRegistry) Create(ctx context.Context, key Key) error {
 	}
 
 	_, err = r.db.ExecContext(ctx,
-		"INSERT INTO keys (name, provider, encrypted_token, scope) VALUES (?, ?, ?, ?)",
-		key.Name, key.Provider, encrypted, key.Scope,
+		"INSERT INTO keys (name, provider, encrypted_token, scope, base_url) VALUES (?, ?, ?, ?, ?)",
+		key.Name, key.Provider, encrypted, key.Scope, key.BaseURL,
 	)
 	if err != nil {
 		// SQLite UNIQUE constraint violation
@@ -49,7 +52,7 @@ func (r *SQLiteRegistry) Create(ctx context.Context, key Key) error {
 
 func (r *SQLiteRegistry) List(ctx context.Context) ([]Key, error) {
 	rows, err := r.db.QueryContext(ctx,
-		"SELECT name, provider, scope, created_at FROM keys ORDER BY created_at",
+		"SELECT name, provider, scope, base_url, created_at FROM keys ORDER BY created_at",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("listing keys: %w", err)
@@ -60,7 +63,7 @@ func (r *SQLiteRegistry) List(ctx context.Context) ([]Key, error) {
 	for rows.Next() {
 		var k Key
 		var createdAt string
-		if err := rows.Scan(&k.Name, &k.Provider, &k.Scope, &createdAt); err != nil {
+		if err := rows.Scan(&k.Name, &k.Provider, &k.Scope, &k.BaseURL, &createdAt); err != nil {
 			return nil, fmt.Errorf("scanning key: %w", err)
 		}
 		k.CreatedAt, _ = time.Parse("2006-01-02T15:04:05.000", createdAt)
@@ -104,11 +107,11 @@ func (r *SQLiteRegistry) Resolve(ctx context.Context, provider, name string) (st
 }
 
 func (r *SQLiteRegistry) Verify(ctx context.Context, name string) (*VerifyResult, string, error) {
-	var provider, encrypted string
+	var provider, encrypted, baseURL string
 	err := r.db.QueryRowContext(ctx,
-		"SELECT provider, encrypted_token FROM keys WHERE name = ?",
+		"SELECT provider, encrypted_token, base_url FROM keys WHERE name = ?",
 		name,
-	).Scan(&provider, &encrypted)
+	).Scan(&provider, &encrypted, &baseURL)
 	if err == sql.ErrNoRows {
 		return nil, "", apperror.NotFound("key '%s' not found", name)
 	}
@@ -121,29 +124,34 @@ func (r *SQLiteRegistry) Verify(ctx context.Context, name string) (*VerifyResult
 		return nil, "", fmt.Errorf("decrypting token: %w", err)
 	}
 
-	result := verifyToken(ctx, provider, token)
+	result := verifyToken(ctx, provider, token, baseURL)
 	return result, provider, nil
 }
 
 func (r *SQLiteRegistry) ResolveByName(ctx context.Context, name string) (string, string, error) {
-	var provider, encrypted string
+	token, provider, _, err := r.ResolveFullByName(ctx, name)
+	return token, provider, err
+}
+
+func (r *SQLiteRegistry) ResolveFullByName(ctx context.Context, name string) (string, string, string, error) {
+	var provider, encrypted, baseURL string
 	err := r.db.QueryRowContext(ctx,
-		"SELECT provider, encrypted_token FROM keys WHERE name = ?",
+		"SELECT provider, encrypted_token, base_url FROM keys WHERE name = ?",
 		name,
-	).Scan(&provider, &encrypted)
+	).Scan(&provider, &encrypted, &baseURL)
 	if err == sql.ErrNoRows {
-		return "", "", apperror.NotFound("key '%s' not found", name)
+		return "", "", "", apperror.NotFound("key '%s' not found", name)
 	}
 	if err != nil {
-		return "", "", fmt.Errorf("reading key: %w", err)
+		return "", "", "", fmt.Errorf("reading key: %w", err)
 	}
 
 	token, err := r.crypto.Decrypt(encrypted)
 	if err != nil {
-		return "", "", fmt.Errorf("decrypting token: %w", err)
+		return "", "", "", fmt.Errorf("decrypting token: %w", err)
 	}
 
-	return token, provider, nil
+	return token, provider, baseURL, nil
 }
 
 // isUniqueViolation checks if a SQLite error is a UNIQUE constraint violation.

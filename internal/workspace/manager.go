@@ -172,6 +172,13 @@ func (m *Manager) List(ctx context.Context) ([]Workspace, error) {
 
 		ws := hashToWorkspace(fields)
 		if ws != nil {
+			// Recalculate size if unknown and path exists
+			if ws.SizeBytes == 0 && ws.Path != "" {
+				if size, err := DirSize(ws.Path); err == nil && size > 0 {
+					ws.SizeBytes = size
+					m.redis.Unwrap().HSet(ctx, redisKey, "size_bytes", size)
+				}
+			}
 			workspaces = append(workspaces, *ws)
 		}
 	}

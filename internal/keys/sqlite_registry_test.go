@@ -29,6 +29,7 @@ func setupTestDB(t *testing.T) (*sql.DB, *crypto.Service) {
 			provider        TEXT NOT NULL CHECK(provider IN ('github', 'gitlab', 'sentry')),
 			encrypted_token TEXT NOT NULL,
 			scope           TEXT NOT NULL DEFAULT '',
+			base_url        TEXT NOT NULL DEFAULT '',
 			created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
 			UNIQUE(provider, name)
 		)
