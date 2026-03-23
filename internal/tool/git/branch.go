@@ -13,6 +13,7 @@ import (
 type BranchOptions struct {
 	WorkDir     string
 	BranchName  string
+	BaseBranch  string // If set, the feature branch is created from origin/<BaseBranch> instead of the current HEAD.
 	CommitMsg   string
 	AuthorName  string
 	AuthorEmail string
@@ -24,7 +25,9 @@ type BranchOptions struct {
 func CreateBranchAndPush(ctx context.Context, opts BranchOptions) error {
 	workDir := opts.WorkDir
 
-	// Create and checkout branch
+	// Create and checkout branch from current HEAD.
+	// The branch is based on whatever was cloned — the MR/PR target branch
+	// is specified separately in the API call, not via git ancestry.
 	if err := gitCmd(ctx, workDir, nil, "checkout", "-b", opts.BranchName); err != nil {
 		return fmt.Errorf("creating branch: %w", err)
 	}
@@ -144,6 +147,29 @@ func GenerateBranchName(ctx context.Context, workDir, prefix, slug string) strin
 	return name
 }
 
+// DefaultBranch detects the default branch of the cloned repository
+// by reading the symbolic-ref of origin/HEAD.
+func DefaultBranch(ctx context.Context, workDir string) (string, error) {
+	// Try symbolic-ref first (set by clone)
+	out, err := gitOutput(ctx, workDir, nil, "symbolic-ref", "refs/remotes/origin/HEAD")
+	if err == nil {
+		// Output: "refs/remotes/origin/master" → extract "master"
+		ref := strings.TrimSpace(out)
+		if strings.HasPrefix(ref, "refs/remotes/origin/") {
+			return strings.TrimPrefix(ref, "refs/remotes/origin/"), nil
+		}
+	}
+	// Fallback: check current branch name (what was cloned)
+	out, err = gitOutput(ctx, workDir, nil, "rev-parse", "--abbrev-ref", "HEAD")
+	if err == nil {
+		branch := strings.TrimSpace(out)
+		if branch != "" && branch != "HEAD" {
+			return branch, nil
+		}
+	}
+	return "", fmt.Errorf("could not detect default branch")
+}
+
 func branchExists(ctx context.Context, workDir, name string) bool {
 	// Check local
 	err := gitCmd(ctx, workDir, nil, "rev-parse", "--verify", name)
@@ -153,4 +179,65 @@ func branchExists(ctx context.Context, workDir, name string) bool {
 	// Check remote
 	err = gitCmd(ctx, workDir, nil, "rev-parse", "--verify", "origin/"+name)
 	return err == nil
+}
+
+// GetUnstagedDiff returns the diff of all uncommitted changes in the workspace.
+func GetUnstagedDiff(ctx context.Context, workDir string) (string, error) {
+	return gitOutput(ctx, workDir, nil, "diff", "HEAD")
+}
+
+// PushExistingOptions configures pushing follow-up changes to an existing branch.
+type PushExistingOptions struct {
+	WorkDir     string
+	BranchName  string
+	CommitMsg   string
+	AuthorName  string
+	AuthorEmail string
+	Token       string
+}
+
+// CommitAndPushToExisting stages all changes, commits, and pushes to an existing branch.
+// Returns an error if there are no new changes to push.
+func CommitAndPushToExisting(ctx context.Context, opts PushExistingOptions) error {
+	workDir := opts.WorkDir
+
+	// Stage all changes
+	if err := gitCmd(ctx, workDir, nil, "add", "-A"); err != nil {
+		return fmt.Errorf("staging changes: %w", err)
+	}
+
+	// Check if there are any changes to commit
+	statusOut, err := gitOutput(ctx, workDir, nil, "status", "--porcelain")
+	if err != nil {
+		return fmt.Errorf("checking status: %w", err)
+	}
+	if strings.TrimSpace(statusOut) == "" {
+		return fmt.Errorf("no new changes to push")
+	}
+
+	// Commit with author info
+	commitEnv := []string{
+		"GIT_AUTHOR_NAME=" + opts.AuthorName,
+		"GIT_AUTHOR_EMAIL=" + opts.AuthorEmail,
+		"GIT_COMMITTER_NAME=" + opts.AuthorName,
+		"GIT_COMMITTER_EMAIL=" + opts.AuthorEmail,
+	}
+	if err := gitCmd(ctx, workDir, commitEnv, "commit", "-m", opts.CommitMsg); err != nil {
+		return fmt.Errorf("committing changes: %w", err)
+	}
+	slog.Info("follow-up changes committed", "branch", opts.BranchName)
+
+	// Push via GIT_ASKPASS
+	pushEnv, cleanup, err := AskPassEnv(opts.Token)
+	if err != nil {
+		return fmt.Errorf("preparing push credentials: %w", err)
+	}
+	defer cleanup()
+
+	if err := gitCmd(ctx, workDir, pushEnv, "push", "origin", opts.BranchName); err != nil {
+		return fmt.Errorf("pushing to branch: %w", err)
+	}
+	slog.Info("follow-up changes pushed", "branch", opts.BranchName)
+
+	return nil
 }

@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/freema/codeforge/internal/ai"
 	"github.com/freema/codeforge/internal/config"
 	"github.com/freema/codeforge/internal/crypto"
 	"github.com/freema/codeforge/internal/database"
@@ -122,6 +123,10 @@ func run() error {
 		)
 	}
 
+	// Auto-populate provider domains from GITLAB_URL / GITHUB_URL env vars
+	// so self-hosted instances are recognized for PR creation without manual config.
+	cfg.Git.ProviderDomains = keys.MergeEnvProviderDomains(cfg.Git.ProviderDomains)
+
 	// Initialize key registry and resolver
 	sqliteKeyRegistry := keys.NewSQLiteRegistry(sqliteDB.Unwrap(), cryptoSvc)
 	keyRegistry := keys.NewEnvAwareRegistry(sqliteKeyRegistry)
@@ -197,8 +202,11 @@ func run() error {
 		cfg.Workers.Concurrency,
 	)
 
+	// Initialize AI helper client (for PR metadata, commit messages)
+	aiClient := ai.NewClientFromRegistry(context.Background(), keyResolver)
+
 	// Initialize prompt analyzer
-	analyzer := runner.NewAnalyzer()
+	analyzer := runner.NewAnalyzer(aiClient)
 
 	// Initialize PR service
 	prService := session.NewPRService(sessionService, analyzer, workspaceMgr, keyResolver, session.PRServiceConfig{
@@ -207,7 +215,7 @@ func run() error {
 		CommitAuthor:    cfg.Git.CommitAuthor,
 		CommitEmail:     cfg.Git.CommitEmail,
 		ProviderDomains: cfg.Git.ProviderDomains,
-	})
+	}, aiClient)
 
 	// Initialize Redis input listener
 	listener := session.NewListener(rdb, sessionService, "input:sessions")

@@ -482,7 +482,7 @@ func (e *Executor) cloneStep(ctx context.Context, t *session.Session, workDir st
 			DestDir: workDir,
 			Token:   t.AccessToken,
 			Branch:  branch,
-			Shallow: true,
+			Shallow: false,
 		})
 		if err != nil {
 			span.SetStatus(codes.Error, "clone failed")
@@ -612,8 +612,10 @@ func (e *Executor) runStep(ctx context.Context, t *session.Session, workDir stri
 		MCPConfigPath: mcpConfigPath,
 		OnEvent: func(event json.RawMessage) {
 			if normalizer != nil {
-				if normalized := normalizer.Normalize(event); normalized != nil {
-					e.emitOrLog(e.streamer.EmitNormalized(ctx, t.ID, normalized), log, "cli_normalized", t.ID)
+				if events := normalizer.Normalize(event); len(events) > 0 {
+					for _, normalized := range events {
+						e.emitOrLog(e.streamer.EmitNormalized(ctx, t.ID, normalized), log, "cli_normalized", t.ID)
+					}
 					return
 				}
 			}
@@ -1005,8 +1007,10 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 		APIKey:  apiKey,
 		OnEvent: func(event json.RawMessage) {
 			if normalizer != nil {
-				if normalized := normalizer.Normalize(event); normalized != nil {
-					e.emitOrLog(e.streamer.EmitNormalized(ctx, t.ID, normalized), log, "review_normalized", t.ID)
+				if events := normalizer.Normalize(event); len(events) > 0 {
+					for _, normalized := range events {
+						e.emitOrLog(e.streamer.EmitNormalized(ctx, t.ID, normalized), log, "review_normalized", t.ID)
+					}
 					return
 				}
 			}

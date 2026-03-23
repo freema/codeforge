@@ -256,11 +256,42 @@ func (h *SessionHandler) CreatePR(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.Contains(errMsg, "not found"):
 			writeError(w, http.StatusNotFound, errMsg)
-		case strings.Contains(errMsg, "must be in completed status"):
+		case strings.Contains(errMsg, "must be in completed or pr_created status"):
 			writeError(w, http.StatusConflict, errMsg)
-		case strings.Contains(errMsg, "no changes"):
+		case strings.Contains(errMsg, "no changes"), strings.Contains(errMsg, "nothing to commit"):
+			writeError(w, http.StatusBadRequest, "No new changes to create PR for. Run another instruction first.")
+		case strings.Contains(errMsg, "no changes to create PR"):
 			writeError(w, http.StatusBadRequest, errMsg)
 		case strings.Contains(errMsg, "not supported"):
+			writeError(w, http.StatusBadRequest, errMsg)
+		default:
+			writeError(w, http.StatusInternalServerError, errMsg)
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// PushToPR handles POST /api/v1/sessions/{taskID}/push.
+func (h *SessionHandler) PushToPR(w http.ResponseWriter, r *http.Request) {
+	taskID := chi.URLParam(r, "taskID")
+	if taskID == "" {
+		writeError(w, http.StatusBadRequest, "session ID is required")
+		return
+	}
+
+	result, err := h.prService.PushToPR(r.Context(), taskID)
+	if err != nil {
+		errMsg := err.Error()
+		switch {
+		case strings.Contains(errMsg, "not found"):
+			writeError(w, http.StatusNotFound, errMsg)
+		case strings.Contains(errMsg, "must be in completed or pr_created status"):
+			writeError(w, http.StatusConflict, errMsg)
+		case strings.Contains(errMsg, "no new changes to push"):
+			writeError(w, http.StatusBadRequest, errMsg)
+		case strings.Contains(errMsg, "no existing PR"):
 			writeError(w, http.StatusBadRequest, errMsg)
 		default:
 			writeError(w, http.StatusInternalServerError, errMsg)

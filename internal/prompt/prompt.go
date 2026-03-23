@@ -86,6 +86,17 @@ func RenderPRReviewPrompt(data PRReviewData) (string, error) {
 	return Render("pr_review", data)
 }
 
+// LoadRaw reads a prompt template as raw text without template rendering.
+// The name should not include the "templates/" prefix or ".md" suffix.
+func LoadRaw(name string) (string, error) {
+	path := "templates/" + name + ".md"
+	raw, err := templateFS.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("prompt template %q not found: %w", name, err)
+	}
+	return string(raw), nil
+}
+
 // Render loads the named template from the embedded FS and executes it with data.
 // The name should not include the "templates/" prefix or ".md" suffix.
 func Render(name string, data any) (string, error) {

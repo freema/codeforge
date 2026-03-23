@@ -101,18 +101,20 @@ func TestCodexNormalizer_Normalize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := n.Normalize([]byte(tt.input))
+			results := n.Normalize([]byte(tt.input))
 
 			if tt.wantNil {
-				if result != nil {
-					t.Fatalf("expected nil, got %+v", result)
+				if len(results) != 0 {
+					t.Fatalf("expected nil/empty, got %d events", len(results))
 				}
 				return
 			}
 
-			if result == nil {
-				t.Fatal("expected non-nil result, got nil")
+			if len(results) != 1 {
+				t.Fatalf("got %d events, want 1", len(results))
 			}
+
+			result := results[0]
 
 			if result.Type != tt.wantType {
 				t.Errorf("Type = %q, want %q", result.Type, tt.wantType)

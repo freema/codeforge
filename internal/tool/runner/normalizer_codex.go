@@ -25,9 +25,9 @@ type codexItem struct {
 	ExitCode  *int   `json:"exit_code"` // command_execution
 }
 
-// Normalize parses a Codex JSONL line and returns a NormalizedEvent.
+// Normalize parses a Codex JSONL line and returns NormalizedEvents.
 // Returns nil for lines that cannot be parsed.
-func (n *CodexNormalizer) Normalize(line []byte) *NormalizedEvent {
+func (n *CodexNormalizer) Normalize(line []byte) []*NormalizedEvent {
 	var envelope struct {
 		Type string    `json:"type"`
 		Item codexItem `json:"item"`
@@ -43,63 +43,63 @@ func (n *CodexNormalizer) Normalize(line []byte) *NormalizedEvent {
 	case "item.completed":
 		return n.normalizeItem(&envelope.Item, raw)
 	case "turn.completed":
-		return &NormalizedEvent{
+		return []*NormalizedEvent{{
 			Type: EventResult,
 			CLI:  "codex",
 			Raw:  raw,
-		}
+		}}
 	default:
-		return &NormalizedEvent{
+		return []*NormalizedEvent{{
 			Type: EventSystem,
 			CLI:  "codex",
 			Raw:  raw,
-		}
+		}}
 	}
 }
 
-func (n *CodexNormalizer) normalizeItem(item *codexItem, raw json.RawMessage) *NormalizedEvent {
+func (n *CodexNormalizer) normalizeItem(item *codexItem, raw json.RawMessage) []*NormalizedEvent {
 	switch item.Type {
 	case "agent_message":
-		return &NormalizedEvent{
+		return []*NormalizedEvent{{
 			Type:    EventText,
 			Content: item.Text,
 			CLI:     "codex",
 			Raw:     raw,
-		}
+		}}
 	case "function_call":
 		content := item.Name
 		if item.Arguments != "" {
 			content = fmt.Sprintf("%s(%s)", item.Name, item.Arguments)
 		}
-		return &NormalizedEvent{
+		return []*NormalizedEvent{{
 			Type:    EventToolUse,
 			Content: content,
 			CLI:     "codex",
 			Raw:     raw,
-		}
+		}}
 	case "function_call_output":
-		return &NormalizedEvent{
+		return []*NormalizedEvent{{
 			Type:    EventToolResult,
 			Content: item.Output,
 			CLI:     "codex",
 			Raw:     raw,
-		}
+		}}
 	case "command_execution":
 		content := item.Command
 		if item.ExitCode != nil {
 			content = fmt.Sprintf("%s (exit %d)", item.Command, *item.ExitCode)
 		}
-		return &NormalizedEvent{
+		return []*NormalizedEvent{{
 			Type:    EventToolResult,
 			Content: content,
 			CLI:     "codex",
 			Raw:     raw,
-		}
+		}}
 	default:
-		return &NormalizedEvent{
+		return []*NormalizedEvent{{
 			Type: EventSystem,
 			CLI:  "codex",
 			Raw:  raw,
-		}
+		}}
 	}
 }

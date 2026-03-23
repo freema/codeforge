@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 
+	"github.com/freema/codeforge/internal/ai"
 	"github.com/freema/codeforge/internal/slug"
 	gitpkg "github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/tool/runner"
@@ -32,22 +33,27 @@ type TokenResolver interface {
 
 // PRService orchestrates the PR/MR creation workflow.
 type PRService struct {
-	sessionService       *Service
+	sessionService    *Service
 	analyzer          *runner.Analyzer
 	workspaceResolver WorkspacePathResolver
 	tokenResolver     TokenResolver
 	cfg               PRServiceConfig
+	ai                ai.Client // optional, nil = no AI commit messages
 }
 
 // NewPRService creates a PR service.
-func NewPRService(sessionService *Service, analyzer *runner.Analyzer, workspaceResolver WorkspacePathResolver, tokenResolver TokenResolver, cfg PRServiceConfig) *PRService {
-	return &PRService{
-		sessionService:       sessionService,
+func NewPRService(sessionService *Service, analyzer *runner.Analyzer, workspaceResolver WorkspacePathResolver, tokenResolver TokenResolver, cfg PRServiceConfig, aiClient ...ai.Client) *PRService {
+	svc := &PRService{
+		sessionService:    sessionService,
 		analyzer:          analyzer,
 		workspaceResolver: workspaceResolver,
 		tokenResolver:     tokenResolver,
 		cfg:               cfg,
 	}
+	if len(aiClient) > 0 {
+		svc.ai = aiClient[0]
+	}
+	return svc
 }
 
 // CreatePRRequest is the request body for POST /sessions/:id/create-pr.
@@ -72,9 +78,9 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 		return nil, err
 	}
 
-	// Validate state
-	if t.Status != StatusCompleted {
-		return nil, fmt.Errorf("task must be in completed status, currently: %s", t.Status)
+	// Validate state — allow PR creation from completed or pr_created (re-push after new iteration)
+	if t.Status != StatusCompleted && t.Status != StatusPRCreated {
+		return nil, fmt.Errorf("task must be in completed or pr_created status, currently: %s", t.Status)
 	}
 
 	// Resolve workDir early — needed for lazy change recalculation.
@@ -104,6 +110,9 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 		}
 		t.AccessToken = token
 	}
+
+	// Remember previous status so we can revert on non-fatal errors
+	previousStatus := t.Status
 
 	// Transition to CREATING_PR
 	if err := s.sessionService.UpdateStatus(ctx, taskID, StatusCreatingPR); err != nil {
@@ -146,27 +155,41 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 		if t.Config != nil && t.Config.TargetBranch != "" {
 			baseBranch = t.Config.TargetBranch
 		} else {
-			baseBranch = "main"
+			// Detect default branch from the cloned repo
+			if detected, err := gitpkg.DefaultBranch(ctx, workDir); err == nil && detected != "" {
+				baseBranch = detected
+			} else {
+				baseBranch = "main"
+			}
 		}
 	}
 
 	// Generate branch name
 	branchName := gitpkg.GenerateBranchName(ctx, workDir, s.cfg.BranchPrefix, branchSlug)
 
-	// Create commit message
+	// Create commit message — try AI, fall back to formatted message
 	commitMsg := gitpkg.FormatCommitMessage(title, taskID, s.cfg.CommitAuthor, s.cfg.CommitEmail)
+	if s.ai != nil {
+		if diffOut, diffErr := gitpkg.GetUnstagedDiff(ctx, workDir); diffErr == nil && diffOut != "" {
+			if generated := ai.GenerateCommitMessage(ctx, s.ai, diffOut, t.Prompt); generated != "" {
+				commitMsg = generated
+			}
+		}
+	}
 
 	// Create branch, commit, push
 	err = gitpkg.CreateBranchAndPush(ctx, gitpkg.BranchOptions{
 		WorkDir:     workDir,
 		BranchName:  branchName,
+		BaseBranch:  baseBranch,
 		CommitMsg:   commitMsg,
 		AuthorName:  s.cfg.CommitAuthor,
 		AuthorEmail: s.cfg.CommitEmail,
 		Token:       t.AccessToken,
 	})
 	if err != nil {
-		s.failPR(ctx, taskID, err)
+		// Revert status back instead of failing the session — user can retry or send new instructions
+		_ = s.sessionService.UpdateStatus(ctx, taskID, previousStatus)
 		return nil, fmt.Errorf("creating branch and pushing: %w", err)
 	}
 
@@ -205,6 +228,95 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 		PRURL:    prResult.URL,
 		PRNumber: prResult.Number,
 		Branch:   branchName,
+	}, nil
+}
+
+// PushToPRResponse is the response for a successful push to an existing PR.
+type PushToPRResponse struct {
+	PRURL   string `json:"pr_url"`
+	Branch  string `json:"branch"`
+	Message string `json:"message"`
+}
+
+// PushToPR pushes new changes to an existing PR branch without creating a new PR/MR.
+// The existing MR/PR on GitLab/GitHub auto-updates when the branch gets new commits.
+func (s *PRService) PushToPR(ctx context.Context, taskID string) (*PushToPRResponse, error) {
+	// Load session
+	t, err := s.sessionService.Get(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate state
+	if t.Status != StatusCompleted && t.Status != StatusPRCreated {
+		return nil, fmt.Errorf("task must be in completed or pr_created status, currently: %s", t.Status)
+	}
+
+	// Validate that a PR was previously created
+	if t.Branch == "" {
+		return nil, fmt.Errorf("no existing PR — use create-pr first")
+	}
+
+	// Resolve workspace dir
+	workDir := filepath.Join(s.cfg.WorkspaceBase, taskID)
+	if s.workspaceResolver != nil {
+		if resolved := s.workspaceResolver.WorkspacePath(ctx, taskID); resolved != "" {
+			workDir = resolved
+		}
+	}
+
+	// Resolve access token if not already set
+	if s.tokenResolver != nil && t.AccessToken == "" {
+		token, err := s.tokenResolver.ResolveToken(ctx, t.RepoURL, t.AccessToken, t.ProviderKey)
+		if err != nil {
+			return nil, fmt.Errorf("resolving access token for push: %w", err)
+		}
+		t.AccessToken = token
+	}
+
+	// Generate commit message — try AI, fall back to generic
+	commitMsg := "follow-up changes"
+	if s.ai != nil {
+		if diffOut, diffErr := gitpkg.GetUnstagedDiff(ctx, workDir); diffErr == nil && diffOut != "" {
+			if generated := ai.GenerateCommitMessage(ctx, s.ai, diffOut, t.Prompt); generated != "" {
+				commitMsg = generated
+			}
+		}
+	}
+
+	// Stage, commit, and push to existing branch
+	if err := gitpkg.CommitAndPushToExisting(ctx, gitpkg.PushExistingOptions{
+		WorkDir:     workDir,
+		BranchName:  t.Branch,
+		CommitMsg:   commitMsg,
+		AuthorName:  s.cfg.CommitAuthor,
+		AuthorEmail: s.cfg.CommitEmail,
+		Token:       t.AccessToken,
+	}); err != nil {
+		return nil, err
+	}
+
+	slog.Info("pushed to existing PR", "task_id", taskID, "branch", t.Branch)
+
+	// Recalculate changes summary
+	recalc, err := gitpkg.CalculateChanges(ctx, workDir)
+	if err == nil && recalc != nil {
+		t.ChangesSummary = recalc
+		stateKey := s.sessionService.redis.Key("session", taskID, "state")
+		s.sessionService.redis.Unwrap().HSet(ctx, stateKey, "changes_summary", MarshalChangesSummary(recalc))
+	}
+
+	// Ensure status is pr_created
+	if t.Status != StatusPRCreated {
+		if err := s.sessionService.UpdateStatus(ctx, taskID, StatusPRCreated); err != nil {
+			slog.Error("failed to transition to pr_created after push", "task_id", taskID, "error", err)
+		}
+	}
+
+	return &PushToPRResponse{
+		PRURL:   t.PRURL,
+		Branch:  t.Branch,
+		Message: "Changes pushed to existing PR",
 	}, nil
 }
 

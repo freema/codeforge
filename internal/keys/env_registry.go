@@ -2,7 +2,9 @@ package keys
 
 import (
 	"context"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/freema/codeforge/internal/apperror"
@@ -136,4 +138,60 @@ func (r *EnvAwareRegistry) isEnvKey(name string) bool {
 		}
 	}
 	return false
+}
+
+// MergeEnvProviderDomains enriches the user-supplied provider_domains map
+// with hostnames extracted from GITLAB_URL and GITHUB_URL env vars.
+// This ensures self-hosted instances are automatically recognized for
+// PR creation without requiring manual provider_domains config.
+func MergeEnvProviderDomains(existing map[string]string) map[string]string {
+	merged := make(map[string]string)
+	for k, v := range existing {
+		merged[k] = v
+	}
+
+	envMappings := []struct {
+		envVar   string
+		provider string
+	}{
+		{"GITLAB_URL", "gitlab"},
+		{"GITHUB_URL", "github"},
+	}
+
+	for _, m := range envMappings {
+		rawURL := os.Getenv(m.envVar)
+		if rawURL == "" {
+			continue
+		}
+		host := extractHost(rawURL)
+		if host == "" {
+			continue
+		}
+		// Don't override explicit config and skip well-known public hosts
+		if _, exists := merged[host]; exists {
+			continue
+		}
+		if host == "github.com" || host == "gitlab.com" {
+			continue
+		}
+		merged[host] = m.provider
+	}
+
+	return merged
+}
+
+// extractHost parses a URL and returns the hostname (without port).
+func extractHost(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return ""
+	}
+	if !strings.Contains(rawURL, "://") {
+		rawURL = "https://" + rawURL
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
 }

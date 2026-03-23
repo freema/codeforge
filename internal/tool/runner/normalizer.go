@@ -24,7 +24,7 @@ type NormalizedEvent struct {
 }
 
 // StreamNormalizer converts raw CLI-specific events into NormalizedEvent.
-// Normalize returns nil for events that should be ignored.
+// Normalize returns nil or an empty slice for events that should be ignored.
 type StreamNormalizer interface {
-	Normalize(line []byte) *NormalizedEvent
+	Normalize(line []byte) []*NormalizedEvent
 }

@@ -1,12 +1,13 @@
 -- Unified schema: all tables with final naming conventions.
 
--- Provider keys (GitHub, GitLab, Sentry tokens)
+-- Provider keys (GitHub, GitLab, Sentry, Anthropic, OpenAI tokens)
 CREATE TABLE IF NOT EXISTS keys (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     name            TEXT NOT NULL,
-    provider        TEXT NOT NULL CHECK(provider IN ('github', 'gitlab', 'sentry')),
+    provider        TEXT NOT NULL CHECK(provider IN ('github', 'gitlab', 'sentry', 'anthropic', 'openai')),
     encrypted_token TEXT NOT NULL,
     scope           TEXT NOT NULL DEFAULT '',
+    base_url        TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
     UNIQUE(provider, name)
 );
@@ -67,7 +68,17 @@ CREATE TABLE IF NOT EXISTS workflow_run_steps (
     FOREIGN KEY (run_id) REFERENCES workflow_runs(id)
 );
 
--- Sessions (formerly "tasks")
+-- Workflow configs (saved parameter presets)
+CREATE TABLE IF NOT EXISTS workflow_configs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL UNIQUE,
+    workflow        TEXT NOT NULL,
+    params          TEXT NOT NULL DEFAULT '{}',
+    timeout_seconds INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))
+);
+
+-- Sessions
 CREATE TABLE IF NOT EXISTS sessions (
     id              TEXT PRIMARY KEY,
     status          TEXT NOT NULL DEFAULT 'pending',

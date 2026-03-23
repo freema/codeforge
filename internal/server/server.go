@@ -113,6 +113,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 				r.Post("/{taskID}/review", sessionHandler.Review)
 				r.Post("/{taskID}/post-review", sessionHandler.PostReviewComments)
 				r.Post("/{taskID}/create-pr", sessionHandler.CreatePR)
+				r.Post("/{taskID}/push", sessionHandler.PushToPR)
 			})
 
 			r.Get("/session-types", sessionHandler.ListSessionTypes)
