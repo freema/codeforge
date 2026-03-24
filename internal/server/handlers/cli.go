@@ -9,9 +9,10 @@ import (
 
 // CLIInfo describes a registered CLI runner for API responses.
 type CLIInfo struct {
-	Name         string `json:"name"`
-	BinaryPath   string `json:"binary_path"`
-	DefaultModel string `json:"default_model,omitempty"`
+	Name         string   `json:"name"`
+	BinaryPath   string   `json:"binary_path"`
+	DefaultModel string   `json:"default_model,omitempty"`
+	Models       []string `json:"models,omitempty"`
 }
 
 // CLIHandler handles CLI-related HTTP endpoints.
@@ -28,11 +29,12 @@ func NewCLIHandler(registry *runner.Registry, configs map[string]CLIInfo) *CLIHa
 // List handles GET /api/v1/cli — returns all registered CLIs with availability status.
 func (h *CLIHandler) List(w http.ResponseWriter, r *http.Request) {
 	type cliEntry struct {
-		Name         string `json:"name"`
-		BinaryPath   string `json:"binary_path"`
-		DefaultModel string `json:"default_model,omitempty"`
-		Available    bool   `json:"available"`
-		IsDefault    bool   `json:"is_default"`
+		Name         string   `json:"name"`
+		BinaryPath   string   `json:"binary_path"`
+		DefaultModel string   `json:"default_model,omitempty"`
+		Models       []string `json:"models,omitempty"`
+		Available    bool     `json:"available"`
+		IsDefault    bool     `json:"is_default"`
 	}
 
 	names := h.registry.Available()
@@ -45,6 +47,7 @@ func (h *CLIHandler) List(w http.ResponseWriter, r *http.Request) {
 			Name:         name,
 			BinaryPath:   info.BinaryPath,
 			DefaultModel: info.DefaultModel,
+			Models:       info.Models,
 			Available:    runner.CheckBinary(info.BinaryPath),
 			IsDefault:    name == h.registry.DefaultCLI(),
 		})

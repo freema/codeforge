@@ -158,10 +158,12 @@ func (n *ClaudeNormalizer) normalizeResult(line []byte, raw json.RawMessage) []*
 		}}
 	}
 
+	// Don't set Content — the same text was already emitted by the preceding
+	// assistant message. We emit the result event only for its metadata
+	// (cost, tokens, turns, duration) which the frontend extracts from Raw.
 	return []*NormalizedEvent{{
-		Type:    EventResult,
-		Content: msg.Result,
-		CLI:     "claude-code",
-		Raw:     raw,
+		Type: EventResult,
+		CLI:  "claude-code",
+		Raw:  raw,
 	}}
 }

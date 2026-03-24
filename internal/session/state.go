@@ -18,7 +18,7 @@ var validTransitions = map[Status][]Status{
 	StatusFailed:              {}, // terminal — only truly dead state
 	StatusAwaitingInstruction: {StatusRunning, StatusReviewing, StatusFailed},
 	StatusCreatingPR:          {StatusPRCreated, StatusFailed},
-	StatusPRCreated:           {StatusAwaitingInstruction, StatusReviewing, StatusCreatingPR},
+	StatusPRCreated:           {StatusAwaitingInstruction, StatusReviewing, StatusCreatingPR, StatusCompleted},
 }
 
 // ValidateTransition checks if the transition from current to next status is valid.

@@ -320,6 +320,48 @@ func (s *PRService) PushToPR(ctx context.Context, taskID string) (*PushToPRRespo
 	}, nil
 }
 
+// GetPRStatus checks the current status of a session's PR/MR on the provider.
+func (s *PRService) GetPRStatus(ctx context.Context, taskID string) (*gitpkg.PRStatus, error) {
+	t, err := s.sessionService.Get(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if t.PRNumber == 0 {
+		return nil, fmt.Errorf("session has no PR")
+	}
+
+	repoInfo, err := gitpkg.ParseRepoURL(t.RepoURL, s.cfg.ProviderDomains)
+	if err != nil {
+		return nil, fmt.Errorf("parsing repo URL: %w", err)
+	}
+
+	// Resolve token
+	if s.tokenResolver != nil && t.AccessToken == "" {
+		token, resolveErr := s.tokenResolver.ResolveToken(ctx, t.RepoURL, t.AccessToken, t.ProviderKey)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("resolving token: %w", resolveErr)
+		}
+		t.AccessToken = token
+	}
+
+	status, err := gitpkg.GetPRStatus(ctx, repoInfo, t.AccessToken, t.PRNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	// Sync session status with PR state:
+	// PR merged or closed → transition session to completed (work is done)
+	if (status.State == "merged" || status.State == "closed") && t.Status == StatusPRCreated {
+		if err := s.sessionService.UpdateStatus(ctx, taskID, StatusCompleted); err != nil {
+			slog.Warn("failed to sync session status from PR", "task_id", taskID, "pr_state", status.State, "error", err)
+		} else {
+			slog.Info("session status synced from PR", "task_id", taskID, "pr_state", status.State)
+		}
+	}
+
+	return status, nil
+}
+
 func (s *PRService) failPR(ctx context.Context, taskID string, err error) {
 	slog.Error("PR creation failed", "task_id", taskID, "error", err)
 	_ = s.sessionService.SetError(ctx, taskID, fmt.Sprintf("PR creation failed: %v", err))

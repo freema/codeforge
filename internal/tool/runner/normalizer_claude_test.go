@@ -68,7 +68,7 @@ func TestClaudeNormalizer_Normalize(t *testing.T) {
 			want: []struct {
 				typ     NormalizedEventType
 				content string
-			}{{EventResult, "Task completed successfully"}},
+			}{{EventResult, ""}},
 			wantCLI: "claude-code",
 		},
 		{

@@ -31,10 +31,22 @@ cli:
   default: "claude-code"
   claude_code:
     path: "claude"
-    default_model: "claude-sonnet-4-20250514"
+    default_model: "claude-sonnet-4-6-20250627"
+    models:
+      - "claude-sonnet-4-6-20250627"
+      - "claude-opus-4-6-20250625"
+      - "claude-sonnet-4-20250514"
+      - "claude-opus-4-20250514"
   codex:
     path: "codex"
-    default_model: ""  # empty = Codex CLI picks its own default; or set e.g. "o4-mini", "gpt-5.3-codex"
+    default_model: ""
+    models:
+      - "gpt-5.2"
+      - "gpt-5.1"
+      - "gpt-5"
+      - "gpt-4.1"
+      - "o3"
+      - "o4-mini"
 
 git:
   branch_prefix: "codeforge/"

@@ -424,6 +424,30 @@ func (h *SessionHandler) PostReviewComments(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// GetPRStatus handles GET /api/v1/sessions/{taskID}/pr-status.
+func (h *SessionHandler) GetPRStatus(w http.ResponseWriter, r *http.Request) {
+	taskID := chi.URLParam(r, "taskID")
+	if taskID == "" {
+		writeError(w, http.StatusBadRequest, "session ID is required")
+		return
+	}
+
+	status, err := h.prService.GetPRStatus(r.Context(), taskID)
+	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "not found") {
+			writeError(w, http.StatusNotFound, errMsg)
+		} else if strings.Contains(errMsg, "has no PR") {
+			writeError(w, http.StatusBadRequest, errMsg)
+		} else {
+			writeError(w, http.StatusBadGateway, errMsg)
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, status)
+}
+
 // ListSessionTypes handles GET /api/v1/session-types.
 func (h *SessionHandler) ListSessionTypes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{

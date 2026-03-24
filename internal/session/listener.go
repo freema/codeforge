@@ -20,7 +20,7 @@ type RedisInputPayload struct {
 	RepoURL       string      `json:"repo_url" validate:"required,url"`
 	ProviderKey   string      `json:"provider_key,omitempty"`
 	AccessToken   string      `json:"access_token,omitempty"`
-	Prompt        string      `json:"prompt" validate:"required,max=102400"`
+	Prompt        string      `json:"prompt" validate:"max=102400"`
 	CallbackURL   string      `json:"callback_url,omitempty" validate:"omitempty,url"`
 	Config        *Config `json:"config,omitempty"`
 	CorrelationID string      `json:"correlation_id,omitempty"`

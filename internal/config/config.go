@@ -65,13 +65,15 @@ type CLIConfig struct {
 }
 
 type CodexConfig struct {
-	Path         string `koanf:"path"`
-	DefaultModel string `koanf:"default_model"`
+	Path         string   `koanf:"path"`
+	DefaultModel string   `koanf:"default_model"`
+	Models       []string `koanf:"models"`
 }
 
 type ClaudeCodeConfig struct {
-	Path         string `koanf:"path"`
-	DefaultModel string `koanf:"default_model"`
+	Path         string   `koanf:"path"`
+	DefaultModel string   `koanf:"default_model"`
+	Models       []string `koanf:"models"`
 }
 
 type GitConfig struct {
@@ -155,11 +157,20 @@ func Defaults() *Config {
 			Default: "claude-code",
 			ClaudeCode: ClaudeCodeConfig{
 				Path:         "claude",
-				DefaultModel: "claude-sonnet-4-20250514",
+				DefaultModel: "claude-sonnet-4-6-20250627",
+				Models: []string{
+					"claude-sonnet-4-6-20250627",
+					"claude-opus-4-6-20250625",
+					"claude-sonnet-4-20250514",
+					"claude-opus-4-20250514",
+				},
 			},
 			Codex: CodexConfig{
 				Path:         "codex",
-				DefaultModel: "", // empty = let Codex CLI use its built-in default
+				DefaultModel: "",
+				Models: []string{
+					"gpt-5.2", "gpt-5.1", "gpt-5", "gpt-4.1", "o3", "o4-mini",
+				},
 			},
 		},
 		Git: GitConfig{

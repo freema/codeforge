@@ -139,6 +139,61 @@ func (c *GitHubPRCreator) UpdatePR(ctx context.Context, repo *RepoInfo, token st
 	return nil
 }
 
+// GetPRStatus fetches the current status of a pull request.
+func (c *GitHubPRCreator) GetPRStatus(ctx context.Context, repo *RepoInfo, token string, prNumber int) (*PRStatus, error) {
+	apiURL := repo.APIURL()
+	endpoint := fmt.Sprintf("%s/repos/%s/%s/pulls/%d", apiURL, repo.Owner, repo.Repo, prNumber)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("github API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github API returned %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	var pr struct {
+		State    string `json:"state"`
+		Title    string `json:"title"`
+		Merged   bool   `json:"merged"`
+		MergedBy *struct {
+			Login string `json:"login"`
+		} `json:"merged_by"`
+	}
+	if err := json.Unmarshal(body, &pr); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+
+	state := pr.State // "open" or "closed"
+	if pr.Merged {
+		state = "merged"
+	}
+
+	status := &PRStatus{
+		State:  state,
+		Title:  pr.Title,
+		Merged: pr.Merged,
+	}
+	if pr.MergedBy != nil {
+		status.MergedBy = pr.MergedBy.Login
+	}
+	return status, nil
+}
+
 func truncateBytes(b []byte, max int) string {
 	if len(b) <= max {
 		return string(b)

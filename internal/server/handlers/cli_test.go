@@ -16,7 +16,7 @@ func TestCLIHandler_List(t *testing.T) {
 	registry.Register("codex", runner.NewCodexRunner("codex"))
 
 	configs := map[string]CLIInfo{
-		"claude-code": {Name: "claude-code", BinaryPath: "claude", DefaultModel: "claude-sonnet-4-20250514"},
+		"claude-code": {Name: "claude-code", BinaryPath: "claude", DefaultModel: "claude-sonnet-4-6-20250627"},
 		"codex":       {Name: "codex", BinaryPath: "codex"},
 	}
 

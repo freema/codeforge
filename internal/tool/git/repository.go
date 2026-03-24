@@ -215,6 +215,146 @@ func listGitLabBranches(ctx context.Context, token, baseURL string, repoFullName
 	return branches, nil
 }
 
+// PullRequest represents an open pull request / merge request from a provider.
+type PullRequest struct {
+	Number       int       `json:"number"`
+	Title        string    `json:"title"`
+	State        string    `json:"state"`
+	Author       string    `json:"author"`
+	SourceBranch string    `json:"source_branch"`
+	TargetBranch string    `json:"target_branch"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// ListPullRequests lists open pull requests / merge requests for a repository.
+func ListPullRequests(ctx context.Context, provider Provider, token, baseURL, repoFullName string) ([]PullRequest, error) {
+	switch provider {
+	case ProviderGitHub:
+		return listGitHubPullRequests(ctx, token, baseURL, repoFullName)
+	case ProviderGitLab:
+		return listGitLabMergeRequests(ctx, token, baseURL, repoFullName)
+	default:
+		return nil, fmt.Errorf("unsupported provider: %s", provider)
+	}
+}
+
+func listGitHubPullRequests(ctx context.Context, token, baseURL, repoFullName string) ([]PullRequest, error) {
+	apiBase := "https://api.github.com"
+	if baseURL != "" {
+		apiBase = strings.TrimRight(baseURL, "/") + "/api/v3"
+	}
+	url := fmt.Sprintf("%s/repos/%s/pulls?state=open&per_page=50&sort=updated&direction=desc", apiBase, repoFullName)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("github API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github API returned %d: %s", resp.StatusCode, truncateBytes(body, 500))
+	}
+
+	var ghPRs []struct {
+		Number    int       `json:"number"`
+		Title     string    `json:"title"`
+		State     string    `json:"state"`
+		User      struct{ Login string } `json:"user"`
+		Head      struct{ Ref string } `json:"head"`
+		Base      struct{ Ref string } `json:"base"`
+		UpdatedAt time.Time `json:"updated_at"`
+	}
+	if err := json.Unmarshal(body, &ghPRs); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+
+	prs := make([]PullRequest, 0, len(ghPRs))
+	for _, p := range ghPRs {
+		prs = append(prs, PullRequest{
+			Number:       p.Number,
+			Title:        p.Title,
+			State:        p.State,
+			Author:       p.User.Login,
+			SourceBranch: p.Head.Ref,
+			TargetBranch: p.Base.Ref,
+			UpdatedAt:    p.UpdatedAt,
+		})
+	}
+	return prs, nil
+}
+
+func listGitLabMergeRequests(ctx context.Context, token, baseURL, repoFullName string) ([]PullRequest, error) {
+	apiBase := "https://gitlab.com"
+	if baseURL != "" {
+		apiBase = strings.TrimRight(baseURL, "/")
+	}
+	encoded := neturl.PathEscape(repoFullName)
+	url := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests?state=opened&per_page=50&order_by=updated_at&sort=desc", apiBase, encoded)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("PRIVATE-TOKEN", token)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("gitlab API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gitlab API returned %d: %s", resp.StatusCode, truncateBytes(body, 500))
+	}
+
+	var glMRs []struct {
+		IID          int       `json:"iid"`
+		Title        string    `json:"title"`
+		State        string    `json:"state"`
+		Author       struct{ Username string } `json:"author"`
+		SourceBranch string    `json:"source_branch"`
+		TargetBranch string    `json:"target_branch"`
+		UpdatedAt    time.Time `json:"updated_at"`
+	}
+	if err := json.Unmarshal(body, &glMRs); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+
+	prs := make([]PullRequest, 0, len(glMRs))
+	for _, m := range glMRs {
+		prs = append(prs, PullRequest{
+			Number:       m.IID,
+			Title:        m.Title,
+			State:        m.State,
+			Author:       m.Author.Username,
+			SourceBranch: m.SourceBranch,
+			TargetBranch: m.TargetBranch,
+			UpdatedAt:    m.UpdatedAt,
+		})
+	}
+	return prs, nil
+}
+
 func listGitLabRepos(ctx context.Context, token, baseURL string, page, perPage int) ([]Repository, error) {
 	apiBase := "https://gitlab.com"
 	if baseURL != "" {

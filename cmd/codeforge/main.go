@@ -164,8 +164,8 @@ func run() error {
 
 	// Build CLI info map for HTTP handler
 	cliConfigs := map[string]handlers.CLIInfo{
-		"claude-code": {Name: "claude-code", BinaryPath: cfg.CLI.ClaudeCode.Path, DefaultModel: cfg.CLI.ClaudeCode.DefaultModel},
-		"codex":       {Name: "codex", BinaryPath: cfg.CLI.Codex.Path, DefaultModel: cfg.CLI.Codex.DefaultModel},
+		"claude-code": {Name: "claude-code", BinaryPath: cfg.CLI.ClaudeCode.Path, DefaultModel: cfg.CLI.ClaudeCode.DefaultModel, Models: cfg.CLI.ClaudeCode.Models},
+		"codex":       {Name: "codex", BinaryPath: cfg.CLI.Codex.Path, DefaultModel: cfg.CLI.Codex.DefaultModel, Models: cfg.CLI.Codex.Models},
 	}
 
 	// Initialize streamer

@@ -107,3 +107,58 @@ func (c *GitLabMRCreator) UpdateMR(ctx context.Context, repo *RepoInfo, token st
 	}
 	return nil
 }
+
+// GetMRStatus fetches the current status of a merge request.
+func (c *GitLabMRCreator) GetMRStatus(ctx context.Context, repo *RepoInfo, token string, mrIID int) (*PRStatus, error) {
+	apiURL := repo.APIURL()
+	projectPath := url.PathEscape(repo.FullName())
+	endpoint := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d", apiURL, projectPath, mrIID)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("PRIVATE-TOKEN", token)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("gitlab API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gitlab API returned %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	var mr struct {
+		State    string `json:"state"`
+		Title    string `json:"title"`
+		MergedBy *struct {
+			Username string `json:"username"`
+		} `json:"merged_by"`
+	}
+	if err := json.Unmarshal(body, &mr); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+
+	// GitLab states: "opened", "closed", "merged", "locked"
+	state := mr.State
+	if state == "opened" {
+		state = "open"
+	}
+
+	status := &PRStatus{
+		State:  state,
+		Title:  mr.Title,
+		Merged: state == "merged",
+	}
+	if mr.MergedBy != nil {
+		status.MergedBy = mr.MergedBy.Username
+	}
+	return status, nil
+}

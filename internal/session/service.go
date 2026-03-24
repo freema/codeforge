@@ -63,6 +63,18 @@ func (s *Service) Create(ctx context.Context, req CreateSessionRequest) (*Sessio
 		taskType = "code"
 	}
 
+	// Prompt is required for code and plan sessions, optional for review types
+	if req.Prompt == "" {
+		switch taskType {
+		case "code", "plan":
+			return nil, apperror.Validation("prompt is required for code and plan sessions")
+		case "review":
+			req.Prompt = "Review this repository for code quality, security, and architecture."
+		case "pr_review":
+			req.Prompt = "Review this pull request."
+		}
+	}
+
 	t := &Session{
 		ID:            uuid.New().String(),
 		Status:        StatusPending,
@@ -731,7 +743,7 @@ type CreateSessionRequest struct {
 	RepoURL       string            `json:"repo_url" validate:"required,url"`
 	ProviderKey   string            `json:"provider_key,omitempty"`
 	AccessToken   string            `json:"access_token,omitempty"`
-	Prompt        string            `json:"prompt" validate:"required,max=102400"`
+	Prompt        string            `json:"prompt" validate:"max=102400"`
 	SessionType      string            `json:"session_type,omitempty"`
 	CallbackURL   string            `json:"callback_url,omitempty" validate:"omitempty,url"`
 	Config        *Config       `json:"config,omitempty"`

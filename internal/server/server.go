@@ -114,6 +114,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 				r.Post("/{taskID}/post-review", sessionHandler.PostReviewComments)
 				r.Post("/{taskID}/create-pr", sessionHandler.CreatePR)
 				r.Post("/{taskID}/push", sessionHandler.PushToPR)
+				r.Get("/{taskID}/pr-status", sessionHandler.GetPRStatus)
 			})
 
 			r.Get("/session-types", sessionHandler.ListSessionTypes)
@@ -151,6 +152,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 
 			r.Get("/repositories", repoHandler.List)
 			r.Get("/branches", repoHandler.ListBranches)
+			r.Get("/pull-requests", repoHandler.ListPullRequests)
 
 			r.Route("/sentry", func(r chi.Router) {
 				r.Get("/organizations", sentryHandler.ListOrganizations)
