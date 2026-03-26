@@ -14,7 +14,6 @@ const maxTemplateOutput = 1 << 20 // 1MB
 type TemplateContext struct {
 	Params map[string]string            // workflow input parameters
 	Steps  map[string]map[string]string // step name → output key → value
-	RunID  string                       // workflow run ID
 }
 
 // Render evaluates a Go text/template string against the given context.

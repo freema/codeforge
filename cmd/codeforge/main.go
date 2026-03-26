@@ -217,9 +217,6 @@ func run() error {
 		ProviderDomains: cfg.Git.ProviderDomains,
 	}, aiClient)
 
-	// Initialize Redis input listener
-	listener := session.NewListener(rdb, sessionService, "input:sessions")
-
 	// Initialize workspace cleaner
 	wsCleaner := workspace.NewCleaner(workspaceMgr, sessionService, workspace.CleanerConfig{
 		Interval:              10 * time.Minute,
@@ -248,7 +245,6 @@ func run() error {
 	defer appCancel()
 
 	pool.Start(appCtx)
-	go listener.Start(appCtx)
 	go wsCleaner.Start(appCtx)
 
 	errCh := make(chan error, 1)
@@ -278,7 +274,7 @@ func run() error {
 		slog.Error("server shutdown error", "error", err)
 	}
 
-	appCancel() // Signal workers and listener to stop
+	appCancel() // Signal workers to stop
 	pool.Stop() // Wait for workers to drain
 
 	_ = rdb.Close()
