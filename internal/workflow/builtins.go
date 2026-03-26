@@ -50,7 +50,7 @@ var BuiltinWorkflows = []WorkflowDefinition{
 - If no issues are fixable in code, make NO changes and explain why`,
 					ProviderKey: "{{.Params.provider_key}}",
 					ToolKeyRef:  "{{.Params.key_name}}",
-					Tools: mustJSON([]tools.TaskTool{
+					Tools: mustJSON([]tools.SessionTool{
 						{Name: "sentry"},
 					}),
 				}),

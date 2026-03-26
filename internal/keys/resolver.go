@@ -9,7 +9,7 @@ import (
 )
 
 // Resolver resolves access tokens using a priority chain:
-// 1. Inline token on task (access_token field)
+// 1. Inline token on session (access_token field)
 // 2. Registered key by provider_key name
 // 3. Environment variable fallback (GITHUB_TOKEN / GITLAB_TOKEN)
 type Resolver struct {

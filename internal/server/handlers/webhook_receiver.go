@@ -234,12 +234,12 @@ func (h *WebhookReceiverHandler) handleGitHubPR(w http.ResponseWriter, r *http.R
 
 	t, err := h.sessionService.Create(r.Context(), req)
 	if err != nil {
-		log.Error("github webhook: failed to create task", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to create review task")
+		log.Error("github webhook: failed to create session", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to create review session")
 		return
 	}
 
-	log.Info("github webhook: review task created",
+	log.Info("github webhook: review session created",
 		"task_id", t.ID,
 		"pr_number", prNumber,
 		"repo", event.Repository.FullName,
@@ -305,10 +305,10 @@ func (h *WebhookReceiverHandler) handleGitHubComment(w http.ResponseWriter, r *h
 
 	switch cmd {
 	case "review":
-		// Find existing task or create new pr_review task
+		// Find existing session or create new pr_review session
 		existing, _ := h.sessionService.FindByPR(r.Context(), repoURL, prNumber)
 		if existing != nil {
-			// Start review on existing task
+			// Start review on existing session
 			t, err := h.sessionService.StartReviewAsync(r.Context(), existing.ID, cli, "")
 			if err != nil {
 				log.Error("github webhook: failed to start review", "task_id", existing.ID, "error", err)
@@ -321,7 +321,7 @@ func (h *WebhookReceiverHandler) handleGitHubComment(w http.ResponseWriter, r *h
 			})
 			return
 		}
-		// No existing task — create fresh pr_review
+		// No existing session — create fresh pr_review
 		req := session.CreateSessionRequest{
 			RepoURL:     repoURL,
 			ProviderKey: keyName,
@@ -336,8 +336,8 @@ func (h *WebhookReceiverHandler) handleGitHubComment(w http.ResponseWriter, r *h
 		}
 		t, err := h.sessionService.Create(r.Context(), req)
 		if err != nil {
-			log.Error("github webhook: failed to create review task", "error", err)
-			writeError(w, http.StatusInternalServerError, "failed to create review task")
+			log.Error("github webhook: failed to create review session", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to create review session")
 			return
 		}
 		writeJSON(w, http.StatusCreated, map[string]interface{}{
@@ -348,7 +348,7 @@ func (h *WebhookReceiverHandler) handleGitHubComment(w http.ResponseWriter, r *h
 	case "fix-cr", "fix":
 		existing, _ := h.sessionService.FindByPR(r.Context(), repoURL, prNumber)
 		if existing == nil {
-			writeError(w, http.StatusNotFound, fmt.Sprintf("no task found for PR #%d — run /review first", prNumber))
+			writeError(w, http.StatusNotFound, fmt.Sprintf("no session found for PR #%d — run /review first", prNumber))
 			return
 		}
 
@@ -486,12 +486,12 @@ func (h *WebhookReceiverHandler) handleGitLabMR(w http.ResponseWriter, r *http.R
 
 	t, err := h.sessionService.Create(r.Context(), req)
 	if err != nil {
-		log.Error("gitlab webhook: failed to create task", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to create review task")
+		log.Error("gitlab webhook: failed to create session", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to create review session")
 		return
 	}
 
-	log.Info("gitlab webhook: review task created",
+	log.Info("gitlab webhook: review session created",
 		"task_id", t.ID,
 		"mr_iid", mrIID,
 		"repo", event.Project.PathWithNamespace,
@@ -576,8 +576,8 @@ func (h *WebhookReceiverHandler) handleGitLabNote(w http.ResponseWriter, r *http
 		}
 		t, err := h.sessionService.Create(r.Context(), req)
 		if err != nil {
-			log.Error("gitlab webhook: failed to create review task", "error", err)
-			writeError(w, http.StatusInternalServerError, "failed to create review task")
+			log.Error("gitlab webhook: failed to create review session", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to create review session")
 			return
 		}
 		writeJSON(w, http.StatusCreated, map[string]interface{}{
@@ -588,7 +588,7 @@ func (h *WebhookReceiverHandler) handleGitLabNote(w http.ResponseWriter, r *http
 	case "fix-cr", "fix":
 		existing, _ := h.sessionService.FindByPR(r.Context(), repoURL, mrIID)
 		if existing == nil {
-			writeError(w, http.StatusNotFound, fmt.Sprintf("no task found for MR !%d — run /review first", mrIID))
+			writeError(w, http.StatusNotFound, fmt.Sprintf("no session found for MR !%d — run /review first", mrIID))
 			return
 		}
 

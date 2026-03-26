@@ -93,7 +93,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 		r.Get("/auth/verify", healthHandler.AuthVerify)
 
 		// SSE stream endpoints — no timeout middleware (long-lived connection)
-		r.Get("/sessions/{taskID}/stream", streamHandler.Stream)
+		r.Get("/sessions/{sessionID}/stream", streamHandler.Stream)
 
 		// All other routes — with timeout
 		r.Group(func(r chi.Router) {
@@ -106,14 +106,14 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 				} else {
 					r.Post("/", sessionHandler.Create)
 				}
-				r.Get("/{taskID}", sessionHandler.Get)
-				r.Post("/{taskID}/instruct", sessionHandler.Instruct)
-				r.Post("/{taskID}/cancel", sessionHandler.Cancel)
-				r.Post("/{taskID}/review", sessionHandler.Review)
-				r.Post("/{taskID}/post-review", sessionHandler.PostReviewComments)
-				r.Post("/{taskID}/create-pr", sessionHandler.CreatePR)
-				r.Post("/{taskID}/push", sessionHandler.PushToPR)
-				r.Get("/{taskID}/pr-status", sessionHandler.GetPRStatus)
+				r.Get("/{sessionID}", sessionHandler.Get)
+				r.Post("/{sessionID}/instruct", sessionHandler.Instruct)
+				r.Post("/{sessionID}/cancel", sessionHandler.Cancel)
+				r.Post("/{sessionID}/review", sessionHandler.Review)
+				r.Post("/{sessionID}/post-review", sessionHandler.PostReviewComments)
+				r.Post("/{sessionID}/create-pr", sessionHandler.CreatePR)
+				r.Post("/{sessionID}/push", sessionHandler.PushToPR)
+				r.Get("/{sessionID}/pr-status", sessionHandler.GetPRStatus)
 			})
 
 			r.Get("/session-types", sessionHandler.ListSessionTypes)
@@ -146,7 +146,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 
 			r.Route("/workspaces", func(r chi.Router) {
 				r.Get("/", wsHandler.List)
-				r.Delete("/{taskID}", wsHandler.Delete)
+				r.Delete("/{sessionID}", wsHandler.Delete)
 			})
 
 			r.Get("/repositories", repoHandler.List)

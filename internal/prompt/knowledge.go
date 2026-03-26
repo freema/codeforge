@@ -1,7 +1,7 @@
 package prompt
 
 // AnalyzeRepoPrompt is the prompt template for analyzing a repository's structure.
-// Exported for reuse by the CI Action's knowledge_update task type.
+// Exported for reuse by the CI Action's knowledge_update session type.
 const AnalyzeRepoPrompt = `You are analyzing a codebase to understand its architecture, conventions, and key components.
 
 {{if .Params.focus}}Focus area: {{.Params.focus}}{{end}}
@@ -20,7 +20,7 @@ const AnalyzeRepoPrompt = `You are analyzing a codebase to understand its archit
 - Focus on information that would help a new developer understand the codebase`
 
 // UpdateKnowledgePrompt is the prompt template for creating/updating .codeforge/ knowledge docs.
-// Exported for reuse by the CI Action's knowledge_update task type.
+// Exported for reuse by the CI Action's knowledge_update session type.
 const UpdateKnowledgePrompt = `You are a technical writer creating project knowledge documentation.
 
 Based on your analysis of this codebase, create or update documentation files in the ` + "`.codeforge/`" + ` directory.

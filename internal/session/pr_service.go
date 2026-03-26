@@ -14,7 +14,7 @@ import (
 
 // WorkspacePathResolver resolves the filesystem path for a session workspace.
 type WorkspacePathResolver interface {
-	WorkspacePath(ctx context.Context, taskID string) string
+	WorkspacePath(ctx context.Context, sessionID string) string
 }
 
 // PRServiceConfig holds configuration for PR creation.
@@ -26,7 +26,7 @@ type PRServiceConfig struct {
 	ProviderDomains map[string]string
 }
 
-// TokenResolver resolves access tokens for tasks.
+// TokenResolver resolves access tokens for sessions.
 type TokenResolver interface {
 	ResolveToken(ctx context.Context, repoURL, accessToken, providerKey string) (string, error)
 }
@@ -71,22 +71,22 @@ type CreatePRResponse struct {
 }
 
 // CreatePR orchestrates the full PR creation: analyze → branch → commit → push → create PR.
-func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRRequest) (*CreatePRResponse, error) {
-	// Load task
-	t, err := s.sessionService.Get(ctx, taskID)
+func (s *PRService) CreatePR(ctx context.Context, sessionID string, req CreatePRRequest) (*CreatePRResponse, error) {
+	// Load session
+	t, err := s.sessionService.Get(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Validate state — allow PR creation from completed or pr_created (re-push after new iteration)
 	if t.Status != StatusCompleted && t.Status != StatusPRCreated {
-		return nil, fmt.Errorf("task must be in completed or pr_created status, currently: %s", t.Status)
+		return nil, fmt.Errorf("session must be in completed or pr_created status, currently: %s", t.Status)
 	}
 
 	// Resolve workDir early — needed for lazy change recalculation.
-	workDir := filepath.Join(s.cfg.WorkspaceBase, taskID)
+	workDir := filepath.Join(s.cfg.WorkspaceBase, sessionID)
 	if s.workspaceResolver != nil {
-		if resolved := s.workspaceResolver.WorkspacePath(ctx, taskID); resolved != "" {
+		if resolved := s.workspaceResolver.WorkspacePath(ctx, sessionID); resolved != "" {
 			workDir = resolved
 		}
 	}
@@ -95,7 +95,7 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 	if t.ChangesSummary == nil || (t.ChangesSummary.FilesModified == 0 && t.ChangesSummary.FilesCreated == 0 && t.ChangesSummary.FilesDeleted == 0) {
 		recalc, err := gitpkg.CalculateChanges(ctx, workDir)
 		if err == nil && recalc != nil && (recalc.FilesModified > 0 || recalc.FilesCreated > 0 || recalc.FilesDeleted > 0) {
-			slog.Info("recalculated changes for PR", "task_id", taskID, "modified", recalc.FilesModified, "created", recalc.FilesCreated, "deleted", recalc.FilesDeleted)
+			slog.Info("recalculated changes for PR", "session_id", sessionID, "modified", recalc.FilesModified, "created", recalc.FilesCreated, "deleted", recalc.FilesDeleted)
 			t.ChangesSummary = recalc
 		} else {
 			return nil, fmt.Errorf("no changes to create PR for")
@@ -115,20 +115,20 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 	previousStatus := t.Status
 
 	// Transition to CREATING_PR
-	if err := s.sessionService.UpdateStatus(ctx, taskID, StatusCreatingPR); err != nil {
+	if err := s.sessionService.UpdateStatus(ctx, sessionID, StatusCreatingPR); err != nil {
 		return nil, fmt.Errorf("transitioning to creating_pr: %w", err)
 	}
 
 	// Parse repo URL to detect provider
 	repoInfo, err := gitpkg.ParseRepoURL(t.RepoURL, s.cfg.ProviderDomains)
 	if err != nil {
-		s.failPR(ctx, taskID, err)
+		s.failPR(ctx, sessionID, err)
 		return nil, fmt.Errorf("parsing repo URL: %w", err)
 	}
 
 	if repoInfo.Provider == gitpkg.ProviderUnknown {
 		err := fmt.Errorf("PR creation not supported for host: %s", repoInfo.Host)
-		s.failPR(ctx, taskID, err)
+		s.failPR(ctx, sessionID, err)
 		return nil, err
 	}
 
@@ -138,7 +138,7 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 	var branchSlug string
 
 	if title == "" || description == "" {
-		analysis := s.analyzer.Analyze(ctx, t.Prompt, taskID)
+		analysis := s.analyzer.Analyze(ctx, t.Prompt, sessionID)
 		if title == "" {
 			title = analysis.PRTitle
 		}
@@ -147,7 +147,7 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 		}
 		branchSlug = analysis.BranchSlug
 	} else {
-		branchSlug = slug.Generate(t.Prompt, taskID)
+		branchSlug = slug.Generate(t.Prompt, sessionID)
 	}
 
 	baseBranch := req.TargetBranch
@@ -168,7 +168,7 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 	branchName := gitpkg.GenerateBranchName(ctx, workDir, s.cfg.BranchPrefix, branchSlug)
 
 	// Create commit message — try AI, fall back to formatted message
-	commitMsg := gitpkg.FormatCommitMessage(title, taskID, s.cfg.CommitAuthor, s.cfg.CommitEmail)
+	commitMsg := gitpkg.FormatCommitMessage(title, sessionID, s.cfg.CommitAuthor, s.cfg.CommitEmail)
 	if s.ai != nil {
 		if diffOut, diffErr := gitpkg.GetUnstagedDiff(ctx, workDir); diffErr == nil && diffOut != "" {
 			if generated := ai.GenerateCommitMessage(ctx, s.ai, diffOut, t.Prompt); generated != "" {
@@ -189,7 +189,7 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 	})
 	if err != nil {
 		// Revert status back instead of failing the session — user can retry or send new instructions
-		_ = s.sessionService.UpdateStatus(ctx, taskID, previousStatus)
+		_ = s.sessionService.UpdateStatus(ctx, sessionID, previousStatus)
 		return nil, fmt.Errorf("creating branch and pushing: %w", err)
 	}
 
@@ -201,12 +201,12 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 		BaseBranch:  baseBranch,
 	})
 	if err != nil {
-		s.failPR(ctx, taskID, err)
+		s.failPR(ctx, sessionID, err)
 		return nil, fmt.Errorf("creating PR: %w", err)
 	}
 
 	// Update session state with PR info
-	stateKey := s.sessionService.redis.Key("session", taskID, "state")
+	stateKey := s.sessionService.redis.Key("session", sessionID, "state")
 	s.sessionService.redis.Unwrap().HSet(ctx, stateKey, map[string]interface{}{
 		"branch":    branchName,
 		"pr_url":    prResult.URL,
@@ -214,15 +214,15 @@ func (s *PRService) CreatePR(ctx context.Context, taskID string, req CreatePRReq
 	})
 
 	s.sessionService.persistToSQLite(func() error {
-		return s.sessionService.sqlite.UpdatePR(ctx, taskID, branchName, prResult.URL, prResult.Number)
+		return s.sessionService.sqlite.UpdatePR(ctx, sessionID, branchName, prResult.URL, prResult.Number)
 	})
 
 	// Transition to PR_CREATED
-	if err := s.sessionService.UpdateStatus(ctx, taskID, StatusPRCreated); err != nil {
-		slog.Error("failed to transition to pr_created", "task_id", taskID, "error", err)
+	if err := s.sessionService.UpdateStatus(ctx, sessionID, StatusPRCreated); err != nil {
+		slog.Error("failed to transition to pr_created", "session_id", sessionID, "error", err)
 	}
 
-	slog.Info("PR created", "task_id", taskID, "pr_url", prResult.URL, "branch", branchName)
+	slog.Info("PR created", "session_id", sessionID, "pr_url", prResult.URL, "branch", branchName)
 
 	return &CreatePRResponse{
 		PRURL:    prResult.URL,
@@ -240,16 +240,16 @@ type PushToPRResponse struct {
 
 // PushToPR pushes new changes to an existing PR branch without creating a new PR/MR.
 // The existing MR/PR on GitLab/GitHub auto-updates when the branch gets new commits.
-func (s *PRService) PushToPR(ctx context.Context, taskID string) (*PushToPRResponse, error) {
+func (s *PRService) PushToPR(ctx context.Context, sessionID string) (*PushToPRResponse, error) {
 	// Load session
-	t, err := s.sessionService.Get(ctx, taskID)
+	t, err := s.sessionService.Get(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Validate state
 	if t.Status != StatusCompleted && t.Status != StatusPRCreated {
-		return nil, fmt.Errorf("task must be in completed or pr_created status, currently: %s", t.Status)
+		return nil, fmt.Errorf("session must be in completed or pr_created status, currently: %s", t.Status)
 	}
 
 	// Validate that a PR was previously created
@@ -258,9 +258,9 @@ func (s *PRService) PushToPR(ctx context.Context, taskID string) (*PushToPRRespo
 	}
 
 	// Resolve workspace dir
-	workDir := filepath.Join(s.cfg.WorkspaceBase, taskID)
+	workDir := filepath.Join(s.cfg.WorkspaceBase, sessionID)
 	if s.workspaceResolver != nil {
-		if resolved := s.workspaceResolver.WorkspacePath(ctx, taskID); resolved != "" {
+		if resolved := s.workspaceResolver.WorkspacePath(ctx, sessionID); resolved != "" {
 			workDir = resolved
 		}
 	}
@@ -296,20 +296,20 @@ func (s *PRService) PushToPR(ctx context.Context, taskID string) (*PushToPRRespo
 		return nil, err
 	}
 
-	slog.Info("pushed to existing PR", "task_id", taskID, "branch", t.Branch)
+	slog.Info("pushed to existing PR", "session_id", sessionID, "branch", t.Branch)
 
 	// Recalculate changes summary
 	recalc, err := gitpkg.CalculateChanges(ctx, workDir)
 	if err == nil && recalc != nil {
 		t.ChangesSummary = recalc
-		stateKey := s.sessionService.redis.Key("session", taskID, "state")
+		stateKey := s.sessionService.redis.Key("session", sessionID, "state")
 		s.sessionService.redis.Unwrap().HSet(ctx, stateKey, "changes_summary", MarshalChangesSummary(recalc))
 	}
 
 	// Ensure status is pr_created
 	if t.Status != StatusPRCreated {
-		if err := s.sessionService.UpdateStatus(ctx, taskID, StatusPRCreated); err != nil {
-			slog.Error("failed to transition to pr_created after push", "task_id", taskID, "error", err)
+		if err := s.sessionService.UpdateStatus(ctx, sessionID, StatusPRCreated); err != nil {
+			slog.Error("failed to transition to pr_created after push", "session_id", sessionID, "error", err)
 		}
 	}
 
@@ -321,8 +321,8 @@ func (s *PRService) PushToPR(ctx context.Context, taskID string) (*PushToPRRespo
 }
 
 // GetPRStatus checks the current status of a session's PR/MR on the provider.
-func (s *PRService) GetPRStatus(ctx context.Context, taskID string) (*gitpkg.PRStatus, error) {
-	t, err := s.sessionService.Get(ctx, taskID)
+func (s *PRService) GetPRStatus(ctx context.Context, sessionID string) (*gitpkg.PRStatus, error) {
+	t, err := s.sessionService.Get(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -352,18 +352,18 @@ func (s *PRService) GetPRStatus(ctx context.Context, taskID string) (*gitpkg.PRS
 	// Sync session status with PR state:
 	// PR merged or closed → transition session to completed (work is done)
 	if (status.State == "merged" || status.State == "closed") && t.Status == StatusPRCreated {
-		if err := s.sessionService.UpdateStatus(ctx, taskID, StatusCompleted); err != nil {
-			slog.Warn("failed to sync session status from PR", "task_id", taskID, "pr_state", status.State, "error", err)
+		if err := s.sessionService.UpdateStatus(ctx, sessionID, StatusCompleted); err != nil {
+			slog.Warn("failed to sync session status from PR", "session_id", sessionID, "pr_state", status.State, "error", err)
 		} else {
-			slog.Info("session status synced from PR", "task_id", taskID, "pr_state", status.State)
+			slog.Info("session status synced from PR", "session_id", sessionID, "pr_state", status.State)
 		}
 	}
 
 	return status, nil
 }
 
-func (s *PRService) failPR(ctx context.Context, taskID string, err error) {
-	slog.Error("PR creation failed", "task_id", taskID, "error", err)
-	_ = s.sessionService.SetError(ctx, taskID, fmt.Sprintf("PR creation failed: %v", err))
-	_ = s.sessionService.UpdateStatus(ctx, taskID, StatusFailed)
+func (s *PRService) failPR(ctx context.Context, sessionID string, err error) {
+	slog.Error("PR creation failed", "session_id", sessionID, "error", err)
+	_ = s.sessionService.SetError(ctx, sessionID, fmt.Sprintf("PR creation failed: %v", err))
+	_ = s.sessionService.UpdateStatus(ctx, sessionID, StatusFailed)
 }

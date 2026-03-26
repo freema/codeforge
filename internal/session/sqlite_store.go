@@ -79,12 +79,12 @@ func (s *SQLiteStore) Save(ctx context.Context, t *Session) error {
 }
 
 // UpdateStatus updates status and related timestamps in SQLite.
-func (s *SQLiteStore) UpdateStatus(ctx context.Context, taskID string, status Status, startedAt, finishedAt *time.Time) error {
+func (s *SQLiteStore) UpdateStatus(ctx context.Context, sessionID string, status Status, startedAt, finishedAt *time.Time) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET status = ?, started_at = COALESCE(?, started_at), finished_at = COALESCE(?, finished_at), updated_at = ? WHERE id = ?`,
-		string(status), nullableTime(startedAt), nullableTime(finishedAt), now, taskID,
+		string(status), nullableTime(startedAt), nullableTime(finishedAt), now, sessionID,
 	)
 	if err != nil {
 		return fmt.Errorf("updating session status in sqlite: %w", err)
@@ -93,14 +93,14 @@ func (s *SQLiteStore) UpdateStatus(ctx context.Context, taskID string, status St
 }
 
 // UpdateResult stores result, changes summary, and usage info in SQLite.
-func (s *SQLiteStore) UpdateResult(ctx context.Context, taskID string, result string, changes *gitpkg.ChangesSummary, usage *UsageInfo) error {
+func (s *SQLiteStore) UpdateResult(ctx context.Context, sessionID string, result string, changes *gitpkg.ChangesSummary, usage *UsageInfo) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	changesJSON := marshalJSON(changes)
 	usageJSON := marshalJSON(usage)
 
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET result = ?, changes_json = ?, usage_json = ?, updated_at = ? WHERE id = ?`,
-		result, changesJSON, usageJSON, now, taskID,
+		result, changesJSON, usageJSON, now, sessionID,
 	)
 	if err != nil {
 		return fmt.Errorf("updating session result in sqlite: %w", err)
@@ -109,12 +109,12 @@ func (s *SQLiteStore) UpdateResult(ctx context.Context, taskID string, result st
 }
 
 // UpdatePR stores PR metadata in SQLite.
-func (s *SQLiteStore) UpdatePR(ctx context.Context, taskID string, branch, prURL string, prNumber int) error {
+func (s *SQLiteStore) UpdatePR(ctx context.Context, sessionID string, branch, prURL string, prNumber int) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET branch = ?, pr_url = ?, pr_number = ?, updated_at = ? WHERE id = ?`,
-		branch, prURL, prNumber, now, taskID,
+		branch, prURL, prNumber, now, sessionID,
 	)
 	if err != nil {
 		return fmt.Errorf("updating session PR in sqlite: %w", err)
@@ -123,13 +123,13 @@ func (s *SQLiteStore) UpdatePR(ctx context.Context, taskID string, branch, prURL
 }
 
 // UpdateReviewResult stores the review result JSON in SQLite.
-func (s *SQLiteStore) UpdateReviewResult(ctx context.Context, taskID string, result *review.ReviewResult) error {
+func (s *SQLiteStore) UpdateReviewResult(ctx context.Context, sessionID string, result *review.ReviewResult) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	reviewJSON := marshalJSON(result)
 
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET review_result_json = ?, updated_at = ? WHERE id = ?`,
-		reviewJSON, now, taskID,
+		reviewJSON, now, sessionID,
 	)
 	if err != nil {
 		return fmt.Errorf("updating review result in sqlite: %w", err)
@@ -138,12 +138,12 @@ func (s *SQLiteStore) UpdateReviewResult(ctx context.Context, taskID string, res
 }
 
 // UpdateError stores an error message in SQLite.
-func (s *SQLiteStore) UpdateError(ctx context.Context, taskID string, errMsg string) error {
+func (s *SQLiteStore) UpdateError(ctx context.Context, sessionID string, errMsg string) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET error = ?, updated_at = ? WHERE id = ?`,
-		errMsg, now, taskID,
+		errMsg, now, sessionID,
 	)
 	if err != nil {
 		return fmt.Errorf("updating session error in sqlite: %w", err)
@@ -152,7 +152,7 @@ func (s *SQLiteStore) UpdateError(ctx context.Context, taskID string, errMsg str
 }
 
 // SaveIteration upserts an iteration record.
-func (s *SQLiteStore) SaveIteration(ctx context.Context, taskID string, iter Iteration) error {
+func (s *SQLiteStore) SaveIteration(ctx context.Context, sessionID string, iter Iteration) error {
 	changesJSON := marshalJSON(iter.Changes)
 	usageJSON := marshalJSON(iter.Usage)
 	var endedAt *string
@@ -173,7 +173,7 @@ func (s *SQLiteStore) SaveIteration(ctx context.Context, taskID string, iter Ite
 			usage_json = excluded.usage_json,
 			started_at = excluded.started_at,
 			ended_at = excluded.ended_at`,
-		taskID, iter.Number, iter.Prompt, iter.Result, iter.Error,
+		sessionID, iter.Number, iter.Prompt, iter.Result, iter.Error,
 		string(iter.Status), changesJSON, usageJSON,
 		iter.StartedAt.Format(time.RFC3339Nano), endedAt,
 	)
@@ -185,7 +185,7 @@ func (s *SQLiteStore) SaveIteration(ctx context.Context, taskID string, iter Ite
 
 // Get retrieves a session from SQLite by ID.
 // Note: sensitive fields (access_token, ai_api_key) are NOT stored in SQLite.
-func (s *SQLiteStore) Get(ctx context.Context, taskID string) (*Session, error) {
+func (s *SQLiteStore) Get(ctx context.Context, sessionID string) (*Session, error) {
 	var t Session
 	var statusStr, configJSON, changesJSON, usageJSON, createdAt, updatedAt string
 	var reviewJSON sql.NullString
@@ -199,7 +199,7 @@ func (s *SQLiteStore) Get(ctx context.Context, taskID string) (*Session, error) 
 			workflow_run_id, trace_id, created_at, started_at, finished_at, updated_at,
 			review_result_json
 		 FROM sessions WHERE id = ?`,
-		taskID,
+		sessionID,
 	).Scan(
 		&t.ID, &statusStr, &t.RepoURL, &t.ProviderKey, &t.Prompt, &t.SessionType, &t.CallbackURL, &configJSON,
 		&t.Result, &t.Error, &changesJSON, &usageJSON,
@@ -209,7 +209,7 @@ func (s *SQLiteStore) Get(ctx context.Context, taskID string) (*Session, error) 
 		&reviewJSON,
 	)
 	if err == sql.ErrNoRows {
-		return nil, apperror.NotFound("session %s not found", taskID)
+		return nil, apperror.NotFound("session %s not found", sessionID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("getting session from sqlite: %w", err)
@@ -236,11 +236,11 @@ func (s *SQLiteStore) Get(ctx context.Context, taskID string) (*Session, error) 
 }
 
 // GetIterations loads all iterations for a session from SQLite.
-func (s *SQLiteStore) GetIterations(ctx context.Context, taskID string) ([]Iteration, error) {
+func (s *SQLiteStore) GetIterations(ctx context.Context, sessionID string) ([]Iteration, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT number, prompt, result, error, status, changes_json, usage_json, started_at, ended_at
 		 FROM session_iterations WHERE session_id = ? ORDER BY number`,
-		taskID,
+		sessionID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("getting iterations from sqlite: %w", err)
@@ -297,7 +297,7 @@ func (s *SQLiteStore) List(ctx context.Context, opts ListOptions) ([]Summary, in
 		return nil, 0, fmt.Errorf("counting sessions: %w", err)
 	}
 
-	// Query tasks
+	// Query sessions
 	var query string
 	var args []interface{}
 	if opts.Status != "" {
@@ -316,7 +316,7 @@ func (s *SQLiteStore) List(ctx context.Context, opts ListOptions) ([]Summary, in
 	}
 	defer rows.Close()
 
-	tasks := make([]Summary, 0)
+	sessions := make([]Summary, 0)
 	for rows.Next() {
 		var ts Summary
 		var statusStr, prompt, createdAt string
@@ -346,9 +346,9 @@ func (s *SQLiteStore) List(ctx context.Context, opts ListOptions) ([]Summary, in
 			ts.FinishedAt = &t
 		}
 
-		tasks = append(tasks, ts)
+		sessions = append(sessions, ts)
 	}
-	return tasks, total, rows.Err()
+	return sessions, total, rows.Err()
 }
 
 // FindByPR finds the most recent session for a given repo + PR/MR number.

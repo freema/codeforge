@@ -67,7 +67,7 @@ func decodeJSON(t *testing.T, resp *http.Response, dst interface{}) {
 }
 
 // waitForStatus polls a session until it reaches the expected status or times out.
-func waitForStatus(t *testing.T, taskID string, expected string, timeout time.Duration) map[string]interface{} {
+func waitForStatus(t *testing.T, sessionID string, expected string, timeout time.Duration) map[string]interface{} {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -75,12 +75,12 @@ func waitForStatus(t *testing.T, taskID string, expected string, timeout time.Du
 	for {
 		select {
 		case <-ctx.Done():
-			t.Fatalf("timed out waiting for task %s to reach status %s", taskID, expected)
+			t.Fatalf("timed out waiting for session %s to reach status %s", sessionID, expected)
 			return nil
 		default:
 		}
 
-		resp := apiRequest(t, "GET", "/api/v1/sessions/"+taskID, nil)
+		resp := apiRequest(t, "GET", "/api/v1/sessions/"+sessionID, nil)
 		var result map[string]interface{}
 		decodeJSON(t, resp, &result)
 
@@ -89,7 +89,7 @@ func waitForStatus(t *testing.T, taskID string, expected string, timeout time.Du
 			return result
 		}
 		if status == "failed" && expected != "failed" {
-			t.Fatalf("task %s failed unexpectedly: %v", taskID, result["error"])
+			t.Fatalf("session %s failed unexpectedly: %v", sessionID, result["error"])
 		}
 
 		time.Sleep(500 * time.Millisecond)
@@ -259,7 +259,7 @@ func TestCancelNonRunningTask(t *testing.T) {
 	resp := apiRequest(t, "POST", "/api/v1/sessions/nonexistent/cancel", nil)
 	defer resp.Body.Close()
 
-	// Should be 404 (task not found)
+	// Should be 404 (session not found)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", resp.StatusCode)
 	}

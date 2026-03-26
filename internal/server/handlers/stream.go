@@ -15,7 +15,7 @@ import (
 	"github.com/freema/codeforge/internal/session"
 )
 
-// StreamHandler handles SSE streaming for task events.
+// StreamHandler handles SSE streaming for session events.
 type StreamHandler struct {
 	service *session.Service
 	redis   *redisclient.Client
@@ -26,18 +26,18 @@ func NewStreamHandler(service *session.Service, redis *redisclient.Client) *Stre
 	return &StreamHandler{service: service, redis: redis}
 }
 
-// Stream handles GET /api/v1/sessions/{taskID}/stream.
-// Streams task events via Server-Sent Events (SSE).
+// Stream handles GET /api/v1/sessions/{sessionID}/stream.
+// Streams session events via Server-Sent Events (SSE).
 // First replays historical events, then subscribes to live events via Redis Pub/Sub.
 func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
-	taskID := chi.URLParam(r, "taskID")
-	if taskID == "" {
+	sessionID := chi.URLParam(r, "sessionID")
+	if sessionID == "" {
 		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
 
-	// Verify task exists and get current status
-	t, err := h.service.Get(r.Context(), taskID)
+	// Verify session exists and get current status
+	t, err := h.service.Get(r.Context(), sessionID)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -67,8 +67,8 @@ func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 
 	// Subscribe to live channels BEFORE reading history to avoid missing events.
 	// For terminal tasks we skip subscription entirely.
-	streamKey := h.redis.Key("session", taskID, "stream")
-	doneKey := h.redis.Key("session", taskID, "done")
+	streamKey := h.redis.Key("session", sessionID, "stream")
+	doneKey := h.redis.Key("session", sessionID, "done")
 
 	subCtx, subCancel := context.WithCancel(context.Background())
 	defer subCancel()
@@ -82,13 +82,13 @@ func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 
 	// Send connected event with current session state
 	writeSSE(w, "connected", map[string]interface{}{
-		"task_id": t.ID,
+		"session_id": t.ID,
 		"status":  t.Status,
 	})
 	flush()
 
 	// Replay history
-	historyKey := h.redis.Key("session", taskID, "history")
+	historyKey := h.redis.Key("session", sessionID, "history")
 	history, err := h.redis.Unwrap().LRange(r.Context(), historyKey, 0, -1).Result()
 	if err == nil && len(history) > 0 {
 		for _, msg := range history {
@@ -97,10 +97,10 @@ func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		flush()
 	}
 
-	// For terminal tasks, send done and close immediately
+	// For terminal sessions, send done and close immediately
 	if isTerminal {
 		writeSSE(w, "done", map[string]interface{}{
-			"task_id": t.ID,
+			"session_id": t.ID,
 			"status":  t.Status,
 		})
 		flush()
@@ -113,14 +113,14 @@ func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	keepalive := time.NewTicker(15 * time.Second)
 	defer keepalive.Stop()
 
-	slog.Debug("SSE stream started", "task_id", taskID)
+	slog.Debug("SSE stream started", "session_id", sessionID)
 
 	for {
 		_ = rc.SetWriteDeadline(time.Now().Add(30 * time.Second))
 
 		select {
 		case <-r.Context().Done():
-			slog.Debug("SSE client disconnected", "task_id", taskID)
+			slog.Debug("SSE client disconnected", "session_id", sessionID)
 			return
 
 		case <-deadline:
@@ -128,7 +128,7 @@ func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 				"message": "stream closed after 10 minutes",
 			})
 			flush()
-			slog.Debug("SSE stream timed out", "task_id", taskID)
+			slog.Debug("SSE stream timed out", "session_id", sessionID)
 			return
 
 		case <-keepalive.C:

@@ -127,7 +127,7 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 			baseEnv = filtered
 		}
 	}
-	// Only set ANTHROPIC_API_KEY if provided per-task; otherwise inherit from
+	// Only set ANTHROPIC_API_KEY if provided per-session; otherwise inherit from
 	// process environment (baseEnv) so a global key can be configured via env var.
 	if opts.APIKey != "" {
 		cmd.Env = append(baseEnv, "ANTHROPIC_API_KEY="+opts.APIKey)

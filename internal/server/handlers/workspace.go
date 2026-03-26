@@ -64,29 +64,29 @@ func (h *WorkspaceHandler) List(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Delete handles DELETE /api/v1/workspaces/{taskID}.
+// Delete handles DELETE /api/v1/workspaces/{sessionID}.
 func (h *WorkspaceHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	taskID := chi.URLParam(r, "taskID")
-	if taskID == "" {
+	sessionID := chi.URLParam(r, "sessionID")
+	if sessionID == "" {
 		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
 
 	// Check if session is currently running
-	if t, err := h.sessionService.Get(r.Context(), taskID); err == nil {
+	if t, err := h.sessionService.Get(r.Context(), sessionID); err == nil {
 		if t.Status == session.StatusRunning || t.Status == session.StatusCloning || t.Status == session.StatusCreatingPR {
-			writeError(w, http.StatusConflict, "cannot delete workspace for a running task")
+			writeError(w, http.StatusConflict, "cannot delete workspace for a running session")
 			return
 		}
 	}
 
-	ws := h.manager.Get(r.Context(), taskID)
+	ws := h.manager.Get(r.Context(), sessionID)
 	if ws == nil {
 		writeError(w, http.StatusNotFound, "workspace not found")
 		return
 	}
 
-	if err := h.manager.Delete(r.Context(), taskID); err != nil {
+	if err := h.manager.Delete(r.Context(), sessionID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete workspace")
 		return
 	}

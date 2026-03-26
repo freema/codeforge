@@ -53,8 +53,8 @@ func NewManager(basePath string, redis *redisclient.Client, ttl time.Duration) *
 
 // Create creates a workspace directory and registers it in Redis.
 // The prompt is used to generate a human-readable slug for the directory name.
-func (m *Manager) Create(ctx context.Context, taskID, prompt string) (*Workspace, error) {
-	slug := slugpkg.Generate(prompt, taskID)
+func (m *Manager) Create(ctx context.Context, sessionID, prompt string) (*Workspace, error) {
+	slug := slugpkg.Generate(prompt, sessionID)
 	wsPath := filepath.Join(m.basePath, slug)
 
 	if err := os.MkdirAll(wsPath, 0755); err != nil {
@@ -62,7 +62,7 @@ func (m *Manager) Create(ctx context.Context, taskID, prompt string) (*Workspace
 	}
 
 	ws := &Workspace{
-		TaskID:    taskID,
+		TaskID:    sessionID,
 		Path:      wsPath,
 		Slug:      slug,
 		CreatedAt: time.Now().UTC(),
@@ -78,7 +78,7 @@ func (m *Manager) Create(ctx context.Context, taskID, prompt string) (*Workspace
 		"size_bytes": 0,
 	}
 
-	redisKey := m.redisKey(taskID)
+	redisKey := m.redisKey(sessionID)
 	if err := m.redis.Unwrap().HSet(ctx, redisKey, fields).Err(); err != nil {
 		return nil, fmt.Errorf("registering workspace in redis: %w", err)
 	}
@@ -88,16 +88,16 @@ func (m *Manager) Create(ctx context.Context, taskID, prompt string) (*Workspace
 
 // WorkspacePath returns the filesystem path for a session workspace.
 // Returns empty string if workspace is not found.
-func (m *Manager) WorkspacePath(ctx context.Context, taskID string) string {
-	if ws := m.Get(ctx, taskID); ws != nil && ws.Path != "" {
+func (m *Manager) WorkspacePath(ctx context.Context, sessionID string) string {
+	if ws := m.Get(ctx, sessionID); ws != nil && ws.Path != "" {
 		return ws.Path
 	}
 	return ""
 }
 
 // Get retrieves workspace metadata from Redis. Returns nil if not found.
-func (m *Manager) Get(ctx context.Context, taskID string) *Workspace {
-	redisKey := m.redisKey(taskID)
+func (m *Manager) Get(ctx context.Context, sessionID string) *Workspace {
+	redisKey := m.redisKey(sessionID)
 	fields, err := m.redis.Unwrap().HGetAll(ctx, redisKey).Result()
 	if err != nil || len(fields) == 0 {
 		return nil
@@ -107,10 +107,10 @@ func (m *Manager) Get(ctx context.Context, taskID string) *Workspace {
 
 // Delete removes a workspace directory and its Redis metadata.
 // Validates path is inside basePath to prevent path traversal.
-func (m *Manager) Delete(ctx context.Context, taskID string) error {
-	// Read path from Redis; fallback to legacy taskID-based path
-	wsPath := filepath.Join(m.basePath, taskID)
-	if ws := m.Get(ctx, taskID); ws != nil && ws.Path != "" {
+func (m *Manager) Delete(ctx context.Context, sessionID string) error {
+	// Read path from Redis; fallback to legacy sessionID-based path
+	wsPath := filepath.Join(m.basePath, sessionID)
+	if ws := m.Get(ctx, sessionID); ws != nil && ws.Path != "" {
 		wsPath = ws.Path
 	}
 
@@ -131,15 +131,15 @@ func (m *Manager) Delete(ctx context.Context, taskID string) error {
 		slog.Warn("failed to remove workspace directory", "path", absPath, "error", err)
 	}
 
-	m.redis.Unwrap().Del(ctx, m.redisKey(taskID))
+	m.redis.Unwrap().Del(ctx, m.redisKey(sessionID))
 	return nil
 }
 
 // UpdateSize calculates and stores the workspace size.
-func (m *Manager) UpdateSize(ctx context.Context, taskID string) (int64, error) {
-	// Read path from Redis; fallback to legacy taskID-based path
-	wsPath := filepath.Join(m.basePath, taskID)
-	if ws := m.Get(ctx, taskID); ws != nil && ws.Path != "" {
+func (m *Manager) UpdateSize(ctx context.Context, sessionID string) (int64, error) {
+	// Read path from Redis; fallback to legacy sessionID-based path
+	wsPath := filepath.Join(m.basePath, sessionID)
+	if ws := m.Get(ctx, sessionID); ws != nil && ws.Path != "" {
 		wsPath = ws.Path
 	}
 
@@ -148,7 +148,7 @@ func (m *Manager) UpdateSize(ctx context.Context, taskID string) (int64, error) 
 		return 0, err
 	}
 
-	m.redis.Unwrap().HSet(ctx, m.redisKey(taskID), "size_bytes", size)
+	m.redis.Unwrap().HSet(ctx, m.redisKey(sessionID), "size_bytes", size)
 	return size, nil
 }
 
@@ -224,8 +224,8 @@ func DirSize(path string) (int64, error) {
 	return size, err
 }
 
-func (m *Manager) redisKey(taskID string) string {
-	return m.redis.Key("workspace", taskID)
+func (m *Manager) redisKey(sessionID string) string {
+	return m.redis.Key("workspace", sessionID)
 }
 
 func hashToWorkspace(fields map[string]string) *Workspace {

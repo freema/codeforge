@@ -91,8 +91,8 @@ func TestSQLiteStore_SaveAndGet(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	task := makeSession("task-1")
-	if err := store.Save(ctx, task); err != nil {
+	sess := makeSession("task-1")
+	if err := store.Save(ctx, sess); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -101,20 +101,20 @@ func TestSQLiteStore_SaveAndGet(t *testing.T) {
 		t.Fatalf("Get: %v", err)
 	}
 
-	if got.ID != task.ID {
-		t.Errorf("ID: got %q, want %q", got.ID, task.ID)
+	if got.ID != sess.ID {
+		t.Errorf("ID: got %q, want %q", got.ID, sess.ID)
 	}
 	if got.Status != StatusPending {
 		t.Errorf("Status: got %q, want pending", got.Status)
 	}
-	if got.RepoURL != task.RepoURL {
-		t.Errorf("RepoURL: got %q, want %q", got.RepoURL, task.RepoURL)
+	if got.RepoURL != sess.RepoURL {
+		t.Errorf("RepoURL: got %q, want %q", got.RepoURL, sess.RepoURL)
 	}
-	if got.Prompt != task.Prompt {
-		t.Errorf("Prompt: got %q, want %q", got.Prompt, task.Prompt)
+	if got.Prompt != sess.Prompt {
+		t.Errorf("Prompt: got %q, want %q", got.Prompt, sess.Prompt)
 	}
-	if got.TraceID != task.TraceID {
-		t.Errorf("TraceID: got %q, want %q", got.TraceID, task.TraceID)
+	if got.TraceID != sess.TraceID {
+		t.Errorf("TraceID: got %q, want %q", got.TraceID, sess.TraceID)
 	}
 }
 
@@ -123,15 +123,15 @@ func TestSQLiteStore_SaveUpsert(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	task := makeSession("task-upsert")
-	if err := store.Save(ctx, task); err != nil {
+	sess := makeSession("task-upsert")
+	if err := store.Save(ctx, sess); err != nil {
 		t.Fatalf("first Save: %v", err)
 	}
 
 	// Update and save again
-	task.Status = StatusRunning
-	task.Iteration = 2
-	if err := store.Save(ctx, task); err != nil {
+	sess.Status = StatusRunning
+	sess.Iteration = 2
+	if err := store.Save(ctx, sess); err != nil {
 		t.Fatalf("second Save (upsert): %v", err)
 	}
 
@@ -154,7 +154,7 @@ func TestSQLiteStore_GetNotFound(t *testing.T) {
 
 	_, err := store.Get(ctx, "nonexistent")
 	if err == nil {
-		t.Fatal("expected error for nonexistent task, got nil")
+		t.Fatal("expected error for nonexistent session, got nil")
 	}
 }
 
@@ -163,8 +163,8 @@ func TestSQLiteStore_UpdateStatus(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	task := makeSession("task-status")
-	if err := store.Save(ctx, task); err != nil {
+	sess := makeSession("task-status")
+	if err := store.Save(ctx, sess); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -346,27 +346,27 @@ func TestSQLiteStore_List(t *testing.T) {
 	store := NewSQLiteStore(db)
 	ctx := context.Background()
 
-	// Insert multiple tasks
+	// Insert multiple sessions
 	for i := 0; i < 5; i++ {
-		task := makeSession("list-task-" + string(rune('a'+i)))
+		sess := makeSession("list-task-" + string(rune('a'+i)))
 		if i%2 == 0 {
-			task.Status = StatusCompleted
+			sess.Status = StatusCompleted
 		}
-		if err := store.Save(ctx, task); err != nil {
+		if err := store.Save(ctx, sess); err != nil {
 			t.Fatalf("Save: %v", err)
 		}
 	}
 
 	// List all
-	tasks, total, err := store.List(ctx, ListOptions{Limit: 10})
+	sessions, total, err := store.List(ctx, ListOptions{Limit: 10})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	if total != 5 {
 		t.Errorf("total: got %d, want 5", total)
 	}
-	if len(tasks) != 5 {
-		t.Errorf("len(tasks): got %d, want 5", len(tasks))
+	if len(sessions) != 5 {
+		t.Errorf("len(sessions): got %d, want 5", len(sessions))
 	}
 
 	// Filter by status
@@ -419,7 +419,7 @@ func TestSQLiteStore_ListPagination(t *testing.T) {
 	}
 	for _, ts := range page2 {
 		if ids1[ts.ID] {
-			t.Errorf("duplicate task %s on both pages", ts.ID)
+			t.Errorf("duplicate session %s on both pages", ts.ID)
 		}
 	}
 }
@@ -433,17 +433,17 @@ func TestSQLiteStore_PromptTruncatedInList(t *testing.T) {
 	for i := range longPrompt {
 		longPrompt = longPrompt[:i] + "x" + longPrompt[i+1:]
 	}
-	task := makeSession("task-long-prompt")
-	task.Prompt = longPrompt
-	if err := store.Save(ctx, task); err != nil {
+	sess := makeSession("task-long-prompt")
+	sess.Prompt = longPrompt
+	if err := store.Save(ctx, sess); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
-	tasks, _, _ := store.List(ctx, ListOptions{Limit: 10})
-	if len(tasks) != 1 {
-		t.Fatalf("expected 1 task")
+	sessions, _, _ := store.List(ctx, ListOptions{Limit: 10})
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session")
 	}
-	if len(tasks[0].Prompt) > 203 { // 200 + "..."
-		t.Errorf("prompt not truncated: len=%d", len(tasks[0].Prompt))
+	if len(sessions[0].Prompt) > 203 { // 200 + "..."
+		t.Errorf("prompt not truncated: len=%d", len(sessions[0].Prompt))
 	}
 }

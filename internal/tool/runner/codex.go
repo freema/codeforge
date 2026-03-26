@@ -102,7 +102,7 @@ func (c *CodexRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, err
 	}
 
 	// Codex exec reads CODEX_API_KEY (not OPENAI_API_KEY).
-	// Per-task key takes priority; otherwise propagate OPENAI_API_KEY → CODEX_API_KEY
+	// Per-session key takes priority; otherwise propagate OPENAI_API_KEY → CODEX_API_KEY
 	// so the operator only needs to set one env var.
 	if opts.APIKey != "" {
 		cmd.Env = append(baseEnv, "CODEX_API_KEY="+opts.APIKey)

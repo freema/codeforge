@@ -86,7 +86,7 @@ func writeGitHubStepSummary(ciCtx *CIContext, reviewResult *review.ReviewResult,
 
 func writeTerminalSummary(r *review.ReviewResult, rawOutput string, inputTokens, outputTokens int) {
 	if r == nil {
-		// Non-review task — print truncated output
+		// Non-review session — print truncated output
 		output := rawOutput
 		if len(output) > 2000 {
 			output = output[:2000] + "\n... (truncated, full output in $GITHUB_OUTPUT)"

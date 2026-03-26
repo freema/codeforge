@@ -119,23 +119,23 @@ func TestValidSessionType(t *testing.T) {
 func TestSessionTypes(t *testing.T) {
 	types := SessionTypes()
 	if len(types) != 4 {
-		t.Fatalf("expected 4 task types, got %d", len(types))
+		t.Fatalf("expected 4 session types, got %d", len(types))
 	}
 
 	names := map[string]bool{}
 	for _, tt := range types {
 		names[tt.Name] = true
 		if tt.Label == "" {
-			t.Errorf("task type %s has empty label", tt.Name)
+			t.Errorf("session type %s has empty label", tt.Name)
 		}
 		if tt.Description == "" {
-			t.Errorf("task type %s has empty description", tt.Name)
+			t.Errorf("session type %s has empty description", tt.Name)
 		}
 	}
 
 	for _, expected := range []string{"code", "plan", "review", "pr_review"} {
 		if !names[expected] {
-			t.Errorf("expected task type %s in list", expected)
+			t.Errorf("expected session type %s in list", expected)
 		}
 	}
 }

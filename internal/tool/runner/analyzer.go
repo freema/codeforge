@@ -29,11 +29,11 @@ func NewAnalyzer(aiClient ...ai.Client) *Analyzer {
 	return a
 }
 
-// Analyze generates branch slug, PR title, and description from task prompt.
+// Analyze generates branch slug, PR title, and description from session prompt.
 // If an AI client is available, it generates smart metadata.
 // Otherwise falls back to simple truncation.
-func (a *Analyzer) Analyze(ctx context.Context, prompt string, taskID string) *AnalysisResult {
-	branchSlug := slug.Generate(prompt, taskID)
+func (a *Analyzer) Analyze(ctx context.Context, prompt string, sessionID string) *AnalysisResult {
+	branchSlug := slug.Generate(prompt, sessionID)
 
 	// Try AI generation
 	if a.ai != nil {

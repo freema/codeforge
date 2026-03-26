@@ -70,7 +70,7 @@ func (c *Cleaner) cleanup(ctx context.Context) {
 		}
 
 		// Skip workspaces for currently running tasks
-		if c.isTaskRunning(ctx, ws.TaskID) {
+		if c.isSessionRunning(ctx, ws.TaskID) {
 			continue
 		}
 
@@ -133,7 +133,7 @@ func (c *Cleaner) emergencyCleanup(ctx context.Context) {
 	})
 
 	for _, ws := range workspaces {
-		if c.isTaskRunning(ctx, ws.TaskID) {
+		if c.isSessionRunning(ctx, ws.TaskID) {
 			continue
 		}
 
@@ -153,10 +153,10 @@ func (c *Cleaner) emergencyCleanup(ctx context.Context) {
 	}
 }
 
-func (c *Cleaner) isTaskRunning(ctx context.Context, taskID string) bool {
-	t, err := c.sessionService.Get(ctx, taskID)
+func (c *Cleaner) isSessionRunning(ctx context.Context, sessionID string) bool {
+	t, err := c.sessionService.Get(ctx, sessionID)
 	if err != nil {
-		return false // task not found, safe to delete
+		return false // session not found, safe to delete
 	}
 	return t.Status == session.StatusRunning || t.Status == session.StatusCloning || t.Status == session.StatusCreatingPR
 }

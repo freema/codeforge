@@ -16,7 +16,7 @@ import (
 	"github.com/freema/codeforge/internal/session"
 )
 
-// Pool is a worker pool that consumes tasks from a Redis queue.
+// Pool is a worker pool that consumes sessions from a Redis queue.
 type Pool struct {
 	redis       *redisclient.Client
 	executor    *Executor
@@ -72,20 +72,20 @@ func (p *Pool) Stop() {
 	slog.Info("worker pool stopped")
 }
 
-// Cancel cancels a running task by its ID.
-func (p *Pool) Cancel(taskID string) error {
+// Cancel cancels a running session by its ID.
+func (p *Pool) Cancel(sessionID string) error {
 	p.cancelsMu.RLock()
-	cancelFn, ok := p.cancels[taskID]
+	cancelFn, ok := p.cancels[sessionID]
 	p.cancelsMu.RUnlock()
 	if !ok {
-		return fmt.Errorf("task %s is not currently running", taskID)
+		return fmt.Errorf("session %s is not currently running", sessionID)
 	}
 	cancelFn()
 	return nil
 }
 
 // shouldProcess returns true if a session status is actionable by the worker pool.
-// Tasks in other states are stale queue entries that should be skipped.
+// Sessions in other states are stale queue entries that should be skipped.
 func shouldProcess(s session.Status) bool {
 	switch s {
 	case session.StatusPending, session.StatusAwaitingInstruction, session.StatusReviewing:
@@ -117,9 +117,9 @@ func (p *Pool) worker(ctx context.Context, id int) {
 			continue
 		}
 
-		taskID := result[1] // result[0] = key name
+		sessionID := result[1] // result[0] = key name
 
-		log.Info("picked up task", "task_id", taskID)
+		log.Info("picked up session", "session_id", sessionID)
 		p.activeCount.Add(1)
 		metrics.WorkersActive.Set(float64(p.activeCount.Load()))
 
@@ -128,38 +128,38 @@ func (p *Pool) worker(ctx context.Context, id int) {
 			metrics.QueueDepth.Set(float64(qLen))
 		}
 
-		// Load task from Redis
-		t, err := p.sessionService.Get(ctx, taskID)
+		// Load session from Redis
+		t, err := p.sessionService.Get(ctx, sessionID)
 		if err != nil {
-			log.Warn("failed to load task, skipping", "task_id", taskID, "error", err)
+			log.Warn("failed to load session, skipping", "session_id", sessionID, "error", err)
 			p.activeCount.Add(-1)
 			continue
 		}
 
 		// Guard against stale/duplicate queue entries — only actionable states proceed
 		if !shouldProcess(t.Status) {
-			log.Warn("skipping stale queue entry", "task_id", taskID, "status", t.Status)
+			log.Warn("skipping stale queue entry", "session_id", sessionID, "status", t.Status)
 			p.activeCount.Add(-1)
 			metrics.WorkersActive.Set(float64(p.activeCount.Load()))
 			continue
 		}
 
-		// Create task-specific cancellable context
-		taskCtx, taskCancel := context.WithCancel(ctx)
+		// Create session-specific cancellable context
+		sessionCtx, sessionCancel := context.WithCancel(ctx)
 
-		// Register cancel func for this task
+		// Register cancel func for this session
 		p.cancelsMu.Lock()
-		p.cancels[taskID] = taskCancel
+		p.cancels[sessionID] = sessionCancel
 		p.cancelsMu.Unlock()
 
 		// Execute the session
-		p.executor.Execute(taskCtx, t)
+		p.executor.Execute(sessionCtx, t)
 
 		// Deregister cancel func
 		p.cancelsMu.Lock()
-		delete(p.cancels, taskID)
+		delete(p.cancels, sessionID)
 		p.cancelsMu.Unlock()
-		taskCancel() // clean up context resources
+		sessionCancel() // clean up context resources
 
 		p.activeCount.Add(-1)
 		metrics.WorkersActive.Set(float64(p.activeCount.Load()))

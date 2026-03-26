@@ -17,7 +17,7 @@ type PRMetadata struct {
 
 // GeneratePRMetadata generates a PR title and description from the diff and original prompt.
 // Returns nil if AI is not available or fails (caller should use fallback).
-func GeneratePRMetadata(ctx context.Context, client Client, diff, taskPrompt string) *PRMetadata {
+func GeneratePRMetadata(ctx context.Context, client Client, diff, sessionPrompt string) *PRMetadata {
 	if client == nil {
 		return nil
 	}
@@ -33,7 +33,7 @@ func GeneratePRMetadata(ctx context.Context, client Client, diff, taskPrompt str
 		diff = diff[:4000] + "\n... (truncated)"
 	}
 
-	user := "## Original task\n" + taskPrompt + "\n\n## Diff\n" + diff
+	user := "## Original task\n" + sessionPrompt + "\n\n## Diff\n" + diff
 
 	response, err := client.Generate(ctx, system, user)
 	if err != nil {

@@ -22,12 +22,12 @@ import (
 
 var validate = validator.New()
 
-// Canceller can cancel a running task.
+// Canceller can cancel a running session.
 type Canceller interface {
-	Cancel(taskID string) error
+	Cancel(sessionID string) error
 }
 
-// SessionHandler handles task-related HTTP endpoints.
+// SessionHandler handles session-related HTTP endpoints.
 type SessionHandler struct {
 	service         *session.Service
 	prService       *session.PRService
@@ -59,14 +59,14 @@ func (h *SessionHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tasks, total, err := h.service.List(r.Context(), opts)
+	sessions, total, err := h.service.List(r.Context(), opts)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list sessions")
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"sessions": tasks,
+		"sessions": sessions,
 		"total": total,
 	})
 }
@@ -142,16 +142,16 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Get handles GET /api/v1/sessions/{taskID}.
+// Get handles GET /api/v1/sessions/{sessionID}.
 // Supports ?include=iterations to load full iteration history.
 func (h *SessionHandler) Get(w http.ResponseWriter, r *http.Request) {
-	taskID := chi.URLParam(r, "taskID")
-	if taskID == "" {
+	sessionID := chi.URLParam(r, "sessionID")
+	if sessionID == "" {
 		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
 
-	t, err := h.service.Get(r.Context(), taskID)
+	t, err := h.service.Get(r.Context(), sessionID)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -159,7 +159,7 @@ func (h *SessionHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	// Load iterations if requested
 	if r.URL.Query().Get("include") == "iterations" {
-		iterations, err := h.service.GetIterations(r.Context(), taskID)
+		iterations, err := h.service.GetIterations(r.Context(), sessionID)
 		if err == nil {
 			t.Iterations = iterations
 		}
@@ -168,10 +168,10 @@ func (h *SessionHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
-// Instruct handles POST /api/v1/sessions/{taskID}/instruct.
+// Instruct handles POST /api/v1/sessions/{sessionID}/instruct.
 func (h *SessionHandler) Instruct(w http.ResponseWriter, r *http.Request) {
-	taskID := chi.URLParam(r, "taskID")
-	if taskID == "" {
+	sessionID := chi.URLParam(r, "sessionID")
+	if sessionID == "" {
 		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
@@ -188,7 +188,7 @@ func (h *SessionHandler) Instruct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := h.service.Instruct(r.Context(), taskID, req.Prompt)
+	t, err := h.service.Instruct(r.Context(), sessionID, req.Prompt)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -201,16 +201,16 @@ func (h *SessionHandler) Instruct(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Cancel handles POST /api/v1/sessions/{taskID}/cancel.
+// Cancel handles POST /api/v1/sessions/{sessionID}/cancel.
 func (h *SessionHandler) Cancel(w http.ResponseWriter, r *http.Request) {
-	taskID := chi.URLParam(r, "taskID")
-	if taskID == "" {
+	sessionID := chi.URLParam(r, "sessionID")
+	if sessionID == "" {
 		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
 
-	// Load task to check status
-	t, err := h.service.Get(r.Context(), taskID)
+	// Load session to check status
+	t, err := h.service.Get(r.Context(), sessionID)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -221,22 +221,22 @@ func (h *SessionHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.canceller.Cancel(taskID); err != nil {
+	if err := h.canceller.Cancel(sessionID); err != nil {
 		writeError(w, http.StatusConflict, "session is not currently running")
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
-		"id":      taskID,
+		"id":      sessionID,
 		"status":  "canceling",
 		"message": "session cancellation requested",
 	})
 }
 
-// CreatePR handles POST /api/v1/sessions/{taskID}/create-pr.
+// CreatePR handles POST /api/v1/sessions/{sessionID}/create-pr.
 func (h *SessionHandler) CreatePR(w http.ResponseWriter, r *http.Request) {
-	taskID := chi.URLParam(r, "taskID")
-	if taskID == "" {
+	sessionID := chi.URLParam(r, "sessionID")
+	if sessionID == "" {
 		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
@@ -249,7 +249,7 @@ func (h *SessionHandler) CreatePR(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.prService.CreatePR(r.Context(), taskID, req)
+	result, err := h.prService.CreatePR(r.Context(), sessionID, req)
 	if err != nil {
 		// Determine status code from error message
 		errMsg := err.Error()
@@ -273,15 +273,15 @@ func (h *SessionHandler) CreatePR(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// PushToPR handles POST /api/v1/sessions/{taskID}/push.
+// PushToPR handles POST /api/v1/sessions/{sessionID}/push.
 func (h *SessionHandler) PushToPR(w http.ResponseWriter, r *http.Request) {
-	taskID := chi.URLParam(r, "taskID")
-	if taskID == "" {
+	sessionID := chi.URLParam(r, "sessionID")
+	if sessionID == "" {
 		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
 
-	result, err := h.prService.PushToPR(r.Context(), taskID)
+	result, err := h.prService.PushToPR(r.Context(), sessionID)
 	if err != nil {
 		errMsg := err.Error()
 		switch {
@@ -302,10 +302,10 @@ func (h *SessionHandler) PushToPR(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// Review handles POST /api/v1/sessions/{taskID}/review.
+// Review handles POST /api/v1/sessions/{sessionID}/review.
 func (h *SessionHandler) Review(w http.ResponseWriter, r *http.Request) {
-	taskID := chi.URLParam(r, "taskID")
-	if taskID == "" {
+	sessionID := chi.URLParam(r, "sessionID")
+	if sessionID == "" {
 		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
@@ -332,7 +332,7 @@ func (h *SessionHandler) Review(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	t, err := h.service.StartReviewAsync(r.Context(), taskID, req.CLI, req.Model)
+	t, err := h.service.StartReviewAsync(r.Context(), sessionID, req.CLI, req.Model)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -344,17 +344,17 @@ func (h *SessionHandler) Review(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// PostReviewComments handles POST /api/v1/sessions/{taskID}/post-review.
+// PostReviewComments handles POST /api/v1/sessions/{sessionID}/post-review.
 // Posts the session's ReviewResult as comments to the associated PR/MR.
 func (h *SessionHandler) PostReviewComments(w http.ResponseWriter, r *http.Request) {
-	taskID := chi.URLParam(r, "taskID")
-	if taskID == "" {
+	sessionID := chi.URLParam(r, "sessionID")
+	if sessionID == "" {
 		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
 
 	var req struct {
-		PRNumber int `json:"pr_number,omitempty"` // override; defaults to task config
+		PRNumber int `json:"pr_number,omitempty"` // override; defaults to session config
 	}
 	if r.ContentLength > 0 {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -363,7 +363,7 @@ func (h *SessionHandler) PostReviewComments(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	t, err := h.service.Get(r.Context(), taskID)
+	t, err := h.service.Get(r.Context(), sessionID)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -424,15 +424,15 @@ func (h *SessionHandler) PostReviewComments(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// GetPRStatus handles GET /api/v1/sessions/{taskID}/pr-status.
+// GetPRStatus handles GET /api/v1/sessions/{sessionID}/pr-status.
 func (h *SessionHandler) GetPRStatus(w http.ResponseWriter, r *http.Request) {
-	taskID := chi.URLParam(r, "taskID")
-	if taskID == "" {
+	sessionID := chi.URLParam(r, "sessionID")
+	if sessionID == "" {
 		writeError(w, http.StatusBadRequest, "session ID is required")
 		return
 	}
 
-	status, err := h.prService.GetPRStatus(r.Context(), taskID)
+	status, err := h.prService.GetPRStatus(r.Context(), sessionID)
 	if err != nil {
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "not found") {

@@ -133,8 +133,8 @@ func (s *Service) Create(ctx context.Context, req CreateSessionRequest) (*Sessio
 }
 
 // Get retrieves a session from Redis by ID. Sensitive fields are decrypted in memory.
-func (s *Service) Get(ctx context.Context, taskID string) (*Session, error) {
-	stateKey := s.redis.Key("session", taskID, "state")
+func (s *Service) Get(ctx context.Context, sessionID string) (*Session, error) {
+	stateKey := s.redis.Key("session", sessionID, "state")
 	fields, err := s.redis.Unwrap().HGetAll(ctx, stateKey).Result()
 	if err != nil {
 		return nil, fmt.Errorf("getting session from redis: %w", err)
@@ -142,9 +142,9 @@ func (s *Service) Get(ctx context.Context, taskID string) (*Session, error) {
 	if len(fields) == 0 {
 		// Fallback to SQLite for expired Redis keys
 		if s.sqlite != nil {
-			return s.sqlite.Get(ctx, taskID)
+			return s.sqlite.Get(ctx, sessionID)
 		}
-		return nil, apperror.NotFound("session %s not found", taskID)
+		return nil, apperror.NotFound("session %s not found", sessionID)
 	}
 
 	t := s.hashToSession(fields)
@@ -153,7 +153,7 @@ func (s *Service) Get(ctx context.Context, taskID string) (*Session, error) {
 	if enc := fields["encrypted_access_token"]; enc != "" {
 		token, err := s.crypto.Decrypt(enc)
 		if err != nil {
-			slog.Error("failed to decrypt access token", "session_id", taskID, "error", err)
+			slog.Error("failed to decrypt access token", "session_id", sessionID, "error", err)
 		} else {
 			t.AccessToken = token
 		}
@@ -161,7 +161,7 @@ func (s *Service) Get(ctx context.Context, taskID string) (*Session, error) {
 	if enc := fields["encrypted_ai_api_key"]; enc != "" {
 		key, err := s.crypto.Decrypt(enc)
 		if err != nil {
-			slog.Error("failed to decrypt ai api key", "session_id", taskID, "error", err)
+			slog.Error("failed to decrypt ai api key", "session_id", sessionID, "error", err)
 		} else {
 			if t.Config == nil {
 				t.Config = &Config{}
@@ -171,7 +171,7 @@ func (s *Service) Get(ctx context.Context, taskID string) (*Session, error) {
 	}
 
 	// Load result if exists
-	resultKey := s.redis.Key("session", taskID, "result")
+	resultKey := s.redis.Key("session", sessionID, "result")
 	result, err := s.redis.Unwrap().Get(ctx, resultKey).Result()
 	if err == nil {
 		t.Result = result
@@ -181,12 +181,12 @@ func (s *Service) Get(ctx context.Context, taskID string) (*Session, error) {
 }
 
 // UpdateStatus transitions a session to a new status with state machine validation.
-func (s *Service) UpdateStatus(ctx context.Context, taskID string, newStatus Status) error {
-	stateKey := s.redis.Key("session", taskID, "state")
+func (s *Service) UpdateStatus(ctx context.Context, sessionID string, newStatus Status) error {
+	stateKey := s.redis.Key("session", sessionID, "state")
 
 	currentStatus, err := s.redis.Unwrap().HGet(ctx, stateKey, "status").Result()
 	if err == redis.Nil {
-		return apperror.NotFound("session %s not found", taskID)
+		return apperror.NotFound("session %s not found", sessionID)
 	}
 	if err != nil {
 		return fmt.Errorf("getting session status: %w", err)
@@ -231,7 +231,7 @@ func (s *Service) UpdateStatus(ctx context.Context, taskID string, newStatus Sta
 		return fmt.Errorf("updating session status: %w", err)
 	}
 
-	slog.Info("session status updated", "session_id", taskID, "status", newStatus)
+	slog.Info("session status updated", "session_id", sessionID, "status", newStatus)
 
 	// Determine timestamps for SQLite
 	var startedAt, finishedAt *time.Time
@@ -242,16 +242,16 @@ func (s *Service) UpdateStatus(ctx context.Context, taskID string, newStatus Sta
 		finishedAt = &now
 	}
 	s.persistToSQLite(func() error {
-		return s.sqlite.UpdateStatus(ctx, taskID, newStatus, startedAt, finishedAt)
+		return s.sqlite.UpdateStatus(ctx, sessionID, newStatus, startedAt, finishedAt)
 	})
 
 	return nil
 }
 
 // SetResult stores the session result and changes summary.
-func (s *Service) SetResult(ctx context.Context, taskID string, result string, changes *gitpkg.ChangesSummary, usage *UsageInfo) error {
-	resultKey := s.redis.Key("session", taskID, "result")
-	stateKey := s.redis.Key("session", taskID, "state")
+func (s *Service) SetResult(ctx context.Context, sessionID string, result string, changes *gitpkg.ChangesSummary, usage *UsageInfo) error {
+	resultKey := s.redis.Key("session", sessionID, "result")
+	stateKey := s.redis.Key("session", sessionID, "state")
 
 	fields := map[string]interface{}{}
 	if changes != nil {
@@ -271,15 +271,15 @@ func (s *Service) SetResult(ctx context.Context, taskID string, result string, c
 	}
 
 	s.persistToSQLite(func() error {
-		return s.sqlite.UpdateResult(ctx, taskID, result, changes, usage)
+		return s.sqlite.UpdateResult(ctx, sessionID, result, changes, usage)
 	})
 
 	return nil
 }
 
-// Instruct submits a follow-up instruction for an existing task.
-func (s *Service) Instruct(ctx context.Context, taskID string, prompt string) (*Session, error) {
-	t, err := s.Get(ctx, taskID)
+// Instruct submits a follow-up instruction for an existing session.
+func (s *Service) Instruct(ctx context.Context, sessionID string, prompt string) (*Session, error) {
+	t, err := s.Get(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +306,7 @@ func (s *Service) Instruct(ctx context.Context, taskID string, prompt string) (*
 	now := time.Now().UTC()
 	newIteration := t.Iteration + 1
 
-	stateKey := s.redis.Key("session", taskID, "state")
+	stateKey := s.redis.Key("session", sessionID, "state")
 	pipe := s.redis.Unwrap().Pipeline()
 
 	// Update session state
@@ -322,7 +322,7 @@ func (s *Service) Instruct(ctx context.Context, taskID string, prompt string) (*
 	pipe.Persist(ctx, stateKey)
 
 	// Re-enqueue for worker processing
-	pipe.RPush(ctx, s.redis.Key(s.queueName), taskID)
+	pipe.RPush(ctx, s.redis.Key(s.queueName), sessionID)
 
 	if _, err := pipe.Exec(ctx); err != nil {
 		return nil, fmt.Errorf("instructing session: %w", err)
@@ -333,7 +333,7 @@ func (s *Service) Instruct(ctx context.Context, taskID string, prompt string) (*
 	t.Iteration = newIteration
 	t.Error = ""
 
-	slog.Info("session instructed", "session_id", taskID, "iteration", newIteration)
+	slog.Info("session instructed", "session_id", sessionID, "iteration", newIteration)
 
 	s.persistToSQLite(func() error {
 		return s.sqlite.Save(ctx, t)
@@ -343,8 +343,8 @@ func (s *Service) Instruct(ctx context.Context, taskID string, prompt string) (*
 }
 
 // SaveIteration appends a completed iteration record to the session's iteration history.
-func (s *Service) SaveIteration(ctx context.Context, taskID string, iter Iteration) error {
-	iterKey := s.redis.Key("session", taskID, "iterations")
+func (s *Service) SaveIteration(ctx context.Context, sessionID string, iter Iteration) error {
+	iterKey := s.redis.Key("session", sessionID, "iterations")
 	data, err := json.Marshal(iter)
 	if err != nil {
 		return fmt.Errorf("marshaling iteration: %w", err)
@@ -355,22 +355,22 @@ func (s *Service) SaveIteration(ctx context.Context, taskID string, iter Iterati
 	}
 
 	s.persistToSQLite(func() error {
-		return s.sqlite.SaveIteration(ctx, taskID, iter)
+		return s.sqlite.SaveIteration(ctx, sessionID, iter)
 	})
 
 	return nil
 }
 
 // GetIterations loads the full iteration history from Redis, falling back to SQLite.
-func (s *Service) GetIterations(ctx context.Context, taskID string) ([]Iteration, error) {
-	iterKey := s.redis.Key("session", taskID, "iterations")
+func (s *Service) GetIterations(ctx context.Context, sessionID string) ([]Iteration, error) {
+	iterKey := s.redis.Key("session", sessionID, "iterations")
 	items, err := s.redis.Unwrap().LRange(ctx, iterKey, 0, -1).Result()
 	if err != nil {
 		return nil, fmt.Errorf("loading iterations: %w", err)
 	}
 
 	if len(items) == 0 && s.sqlite != nil {
-		return s.sqlite.GetIterations(ctx, taskID)
+		return s.sqlite.GetIterations(ctx, sessionID)
 	}
 
 	iterations := make([]Iteration, 0, len(items))
@@ -440,7 +440,7 @@ func (s *Service) List(ctx context.Context, opts ListOptions) ([]Summary, int, e
 				return nil, 0, fmt.Errorf("scanning sessions: %w", err)
 			}
 			for _, k := range keys {
-				parts := extractTaskIDFromKey(k, s.redis.Prefix())
+				parts := extractSessionIDFromKey(k, s.redis.Prefix())
 				if parts != "" {
 					ids = append(ids, parts)
 					s.redis.Unwrap().SAdd(ctx, indexKey, parts)
@@ -452,7 +452,7 @@ func (s *Service) List(ctx context.Context, opts ListOptions) ([]Summary, int, e
 		}
 	}
 
-	var tasks []Summary
+	var sessions []Summary
 	for _, id := range ids {
 		stateKey := s.redis.Key("session", id, "state")
 		fields, err := s.redis.Unwrap().HGetAll(ctx, stateKey).Result()
@@ -466,7 +466,7 @@ func (s *Service) List(ctx context.Context, opts ListOptions) ([]Summary, int, e
 			continue
 		}
 
-		tasks = append(tasks, Summary{
+		sessions = append(sessions, Summary{
 			ID:             t.ID,
 			Status:         t.Status,
 			RepoURL:        t.RepoURL,
@@ -484,18 +484,18 @@ func (s *Service) List(ctx context.Context, opts ListOptions) ([]Summary, int, e
 		})
 	}
 
-	sortByCreatedDesc(tasks)
-	total := len(tasks)
+	sortByCreatedDesc(sessions)
+	total := len(sessions)
 
-	if opts.Offset >= len(tasks) {
+	if opts.Offset >= len(sessions) {
 		return []Summary{}, total, nil
 	}
-	tasks = tasks[opts.Offset:]
-	if len(tasks) > limit {
-		tasks = tasks[:limit]
+	sessions = sessions[opts.Offset:]
+	if len(sessions) > limit {
+		sessions = sessions[:limit]
 	}
 
-	return tasks, total, nil
+	return sessions, total, nil
 }
 
 func truncatePrompt(s string, maxLen int) string {
@@ -505,7 +505,7 @@ func truncatePrompt(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
-func extractTaskIDFromKey(key, prefix string) string {
+func extractSessionIDFromKey(key, prefix string) string {
 	// key format: "{prefix}session:{id}:state"
 	trimmed := key
 	if prefix != "" {
@@ -514,35 +514,35 @@ func extractTaskIDFromKey(key, prefix string) string {
 		}
 	}
 	// trimmed should be "session:{id}:state"
-	const taskPrefix = "session:"
+	const sessionPrefix = "session:"
 	const stateSuffix = ":state"
-	if len(trimmed) > len(taskPrefix)+len(stateSuffix) &&
-		trimmed[:len(taskPrefix)] == taskPrefix &&
+	if len(trimmed) > len(sessionPrefix)+len(stateSuffix) &&
+		trimmed[:len(sessionPrefix)] == sessionPrefix &&
 		trimmed[len(trimmed)-len(stateSuffix):] == stateSuffix {
-		return trimmed[len(taskPrefix) : len(trimmed)-len(stateSuffix)]
+		return trimmed[len(sessionPrefix) : len(trimmed)-len(stateSuffix)]
 	}
 	return ""
 }
 
-func sortByCreatedDesc(tasks []Summary) {
-	for i := 1; i < len(tasks); i++ {
-		for j := i; j > 0 && tasks[j].CreatedAt.After(tasks[j-1].CreatedAt); j-- {
-			tasks[j], tasks[j-1] = tasks[j-1], tasks[j]
+func sortByCreatedDesc(sessions []Summary) {
+	for i := 1; i < len(sessions); i++ {
+		for j := i; j > 0 && sessions[j].CreatedAt.After(sessions[j-1].CreatedAt); j-- {
+			sessions[j], sessions[j-1] = sessions[j-1], sessions[j]
 		}
 	}
 }
 
 // StartReviewAsync enqueues a review for worker execution (non-blocking).
 // Uses Redis WATCH for atomic check-and-set to prevent double-enqueue races.
-func (s *Service) StartReviewAsync(ctx context.Context, taskID, cli, model string) (*Session, error) {
-	stateKey := s.redis.Key("session", taskID, "state")
+func (s *Service) StartReviewAsync(ctx context.Context, sessionID, cli, model string) (*Session, error) {
+	stateKey := s.redis.Key("session", sessionID, "state")
 	queueKey := s.redis.Key(s.queueName)
 	now := time.Now().UTC()
 
 	err := s.redis.Unwrap().Watch(ctx, func(tx *redis.Tx) error {
 		current, err := tx.HGet(ctx, stateKey, "status").Result()
 		if err == redis.Nil {
-			return apperror.NotFound("session %s not found", taskID)
+			return apperror.NotFound("session %s not found", sessionID)
 		}
 		if err != nil {
 			return fmt.Errorf("reading session status: %w", err)
@@ -568,7 +568,7 @@ func (s *Service) StartReviewAsync(ctx context.Context, taskID, cli, model strin
 				"error":        "",
 			})
 			pipe.Persist(ctx, stateKey)
-			pipe.RPush(ctx, queueKey, taskID)
+			pipe.RPush(ctx, queueKey, sessionID)
 			return nil
 		})
 		return err
@@ -582,49 +582,49 @@ func (s *Service) StartReviewAsync(ctx context.Context, taskID, cli, model strin
 		return nil, err
 	}
 
-	// Load the full task for the response
-	t, err := s.Get(ctx, taskID)
+	// Load the full session for the response
+	t, err := s.Get(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
 
-	slog.Info("review enqueued", "session_id", taskID)
+	slog.Info("review enqueued", "session_id", sessionID)
 
 	s.persistToSQLite(func() error {
-		return s.sqlite.UpdateStatus(ctx, taskID, StatusReviewing, nil, nil)
+		return s.sqlite.UpdateStatus(ctx, sessionID, StatusReviewing, nil, nil)
 	})
 
 	return t, nil
 }
 
 // CompleteReview stores the review result and transitions the session back to completed.
-func (s *Service) CompleteReview(ctx context.Context, taskID string, result *review.ReviewResult) error {
-	if err := s.SetReviewResult(ctx, taskID, result); err != nil {
+func (s *Service) CompleteReview(ctx context.Context, sessionID string, result *review.ReviewResult) error {
+	if err := s.SetReviewResult(ctx, sessionID, result); err != nil {
 		return err
 	}
-	return s.UpdateStatus(ctx, taskID, StatusCompleted)
+	return s.UpdateStatus(ctx, sessionID, StatusCompleted)
 }
 
 // SetReviewResult stores the review result on a session.
-func (s *Service) SetReviewResult(ctx context.Context, taskID string, result *review.ReviewResult) error {
-	stateKey := s.redis.Key("session", taskID, "state")
+func (s *Service) SetReviewResult(ctx context.Context, sessionID string, result *review.ReviewResult) error {
+	stateKey := s.redis.Key("session", sessionID, "state")
 	if err := s.redis.Unwrap().HSet(ctx, stateKey, "review_result", review.MarshalReviewResult(result)).Err(); err != nil {
 		return fmt.Errorf("setting review result: %w", err)
 	}
 
 	s.persistToSQLite(func() error {
-		return s.sqlite.UpdateReviewResult(ctx, taskID, result)
+		return s.sqlite.UpdateReviewResult(ctx, sessionID, result)
 	})
 
 	return nil
 }
 
 // UpdateConfig persists updated Config to Redis.
-func (s *Service) UpdateConfig(ctx context.Context, taskID string, cfg *Config) error {
+func (s *Service) UpdateConfig(ctx context.Context, sessionID string, cfg *Config) error {
 	if cfg == nil {
 		return nil
 	}
-	stateKey := s.redis.Key("session", taskID, "state")
+	stateKey := s.redis.Key("session", sessionID, "state")
 	if err := s.redis.Unwrap().HSet(ctx, stateKey, "config", MarshalConfig(cfg)).Err(); err != nil {
 		return fmt.Errorf("updating session config: %w", err)
 	}
@@ -632,14 +632,14 @@ func (s *Service) UpdateConfig(ctx context.Context, taskID string, cfg *Config) 
 }
 
 // SetError stores an error message on the session.
-func (s *Service) SetError(ctx context.Context, taskID string, errMsg string) error {
-	stateKey := s.redis.Key("session", taskID, "state")
+func (s *Service) SetError(ctx context.Context, sessionID string, errMsg string) error {
+	stateKey := s.redis.Key("session", sessionID, "state")
 	if err := s.redis.Unwrap().HSet(ctx, stateKey, "error", errMsg).Err(); err != nil {
 		return err
 	}
 
 	s.persistToSQLite(func() error {
-		return s.sqlite.UpdateError(ctx, taskID, errMsg)
+		return s.sqlite.UpdateError(ctx, sessionID, errMsg)
 	})
 
 	return nil

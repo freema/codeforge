@@ -73,7 +73,7 @@ func TestResolver_GlobalFound(t *testing.T) {
 	})
 
 	resolver := NewResolver(reg)
-	instances, err := resolver.Resolve(context.Background(), "", []TaskTool{
+	instances, err := resolver.Resolve(context.Background(), "", []SessionTool{
 		{Name: "custom-tool"},
 	})
 	if err != nil {
@@ -91,7 +91,7 @@ func TestResolver_BuiltinFallback(t *testing.T) {
 	reg := newMockRegistry() // empty registry
 	resolver := NewResolver(reg)
 
-	instances, err := resolver.Resolve(context.Background(), "", []TaskTool{
+	instances, err := resolver.Resolve(context.Background(), "", []SessionTool{
 		{Name: "sentry", Config: map[string]string{"auth_token": "tok"}},
 	})
 	if err != nil {
@@ -114,7 +114,7 @@ func TestResolver_ProjectScopePriority(t *testing.T) {
 	reg.add("project-1", ToolDefinition{Name: "tool", Type: ToolTypeCustom, Description: "project"})
 
 	resolver := NewResolver(reg)
-	instances, err := resolver.Resolve(context.Background(), "project-1", []TaskTool{
+	instances, err := resolver.Resolve(context.Background(), "project-1", []SessionTool{
 		{Name: "tool"},
 	})
 	if err != nil {
@@ -129,7 +129,7 @@ func TestResolver_UnknownTool(t *testing.T) {
 	reg := newMockRegistry()
 	resolver := NewResolver(reg)
 
-	_, err := resolver.Resolve(context.Background(), "", []TaskTool{
+	_, err := resolver.Resolve(context.Background(), "", []SessionTool{
 		{Name: "nonexistent"},
 	})
 	if err == nil {
@@ -145,7 +145,7 @@ func TestResolver_RequiredConfigMissing(t *testing.T) {
 	resolver := NewResolver(reg)
 
 	// sentry is a builtin with required auth_token
-	_, err := resolver.Resolve(context.Background(), "", []TaskTool{
+	_, err := resolver.Resolve(context.Background(), "", []SessionTool{
 		{Name: "sentry", Config: map[string]string{}},
 	})
 	if err == nil {

@@ -148,7 +148,7 @@ func TestBuildPrompt_InvalidType(t *testing.T) {
 
 	_, err := executor.buildPrompt(&CIContext{})
 	if err == nil {
-		t.Fatal("expected error for invalid task type")
+		t.Fatal("expected error for invalid session type")
 	}
 }
 

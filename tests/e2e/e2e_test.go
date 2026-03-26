@@ -117,11 +117,11 @@ func createTestRepo(t *testing.T, name string) string {
 	return repoDir
 }
 
-func waitForTerminal(t *testing.T, taskID string, timeout time.Duration) map[string]interface{} {
+func waitForTerminal(t *testing.T, sessionID string, timeout time.Duration) map[string]interface{} {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		resp := apiRequest(t, "GET", "/api/v1/sessions/"+taskID, nil)
+		resp := apiRequest(t, "GET", "/api/v1/sessions/"+sessionID, nil)
 		var result map[string]interface{}
 		decodeJSON(t, resp, &result)
 		status := result["status"].(string)
@@ -130,15 +130,15 @@ func waitForTerminal(t *testing.T, taskID string, timeout time.Duration) map[str
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for task %s to reach terminal status", taskID)
+	t.Fatalf("timed out waiting for session %s to reach terminal status", sessionID)
 	return nil
 }
 
-func waitForStatus(t *testing.T, taskID, expected string, timeout time.Duration) map[string]interface{} {
+func waitForStatus(t *testing.T, sessionID, expected string, timeout time.Duration) map[string]interface{} {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		resp := apiRequest(t, "GET", "/api/v1/sessions/"+taskID, nil)
+		resp := apiRequest(t, "GET", "/api/v1/sessions/"+sessionID, nil)
 		var result map[string]interface{}
 		decodeJSON(t, resp, &result)
 		if result["status"] == expected {
@@ -150,12 +150,12 @@ func waitForStatus(t *testing.T, taskID, expected string, timeout time.Duration)
 	return nil
 }
 
-func createTask(t *testing.T, body map[string]interface{}) string {
+func createSession(t *testing.T, body map[string]interface{}) string {
 	t.Helper()
 	resp := apiRequest(t, "POST", "/api/v1/sessions", body)
 	if resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
-		t.Fatalf("create task: expected 201, got %d: %s", resp.StatusCode, b)
+		t.Fatalf("create session: expected 201, got %d: %s", resp.StatusCode, b)
 	}
 	var result map[string]interface{}
 	decodeJSON(t, resp, &result)
@@ -164,16 +164,16 @@ func createTask(t *testing.T, body map[string]interface{}) string {
 
 // --- E2E Tests ---
 
-func TestE2ETaskSuccess(t *testing.T) {
+func TestE2ESessionSuccess(t *testing.T) {
 	repoDir := createTestRepo(t, "success")
 
-	taskID := createTask(t, map[string]interface{}{
+	sessionID := createSession(t, map[string]interface{}{
 		"repo_url": "file://" + repoDir,
 		"prompt":   "Add a hello world function",
 	})
-	t.Logf("task created: %s", taskID)
+	t.Logf("session created: %s", sessionID)
 
-	result := waitForTerminal(t, taskID, 60*time.Second)
+	result := waitForTerminal(t, sessionID, 60*time.Second)
 	status := result["status"].(string)
 	t.Logf("final status: %s", status)
 
@@ -209,16 +209,16 @@ func TestE2ETaskSuccess(t *testing.T) {
 	t.Log("SUCCESS: full session lifecycle completed")
 }
 
-func TestE2ETaskCLIFailure(t *testing.T) {
+func TestE2ESessionCLIFailure(t *testing.T) {
 	repoDir := createTestRepo(t, "fail")
 
-	taskID := createTask(t, map[string]interface{}{
+	sessionID := createSession(t, map[string]interface{}{
 		"repo_url": "file://" + repoDir,
 		"prompt":   "FAIL", // mock CLI exits with code 1
 	})
-	t.Logf("task created: %s", taskID)
+	t.Logf("session created: %s", sessionID)
 
-	result := waitForTerminal(t, taskID, 60*time.Second)
+	result := waitForTerminal(t, sessionID, 60*time.Second)
 	if result["status"] != "failed" {
 		t.Fatalf("expected failed, got %v", result["status"])
 	}
@@ -230,19 +230,19 @@ func TestE2ETaskCLIFailure(t *testing.T) {
 	t.Logf("failure error: %s", errMsg)
 }
 
-func TestE2ETaskTimeout(t *testing.T) {
+func TestE2ESessionTimeout(t *testing.T) {
 	repoDir := createTestRepo(t, "timeout")
 
-	taskID := createTask(t, map[string]interface{}{
+	sessionID := createSession(t, map[string]interface{}{
 		"repo_url": "file://" + repoDir,
 		"prompt":   "TIMEOUT", // mock CLI sleeps for 10min
 		"config": map[string]interface{}{
 			"timeout_seconds": 5,
 		},
 	})
-	t.Logf("task created: %s", taskID)
+	t.Logf("session created: %s", sessionID)
 
-	result := waitForTerminal(t, taskID, 30*time.Second)
+	result := waitForTerminal(t, sessionID, 30*time.Second)
 	if result["status"] != "failed" {
 		t.Fatalf("expected failed (timeout), got %v", result["status"])
 	}
@@ -254,29 +254,29 @@ func TestE2ETaskTimeout(t *testing.T) {
 	t.Logf("timeout error: %s", errMsg)
 }
 
-func TestE2ETaskCancel(t *testing.T) {
+func TestE2ESessionCancel(t *testing.T) {
 	repoDir := createTestRepo(t, "cancel")
 
-	taskID := createTask(t, map[string]interface{}{
+	sessionID := createSession(t, map[string]interface{}{
 		"repo_url": "file://" + repoDir,
 		"prompt":   "TIMEOUT", // will hang until canceled
 		"config": map[string]interface{}{
 			"timeout_seconds": 120,
 		},
 	})
-	t.Logf("task created: %s", taskID)
+	t.Logf("session created: %s", sessionID)
 
 	// Wait for running
-	waitForStatus(t, taskID, "running", 30*time.Second)
+	waitForStatus(t, sessionID, "running", 30*time.Second)
 	t.Log("session is running, canceling...")
 
-	resp := apiRequest(t, "POST", fmt.Sprintf("/api/v1/sessions/%s/cancel", taskID), nil)
+	resp := apiRequest(t, "POST", fmt.Sprintf("/api/v1/sessions/%s/cancel", sessionID), nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Logf("cancel returned %d (might already be done)", resp.StatusCode)
 	}
 
-	result := waitForTerminal(t, taskID, 15*time.Second)
+	result := waitForTerminal(t, sessionID, 15*time.Second)
 	if result["status"] != "failed" {
 		t.Fatalf("expected failed after cancel, got %v", result["status"])
 	}
@@ -291,19 +291,19 @@ func TestE2ETaskCancel(t *testing.T) {
 func TestE2EFollowUp(t *testing.T) {
 	repoDir := createTestRepo(t, "followup")
 
-	taskID := createTask(t, map[string]interface{}{
+	sessionID := createSession(t, map[string]interface{}{
 		"repo_url": "file://" + repoDir,
 		"prompt":   "Initial task",
 	})
 
 	// Wait for first iteration
-	result := waitForTerminal(t, taskID, 60*time.Second)
+	result := waitForTerminal(t, sessionID, 60*time.Second)
 	if result["status"] != "completed" {
 		t.Fatalf("first iteration: expected completed, got %v (error: %v)", result["status"], result["error"])
 	}
 
 	// Send follow-up
-	resp := apiRequest(t, "POST", fmt.Sprintf("/api/v1/sessions/%s/instruct", taskID), map[string]string{
+	resp := apiRequest(t, "POST", fmt.Sprintf("/api/v1/sessions/%s/instruct", sessionID), map[string]string{
 		"prompt": "Now add tests",
 	})
 	if resp.StatusCode != http.StatusOK {
@@ -318,13 +318,13 @@ func TestE2EFollowUp(t *testing.T) {
 	}
 
 	// Wait for second iteration
-	result2 := waitForTerminal(t, taskID, 60*time.Second)
+	result2 := waitForTerminal(t, sessionID, 60*time.Second)
 	if result2["status"] != "completed" {
 		t.Fatalf("second iteration: expected completed, got %v", result2["status"])
 	}
 
 	// Verify iterations
-	resp = apiRequest(t, "GET", fmt.Sprintf("/api/v1/sessions/%s?include=iterations", taskID), nil)
+	resp = apiRequest(t, "GET", fmt.Sprintf("/api/v1/sessions/%s?include=iterations", sessionID), nil)
 	var full map[string]interface{}
 	decodeJSON(t, resp, &full)
 
@@ -337,12 +337,12 @@ func TestE2EFollowUp(t *testing.T) {
 }
 
 func TestE2ECloneFailure(t *testing.T) {
-	taskID := createTask(t, map[string]interface{}{
+	sessionID := createSession(t, map[string]interface{}{
 		"repo_url": "file:///nonexistent/repo.git",
 		"prompt":   "should fail at clone",
 	})
 
-	result := waitForTerminal(t, taskID, 30*time.Second)
+	result := waitForTerminal(t, sessionID, 30*time.Second)
 	if result["status"] != "failed" {
 		t.Fatalf("expected failed, got %v", result["status"])
 	}
@@ -354,19 +354,19 @@ func TestE2ECloneFailure(t *testing.T) {
 	t.Log("clone failure test passed")
 }
 
-func TestE2ETaskWithCLI(t *testing.T) {
+func TestE2ESessionWithCLI(t *testing.T) {
 	repoDir := createTestRepo(t, "with-cli")
 
-	taskID := createTask(t, map[string]interface{}{
+	sessionID := createSession(t, map[string]interface{}{
 		"repo_url": "file://" + repoDir,
 		"prompt":   "Add a hello world function",
 		"config": map[string]interface{}{
 			"cli": "claude-code",
 		},
 	})
-	t.Logf("task created with explicit CLI: %s", taskID)
+	t.Logf("session created with explicit CLI: %s", sessionID)
 
-	result := waitForTerminal(t, taskID, 60*time.Second)
+	result := waitForTerminal(t, sessionID, 60*time.Second)
 	status := result["status"].(string)
 	t.Logf("final status: %s", status)
 
@@ -378,7 +378,7 @@ func TestE2ETaskWithCLI(t *testing.T) {
 		t.Error("expected non-empty result")
 	}
 
-	t.Log("SUCCESS: task with explicit CLI parameter completed")
+	t.Log("SUCCESS: session with explicit CLI parameter completed")
 }
 
 // TestE2ECodeReviewWorkflow removed — code-review builtin workflow was consolidated

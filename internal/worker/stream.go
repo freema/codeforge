@@ -19,7 +19,7 @@ type StreamEvent struct {
 	TS    string          `json:"ts"`    // ISO 8601 timestamp
 }
 
-// Streamer publishes task events to Redis Pub/Sub and persists to history.
+// Streamer publishes session events to Redis Pub/Sub and persists to history.
 type Streamer struct {
 	redis      *redisclient.Client
 	historyTTL time.Duration
@@ -34,7 +34,7 @@ func NewStreamer(redis *redisclient.Client, historyTTL time.Duration) *Streamer 
 }
 
 // Emit publishes an event to the session's stream channel and persists to history.
-func (s *Streamer) Emit(ctx context.Context, taskID string, evt StreamEvent) error {
+func (s *Streamer) Emit(ctx context.Context, sessionID string, evt StreamEvent) error {
 	evt.TS = time.Now().UTC().Format(time.RFC3339Nano)
 	data, err := json.Marshal(evt)
 	if err != nil {
@@ -42,8 +42,8 @@ func (s *Streamer) Emit(ctx context.Context, taskID string, evt StreamEvent) err
 	}
 	msg := string(data)
 
-	streamKey := s.redis.Key("session", taskID, "stream")
-	historyKey := s.redis.Key("session", taskID, "history")
+	streamKey := s.redis.Key("session", sessionID, "stream")
+	historyKey := s.redis.Key("session", sessionID, "history")
 
 	pipe := s.redis.Unwrap().Pipeline()
 	pipe.Publish(ctx, streamKey, msg)
@@ -53,19 +53,19 @@ func (s *Streamer) Emit(ctx context.Context, taskID string, evt StreamEvent) err
 }
 
 // EmitSystem publishes a system event.
-func (s *Streamer) EmitSystem(ctx context.Context, taskID, event string, data interface{}) error {
-	return s.emitTyped(ctx, taskID, "system", event, data)
+func (s *Streamer) EmitSystem(ctx context.Context, sessionID, event string, data interface{}) error {
+	return s.emitTyped(ctx, sessionID, "system", event, data)
 }
 
 // EmitGit publishes a git event.
-func (s *Streamer) EmitGit(ctx context.Context, taskID, event string, data interface{}) error {
-	return s.emitTyped(ctx, taskID, "git", event, data)
+func (s *Streamer) EmitGit(ctx context.Context, sessionID, event string, data interface{}) error {
+	return s.emitTyped(ctx, sessionID, "git", event, data)
 }
 
 // EmitNormalized publishes a normalized CLI event.
-func (s *Streamer) EmitNormalized(ctx context.Context, taskID string, evt *runner.NormalizedEvent) error {
+func (s *Streamer) EmitNormalized(ctx context.Context, sessionID string, evt *runner.NormalizedEvent) error {
 	raw, _ := json.Marshal(evt)
-	return s.Emit(ctx, taskID, StreamEvent{
+	return s.Emit(ctx, sessionID, StreamEvent{
 		Type:  "stream",
 		Event: string(evt.Type),
 		Data:  raw,
@@ -73,8 +73,8 @@ func (s *Streamer) EmitNormalized(ctx context.Context, taskID string, evt *runne
 }
 
 // EmitCLIOutput forwards a raw Claude Code stream-json line.
-func (s *Streamer) EmitCLIOutput(ctx context.Context, taskID string, rawEvent json.RawMessage) error {
-	return s.Emit(ctx, taskID, StreamEvent{
+func (s *Streamer) EmitCLIOutput(ctx context.Context, sessionID string, rawEvent json.RawMessage) error {
+	return s.Emit(ctx, sessionID, StreamEvent{
 		Type:  "stream",
 		Event: "output",
 		Data:  rawEvent,
@@ -82,20 +82,20 @@ func (s *Streamer) EmitCLIOutput(ctx context.Context, taskID string, rawEvent js
 }
 
 // EmitResult publishes a result event.
-func (s *Streamer) EmitResult(ctx context.Context, taskID, event string, data interface{}) error {
-	return s.emitTyped(ctx, taskID, "result", event, data)
+func (s *Streamer) EmitResult(ctx context.Context, sessionID, event string, data interface{}) error {
+	return s.emitTyped(ctx, sessionID, "result", event, data)
 }
 
 // EmitDone publishes completion signal on the done channel and sets history TTL.
-func (s *Streamer) EmitDone(ctx context.Context, taskID string, status session.Status, summary *gitpkg.ChangesSummary) error {
+func (s *Streamer) EmitDone(ctx context.Context, sessionID string, status session.Status, summary *gitpkg.ChangesSummary) error {
 	data, _ := json.Marshal(map[string]interface{}{
-		"task_id":         taskID,
+		"task_id":         sessionID,
 		"status":          status,
 		"changes_summary": summary,
 	})
 
-	doneKey := s.redis.Key("session", taskID, "done")
-	historyKey := s.redis.Key("session", taskID, "history")
+	doneKey := s.redis.Key("session", sessionID, "done")
+	historyKey := s.redis.Key("session", sessionID, "history")
 
 	pipe := s.redis.Unwrap().Pipeline()
 	pipe.Publish(ctx, doneKey, string(data))
@@ -104,12 +104,12 @@ func (s *Streamer) EmitDone(ctx context.Context, taskID string, status session.S
 	return err
 }
 
-func (s *Streamer) emitTyped(ctx context.Context, taskID, eventType, event string, data interface{}) error {
+func (s *Streamer) emitTyped(ctx context.Context, sessionID, eventType, event string, data interface{}) error {
 	raw, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
-	return s.Emit(ctx, taskID, StreamEvent{
+	return s.Emit(ctx, sessionID, StreamEvent{
 		Type:  eventType,
 		Event: event,
 		Data:  raw,

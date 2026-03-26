@@ -54,11 +54,11 @@ func setupTestService(t *testing.T) (*Service, *redisclient.Client) {
 	return svc, rdb
 }
 
-func createTestTask(t *testing.T, svc *Service, status Status) *Session {
+func createTestSession(t *testing.T, svc *Service, status Status) *Session {
 	t.Helper()
 	ctx := context.Background()
 
-	task, err := svc.Create(ctx, CreateSessionRequest{
+	sess, err := svc.Create(ctx, CreateSessionRequest{
 		RepoURL: "https://github.com/test/repo.git",
 		Prompt:  "test prompt",
 	})
@@ -71,64 +71,64 @@ func createTestTask(t *testing.T, svc *Service, status Status) *Session {
 	case StatusPending:
 		// already pending
 	case StatusCompleted:
-		if err := svc.UpdateStatus(ctx, task.ID, StatusCloning); err != nil {
+		if err := svc.UpdateStatus(ctx, sess.ID, StatusCloning); err != nil {
 			t.Fatalf("UpdateStatus cloning: %v", err)
 		}
-		if err := svc.UpdateStatus(ctx, task.ID, StatusRunning); err != nil {
+		if err := svc.UpdateStatus(ctx, sess.ID, StatusRunning); err != nil {
 			t.Fatalf("UpdateStatus running: %v", err)
 		}
-		if err := svc.UpdateStatus(ctx, task.ID, StatusCompleted); err != nil {
+		if err := svc.UpdateStatus(ctx, sess.ID, StatusCompleted); err != nil {
 			t.Fatalf("UpdateStatus completed: %v", err)
 		}
 	case StatusAwaitingInstruction:
-		if err := svc.UpdateStatus(ctx, task.ID, StatusCloning); err != nil {
+		if err := svc.UpdateStatus(ctx, sess.ID, StatusCloning); err != nil {
 			t.Fatalf("UpdateStatus cloning: %v", err)
 		}
-		if err := svc.UpdateStatus(ctx, task.ID, StatusRunning); err != nil {
+		if err := svc.UpdateStatus(ctx, sess.ID, StatusRunning); err != nil {
 			t.Fatalf("UpdateStatus running: %v", err)
 		}
-		if err := svc.UpdateStatus(ctx, task.ID, StatusCompleted); err != nil {
+		if err := svc.UpdateStatus(ctx, sess.ID, StatusCompleted); err != nil {
 			t.Fatalf("UpdateStatus completed: %v", err)
 		}
-		if err := svc.UpdateStatus(ctx, task.ID, StatusAwaitingInstruction); err != nil {
+		if err := svc.UpdateStatus(ctx, sess.ID, StatusAwaitingInstruction); err != nil {
 			t.Fatalf("UpdateStatus awaiting: %v", err)
 		}
 	case StatusRunning:
-		if err := svc.UpdateStatus(ctx, task.ID, StatusCloning); err != nil {
+		if err := svc.UpdateStatus(ctx, sess.ID, StatusCloning); err != nil {
 			t.Fatalf("UpdateStatus cloning: %v", err)
 		}
-		if err := svc.UpdateStatus(ctx, task.ID, StatusRunning); err != nil {
+		if err := svc.UpdateStatus(ctx, sess.ID, StatusRunning); err != nil {
 			t.Fatalf("UpdateStatus running: %v", err)
 		}
 	case StatusFailed:
-		if err := svc.UpdateStatus(ctx, task.ID, StatusFailed); err != nil {
+		if err := svc.UpdateStatus(ctx, sess.ID, StatusFailed); err != nil {
 			t.Fatalf("UpdateStatus failed: %v", err)
 		}
 	case StatusReviewing:
-		if err := svc.UpdateStatus(ctx, task.ID, StatusCloning); err != nil {
+		if err := svc.UpdateStatus(ctx, sess.ID, StatusCloning); err != nil {
 			t.Fatalf("UpdateStatus cloning: %v", err)
 		}
-		if err := svc.UpdateStatus(ctx, task.ID, StatusRunning); err != nil {
+		if err := svc.UpdateStatus(ctx, sess.ID, StatusRunning); err != nil {
 			t.Fatalf("UpdateStatus running: %v", err)
 		}
-		if err := svc.UpdateStatus(ctx, task.ID, StatusCompleted); err != nil {
+		if err := svc.UpdateStatus(ctx, sess.ID, StatusCompleted); err != nil {
 			t.Fatalf("UpdateStatus completed: %v", err)
 		}
-		if err := svc.UpdateStatus(ctx, task.ID, StatusReviewing); err != nil {
+		if err := svc.UpdateStatus(ctx, sess.ID, StatusReviewing); err != nil {
 			t.Fatalf("UpdateStatus reviewing: %v", err)
 		}
 	}
 
-	return task
+	return sess
 }
 
 func TestStartReviewAsync_FromCompleted(t *testing.T) {
 	svc, rdb := setupTestService(t)
 	ctx := context.Background()
 
-	task := createTestTask(t, svc, StatusCompleted)
+	sess := createTestSession(t, svc, StatusCompleted)
 
-	got, err := svc.StartReviewAsync(ctx, task.ID, "claude-code", "test-model")
+	got, err := svc.StartReviewAsync(ctx, sess.ID, "claude-code", "test-model")
 	if err != nil {
 		t.Fatalf("StartReviewAsync: %v", err)
 	}
@@ -152,9 +152,9 @@ func TestStartReviewAsync_FromAwaitingInstruction(t *testing.T) {
 	svc, _ := setupTestService(t)
 	ctx := context.Background()
 
-	task := createTestTask(t, svc, StatusAwaitingInstruction)
+	sess := createTestSession(t, svc, StatusAwaitingInstruction)
 
-	got, err := svc.StartReviewAsync(ctx, task.ID, "", "")
+	got, err := svc.StartReviewAsync(ctx, sess.ID, "", "")
 	if err != nil {
 		t.Fatalf("StartReviewAsync: %v", err)
 	}
@@ -167,11 +167,11 @@ func TestStartReviewAsync_FromRunning_Conflict(t *testing.T) {
 	svc, _ := setupTestService(t)
 	ctx := context.Background()
 
-	task := createTestTask(t, svc, StatusRunning)
+	sess := createTestSession(t, svc, StatusRunning)
 
-	_, err := svc.StartReviewAsync(ctx, task.ID, "", "")
+	_, err := svc.StartReviewAsync(ctx, sess.ID, "", "")
 	if err == nil {
-		t.Fatal("expected error for running task")
+		t.Fatal("expected error for running session")
 	}
 	if !isConflictError(err) {
 		t.Errorf("expected conflict error, got: %v", err)
@@ -182,11 +182,11 @@ func TestStartReviewAsync_FromFailed_Validation(t *testing.T) {
 	svc, _ := setupTestService(t)
 	ctx := context.Background()
 
-	task := createTestTask(t, svc, StatusFailed)
+	sess := createTestSession(t, svc, StatusFailed)
 
-	_, err := svc.StartReviewAsync(ctx, task.ID, "", "")
+	_, err := svc.StartReviewAsync(ctx, sess.ID, "", "")
 	if err == nil {
-		t.Fatal("expected error for failed task")
+		t.Fatal("expected error for failed session")
 	}
 }
 
@@ -194,11 +194,11 @@ func TestStartReviewAsync_FromReviewing_Conflict(t *testing.T) {
 	svc, _ := setupTestService(t)
 	ctx := context.Background()
 
-	task := createTestTask(t, svc, StatusReviewing)
+	sess := createTestSession(t, svc, StatusReviewing)
 
-	_, err := svc.StartReviewAsync(ctx, task.ID, "", "")
+	_, err := svc.StartReviewAsync(ctx, sess.ID, "", "")
 	if err == nil {
-		t.Fatal("expected error for already reviewing task")
+		t.Fatal("expected error for already reviewing session")
 	}
 	if !isConflictError(err) {
 		t.Errorf("expected conflict error, got: %v", err)
@@ -211,7 +211,7 @@ func TestStartReviewAsync_NotFound(t *testing.T) {
 
 	_, err := svc.StartReviewAsync(ctx, "nonexistent-task-id", "", "")
 	if err == nil {
-		t.Fatal("expected error for nonexistent task")
+		t.Fatal("expected error for nonexistent session")
 	}
 }
 
@@ -219,15 +219,15 @@ func TestStartReviewAsync_StoresReviewParams(t *testing.T) {
 	svc, rdb := setupTestService(t)
 	ctx := context.Background()
 
-	task := createTestTask(t, svc, StatusCompleted)
+	sess := createTestSession(t, svc, StatusCompleted)
 
-	_, err := svc.StartReviewAsync(ctx, task.ID, "codex", "o3")
+	_, err := svc.StartReviewAsync(ctx, sess.ID, "codex", "o3")
 	if err != nil {
 		t.Fatalf("StartReviewAsync: %v", err)
 	}
 
 	// Verify review params stored in Redis hash
-	stateKey := rdb.Key("task", task.ID, "state")
+	stateKey := rdb.Key("session", sess.ID, "state")
 	cli, err := rdb.Unwrap().HGet(ctx, stateKey, "review_cli").Result()
 	if err != nil {
 		t.Fatalf("HGet review_cli: %v", err)

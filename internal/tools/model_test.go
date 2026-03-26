@@ -102,8 +102,8 @@ func TestConfigField_JSONRoundTrip(t *testing.T) {
 	}
 }
 
-func TestTaskTool_JSONRoundTrip(t *testing.T) {
-	tt := TaskTool{
+func TestSessionTool_JSONRoundTrip(t *testing.T) {
+	tt := SessionTool{
 		Name:   "sentry",
 		Config: map[string]string{"auth_token": "tok123"},
 	}
@@ -113,7 +113,7 @@ func TestTaskTool_JSONRoundTrip(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 
-	var got TaskTool
+	var got SessionTool
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}

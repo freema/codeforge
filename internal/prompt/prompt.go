@@ -15,7 +15,7 @@ type CodeReviewData struct {
 	OriginalPrompt string
 }
 
-// SessionTypeData holds template variables for task type templates (plan, review).
+// SessionTypeData holds template variables for session type templates (plan, review).
 type SessionTypeData struct {
 	UserPrompt string
 }
@@ -36,23 +36,23 @@ type SessionTypeInfo struct {
 	Template    string `json:"-"` // template name, empty = no template (code)
 }
 
-var taskTypes = []SessionTypeInfo{
+var sessionTypes = []SessionTypeInfo{
 	{Name: "code", Label: "Code", Description: "Write or modify code based on the prompt"},
 	{Name: "plan", Label: "Plan", Description: "Analyze the codebase and create an implementation plan without modifying files", Template: "plan"},
 	{Name: "review", Label: "Review", Description: "Review repository code quality, security, and architecture", Template: "review"},
 	{Name: "pr_review", Label: "PR Review", Description: "Review a pull request / merge request diff and post comments", Template: "pr_review"},
 }
 
-// SessionTypes returns all available task types.
+// SessionTypes returns all available session types.
 func SessionTypes() []SessionTypeInfo {
-	out := make([]SessionTypeInfo, len(taskTypes))
-	copy(out, taskTypes)
+	out := make([]SessionTypeInfo, len(sessionTypes))
+	copy(out, sessionTypes)
 	return out
 }
 
-// ValidSessionType checks if the given name is a known task type.
+// ValidSessionType checks if the given name is a known session type.
 func ValidSessionType(name string) bool {
-	for _, tt := range taskTypes {
+	for _, tt := range sessionTypes {
 		if tt.Name == name {
 			return true
 		}
@@ -62,7 +62,7 @@ func ValidSessionType(name string) bool {
 
 // SessionTypeTemplate returns the template name for a session type, or "" for code.
 func SessionTypeTemplate(name string) string {
-	for _, tt := range taskTypes {
+	for _, tt := range sessionTypes {
 		if tt.Name == name {
 			return tt.Template
 		}

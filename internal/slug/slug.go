@@ -17,23 +17,23 @@ const (
 var nonAlphaNum = regexp.MustCompile(`[^a-z0-9]+`)
 
 // Generate creates a human-readable slug from a prompt and session ID.
-// Format: "first-five-words-{shortTaskID}" (max 50 chars).
-func Generate(prompt, taskID string) string {
-	shortID := taskID
+// Format: "first-five-words-{shortSessionID}" (max 50 chars).
+func Generate(prompt, sessionID string) string {
+	shortID := sessionID
 	if len(shortID) > shortIDLen {
 		shortID = shortID[:shortIDLen]
 	}
 
 	s := Slugify(prompt)
 	if s == "" {
-		return "task-" + shortID
+		return "session-" + shortID
 	}
 
 	// Truncate slug to fit within maxSlugLen including "-{shortID}" suffix
 	suffix := "-" + shortID
 	maxBase := maxSlugLen - len(suffix)
 	if maxBase < 1 {
-		return "task-" + shortID
+		return "session-" + shortID
 	}
 
 	if len(s) > maxBase {

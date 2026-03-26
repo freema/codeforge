@@ -16,12 +16,12 @@ import (
 
 // mockCanceller implements the Canceller interface for tests.
 type mockCanceller struct {
-	cancelFunc func(taskID string) error
+	cancelFunc func(sessionID string) error
 }
 
-func (m *mockCanceller) Cancel(taskID string) error {
+func (m *mockCanceller) Cancel(sessionID string) error {
 	if m.cancelFunc != nil {
-		return m.cancelFunc(taskID)
+		return m.cancelFunc(sessionID)
 	}
 	return nil
 }
@@ -31,7 +31,7 @@ func TestCancel_ReviewingStatus(t *testing.T) {
 	r := chi.NewRouter()
 
 	canceller := &mockCanceller{
-		cancelFunc: func(taskID string) error {
+		cancelFunc: func(sessionID string) error {
 			return nil
 		},
 	}
@@ -63,7 +63,7 @@ func TestCancel_ReviewingStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cancelCalled := false
-			canceller.cancelFunc = func(taskID string) error {
+			canceller.cancelFunc = func(sessionID string) error {
 				cancelCalled = true
 				return nil
 			}
@@ -124,7 +124,7 @@ func TestReview_InvalidCLI(t *testing.T) {
 	h := NewSessionHandler(nil, nil, nil, cliRegistry, nil, nil)
 
 	r := chi.NewRouter()
-	r.Post("/api/v1/sessions/{taskID}/review", h.Review)
+	r.Post("/api/v1/sessions/{sessionID}/review", h.Review)
 
 	body := `{"cli": "unknown-cli"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/test-id/review", strings.NewReader(body))

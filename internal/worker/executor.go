@@ -85,13 +85,13 @@ func NewExecutor(
 
 // emitOrLog emits a stream event, logging a warning on failure.
 // Streaming is best-effort — failures are non-fatal.
-func (e *Executor) emitOrLog(err error, log *slog.Logger, event, taskID string) {
+func (e *Executor) emitOrLog(err error, log *slog.Logger, event, sessionID string) {
 	if err != nil {
-		log.Warn("stream emit failed", "event", event, "task_id", taskID, "error", err)
+		log.Warn("stream emit failed", "event", event, "session_id", sessionID, "error", err)
 	}
 }
 
-// Execute runs the full task pipeline.
+// Execute runs the full session pipeline.
 func (e *Executor) Execute(ctx context.Context, t *session.Session) {
 	ctx, span := tracing.Tracer().Start(ctx, "task.execute",
 		tracing.WithSessionAttributes(t.ID, t.Iteration),
@@ -108,7 +108,7 @@ func (e *Executor) Execute(ctx context.Context, t *session.Session) {
 		return
 	}
 
-	log := slog.With("task_id", t.ID, "iteration", t.Iteration, "trace_id", t.TraceID)
+	log := slog.With("session_id", t.ID, "iteration", t.Iteration, "trace_id", t.TraceID)
 	startTime := time.Now().UTC()
 
 	// Emit user instruction for follow-up iterations so the UI shows what the user asked
@@ -126,40 +126,40 @@ func (e *Executor) Execute(ctx context.Context, t *session.Session) {
 	}()
 
 	timeout := e.resolveTimeout(t)
-	taskCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	sessionCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
 	// Phase 1: resolve token + prepare workspace
-	e.resolveToken(taskCtx, t, log)
-	workDir, err := e.setupWorkspace(taskCtx, ctx, t, startTime, log)
+	e.resolveToken(sessionCtx, t, log)
+	workDir, err := e.setupWorkspace(sessionCtx, ctx, t, startTime, log)
 	if err != nil {
-		return // failTask already called inside setupWorkspace
+		return // failSession already called inside setupWorkspace
 	}
 
 	// Phase 2: resolve tools + MCP config
-	mcpConfigPath, mcpErr := e.setupMCP(taskCtx, t, workDir, log)
+	mcpConfigPath, mcpErr := e.setupMCP(sessionCtx, t, workDir, log)
 	if mcpErr != nil {
-		e.failTask(ctx, t, fmt.Sprintf("tool/MCP setup failed: %v", mcpErr), startTime, log)
+		e.failSession(ctx, t, fmt.Sprintf("tool/MCP setup failed: %v", mcpErr), startTime, log)
 		return
 	}
 
 	// Phase 3: run CLI
-	result, err := e.runStep(taskCtx, t, workDir, mcpConfigPath, log)
+	result, err := e.runStep(sessionCtx, t, workDir, mcpConfigPath, log)
 	if err != nil {
 		// Timeout: complete gracefully with partial result instead of failing
-		if taskCtx.Err() == context.DeadlineExceeded {
+		if sessionCtx.Err() == context.DeadlineExceeded {
 			e.handleTimeout(ctx, t, result, workDir, timeout, startTime, log)
 			return
 		}
-		e.handleRunError(ctx, taskCtx, t, err, timeout, startTime, log)
+		e.handleRunError(ctx, sessionCtx, t, err, timeout, startTime, log)
 		return
 	}
 
 	// Phase 4: finalize
-	e.completeTask(ctx, t, result, workDir, startTime, log)
+	e.completeSession(ctx, t, result, workDir, startTime, log)
 }
 
-// resolveTimeout determines the effective task timeout in seconds.
+// resolveTimeout determines the effective session timeout in seconds.
 func (e *Executor) resolveTimeout(t *session.Session) int {
 	timeout := e.cfg.DefaultTimeout
 	if t.Config != nil && t.Config.TimeoutSeconds > 0 {
@@ -185,8 +185,8 @@ func (e *Executor) resolveToken(ctx context.Context, t *session.Session, log *sl
 }
 
 // setupWorkspace resolves or clones the workspace directory.
-// Returns the workDir path or calls failTask and returns an error.
-func (e *Executor) setupWorkspace(taskCtx, parentCtx context.Context, t *session.Session, startTime time.Time, log *slog.Logger) (string, error) {
+// Returns the workDir path or calls failSession and returns an error.
+func (e *Executor) setupWorkspace(sessionCtx, parentCtx context.Context, t *session.Session, startTime time.Time, log *slog.Logger) (string, error) {
 	workDir := filepath.Join(e.cfg.WorkspaceBase, t.ID)
 	if e.workspaceMgr != nil {
 		if ws := e.workspaceMgr.Get(parentCtx, t.ID); ws != nil && ws.Path != "" {
@@ -194,12 +194,12 @@ func (e *Executor) setupWorkspace(taskCtx, parentCtx context.Context, t *session
 		}
 	}
 
-	// Check workspace reuse from a referenced task (e.g. code review step)
-	if t.Config != nil && t.Config.WorkspaceTaskID != "" && e.workspaceMgr != nil {
-		if refWs := e.workspaceMgr.Get(parentCtx, t.Config.WorkspaceTaskID); refWs != nil {
+	// Check workspace reuse from a referenced session (e.g. code review step)
+	if t.Config != nil && t.Config.WorkspaceSessionID != "" && e.workspaceMgr != nil {
+		if refWs := e.workspaceMgr.Get(parentCtx, t.Config.WorkspaceSessionID); refWs != nil {
 			if _, statErr := os.Stat(refWs.Path); statErr == nil {
-				log.Info("reusing workspace from referenced task",
-					"ref_task_id", t.Config.WorkspaceTaskID, "work_dir", refWs.Path)
+				log.Info("reusing workspace from referenced session",
+					"ref_session_id", t.Config.WorkspaceSessionID, "work_dir", refWs.Path)
 				return refWs.Path, nil
 			}
 		}
@@ -207,8 +207,8 @@ func (e *Executor) setupWorkspace(taskCtx, parentCtx context.Context, t *session
 
 	// First iteration: clone
 	if t.Iteration <= 1 {
-		if err := e.cloneStep(taskCtx, t, workDir, log); err != nil {
-			e.failTask(parentCtx, t, fmt.Sprintf("clone failed: %v", err), startTime, log)
+		if err := e.cloneStep(sessionCtx, t, workDir, log); err != nil {
+			e.failSession(parentCtx, t, fmt.Sprintf("clone failed: %v", err), startTime, log)
 			return "", err
 		}
 		// Re-resolve workDir — cloneStep may have created workspace at a slug-based path
@@ -223,14 +223,14 @@ func (e *Executor) setupWorkspace(taskCtx, parentCtx context.Context, t *session
 	// Follow-up iteration: reuse or re-clone
 	if _, err := os.Stat(workDir); os.IsNotExist(err) {
 		log.Warn("workspace missing for iteration, re-cloning", "work_dir", workDir)
-		if err := e.cloneStep(taskCtx, t, workDir, log); err != nil {
-			e.failTask(parentCtx, t, fmt.Sprintf("re-clone failed: %v", err), startTime, log)
+		if err := e.cloneStep(sessionCtx, t, workDir, log); err != nil {
+			e.failSession(parentCtx, t, fmt.Sprintf("re-clone failed: %v", err), startTime, log)
 			return "", err
 		}
 	} else {
 		log.Info("reusing existing workspace", "work_dir", workDir)
 		if t.Branch != "" {
-			e.pullBranch(taskCtx, t, workDir, log)
+			e.pullBranch(sessionCtx, t, workDir, log)
 		}
 	}
 
@@ -255,7 +255,7 @@ func (e *Executor) setupMCP(ctx context.Context, t *session.Session, workDir str
 		return "", nil
 	}
 
-	// Collect task-level MCP servers
+	// Collect session-level MCP servers
 	var taskMCPServers []mcp.Server
 	if t.Config != nil {
 		for _, s := range t.Config.MCPServers {
@@ -314,22 +314,22 @@ func (e *Executor) handleTimeout(ctx context.Context, t *session.Session, result
 	}
 
 	// Complete normally — this allows the user to instruct or create PR
-	e.completeTask(finalCtx, t, result, workDir, startTime, log)
+	e.completeSession(finalCtx, t, result, workDir, startTime, log)
 }
 
-// handleRunError classifies the CLI run error and calls failTask with the appropriate message.
-func (e *Executor) handleRunError(ctx, taskCtx context.Context, t *session.Session, err error, timeout int, startTime time.Time, log *slog.Logger) {
+// handleRunError classifies the CLI run error and calls failSession with the appropriate message.
+func (e *Executor) handleRunError(ctx, sessionCtx context.Context, t *session.Session, err error, timeout int, startTime time.Time, log *slog.Logger) {
 	if ctx.Err() == context.Canceled {
 		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "task_canceled", nil), log, "task_canceled", t.ID)
-		e.failTask(context.Background(), t, "canceled by user", startTime, log)
+		e.failSession(context.Background(), t, "canceled by user", startTime, log)
 		return
 	}
-	e.failTask(ctx, t, fmt.Sprintf("CLI execution failed: %v", err), startTime, log)
+	e.failSession(ctx, t, fmt.Sprintf("CLI execution failed: %v", err), startTime, log)
 }
 
-// completeTask handles post-CLI success: changes, result storage, status transition,
+// completeSession handles post-CLI success: changes, result storage, status transition,
 // iteration record, events, pr_review handling, and webhook delivery.
-func (e *Executor) completeTask(ctx context.Context, t *session.Session, result *runner.RunResult, workDir string, startTime time.Time, log *slog.Logger) {
+func (e *Executor) completeSession(ctx context.Context, t *session.Session, result *runner.RunResult, workDir string, startTime time.Time, log *slog.Logger) {
 	changes, err := gitpkg.CalculateChanges(ctx, workDir)
 	if err != nil {
 		log.Warn("failed to calculate changes", "error", err)
@@ -408,7 +408,7 @@ func (e *Executor) completeTask(ctx context.Context, t *session.Session, result 
 		e.sendWebhook(ctx, t, result.Output, changes, usage, log)
 	}
 
-	log.Info("task completed", "duration", result.Duration)
+	log.Info("session completed", "duration", result.Duration)
 }
 
 func (e *Executor) cloneStep(ctx context.Context, t *session.Session, workDir string, log *slog.Logger) error {
@@ -647,7 +647,7 @@ func (e *Executor) buildPrompt(ctx context.Context, t *session.Session) string {
 		currentPrompt = t.Prompt
 	}
 
-	// Apply task type template for first iteration only
+	// Apply session type template for first iteration only
 	if t.Iteration <= 1 && t.SessionType != "" && t.SessionType != "code" {
 		var rendered string
 		var err error
@@ -712,18 +712,18 @@ func (e *Executor) buildPrompt(ctx context.Context, t *session.Session) string {
 	return ctx2.String()
 }
 
-func (e *Executor) failTask(ctx context.Context, t *session.Session, errMsg string, startTime time.Time, log *slog.Logger) {
-	log.Error("task failed", "error", errMsg)
+func (e *Executor) failSession(ctx context.Context, t *session.Session, errMsg string, startTime time.Time, log *slog.Logger) {
+	log.Error("session failed", "error", errMsg)
 
 	// Use a detached context for finalization — the original ctx may be canceled
 	// (e.g. user-triggered cancel), but we still need to persist the failure state.
 	finalCtx := context.WithoutCancel(ctx)
 
 	if err := e.sessionService.SetError(finalCtx, t.ID, errMsg); err != nil {
-		log.Warn("failed to set error on task", "error", err)
+		log.Warn("failed to set error on session", "error", err)
 	}
 	if err := e.sessionService.UpdateStatus(finalCtx, t.ID, session.StatusFailed); err != nil {
-		log.Warn("failed to update task status to failed", "error", err)
+		log.Warn("failed to update session status to failed", "error", err)
 	}
 	metrics.TasksTotal.WithLabelValues(string(session.StatusFailed)).Inc()
 
@@ -910,8 +910,8 @@ func (e *Executor) resolveWorkDir(ctx context.Context, t *session.Session) strin
 		if ws := e.workspaceMgr.Get(ctx, t.ID); ws != nil && ws.Path != "" {
 			return ws.Path
 		}
-		if t.Config != nil && t.Config.WorkspaceTaskID != "" {
-			if ws := e.workspaceMgr.Get(ctx, t.Config.WorkspaceTaskID); ws != nil && ws.Path != "" {
+		if t.Config != nil && t.Config.WorkspaceSessionID != "" {
+			if ws := e.workspaceMgr.Get(ctx, t.Config.WorkspaceSessionID); ws != nil && ws.Path != "" {
 				return ws.Path
 			}
 		}
@@ -919,7 +919,7 @@ func (e *Executor) resolveWorkDir(ctx context.Context, t *session.Session) strin
 	return filepath.Join(e.cfg.WorkspaceBase, t.ID)
 }
 
-// executeReview runs a code review on an existing task workspace.
+// executeReview runs a code review on an existing session workspace.
 // Called when a session is dequeued with status=reviewing (enqueued by StartReviewAsync).
 func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 	ctx, span := tracing.Tracer().Start(ctx, "task.review",
@@ -927,7 +927,7 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 	)
 	defer span.End()
 
-	log := slog.With("task_id", t.ID, "trace_id", t.TraceID, "review", true)
+	log := slog.With("session_id", t.ID, "trace_id", t.TraceID, "review", true)
 	startTime := time.Now().UTC()
 
 	metrics.TasksInProgress.Inc()
@@ -937,17 +937,17 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 	}()
 
 	timeout := e.resolveTimeout(t)
-	taskCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	sessionCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
 	// Resolve workspace — review runs on existing workspace, no clone needed
 	workDir := e.resolveWorkDir(ctx, t)
 	if _, err := os.Stat(workDir); os.IsNotExist(err) {
-		e.failTask(ctx, t, "workspace not found for review — it may have been cleaned up", startTime, log)
+		e.failSession(ctx, t, "workspace not found for review — it may have been cleaned up", startTime, log)
 		return
 	}
 
-	// Resolve CLI: review param → task config → default
+	// Resolve CLI: review param → session config → default
 	cli := defaultCLI
 	if t.ReviewCLI != "" {
 		cli = t.ReviewCLI
@@ -957,11 +957,11 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 
 	cliRunner, err := e.cliRegistry.Get(cli)
 	if err != nil {
-		e.failTask(ctx, t, fmt.Sprintf("failed to resolve CLI %q for review: %v", cli, err), startTime, log)
+		e.failSession(ctx, t, fmt.Sprintf("failed to resolve CLI %q for review: %v", cli, err), startTime, log)
 		return
 	}
 
-	// Resolve model: review param → task config → default for CLI
+	// Resolve model: review param → session config → default for CLI
 	model := e.cfg.DefaultModels[cli]
 	if t.ReviewModel != "" {
 		model = t.ReviewModel
@@ -974,7 +974,7 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 		OriginalPrompt: t.Prompt,
 	})
 	if err != nil {
-		e.failTask(ctx, t, fmt.Sprintf("failed to render review prompt: %v", err), startTime, log)
+		e.failSession(ctx, t, fmt.Sprintf("failed to render review prompt: %v", err), startTime, log)
 		return
 	}
 
@@ -1009,7 +1009,7 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 	}
 
 	// Run CLI with streaming
-	result, err := cliRunner.Run(taskCtx, runner.RunOptions{
+	result, err := cliRunner.Run(sessionCtx, runner.RunOptions{
 		Prompt:  reviewPrompt,
 		WorkDir: workDir,
 		Model:   model,
@@ -1027,16 +1027,16 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 		},
 	})
 	if err != nil {
-		if taskCtx.Err() == context.DeadlineExceeded {
+		if sessionCtx.Err() == context.DeadlineExceeded {
 			e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "review_timeout", map[string]interface{}{
 				"timeout_seconds": timeout,
 			}), log, "review_timeout", t.ID)
-			e.failTask(ctx, t, fmt.Sprintf("review timed out after %ds", timeout), startTime, log)
+			e.failSession(ctx, t, fmt.Sprintf("review timed out after %ds", timeout), startTime, log)
 		} else if ctx.Err() == context.Canceled {
 			e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "review_canceled", nil), log, "review_canceled", t.ID)
-			e.failTask(context.Background(), t, "review canceled by user", startTime, log)
+			e.failSession(context.Background(), t, "review canceled by user", startTime, log)
 		} else {
-			e.failTask(ctx, t, fmt.Sprintf("review CLI execution failed: %v", err), startTime, log)
+			e.failSession(ctx, t, fmt.Sprintf("review CLI execution failed: %v", err), startTime, log)
 		}
 		return
 	}
@@ -1072,7 +1072,7 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 	// Complete review: store ReviewResult + transition reviewing → completed
 	if err := e.sessionService.CompleteReview(ctx, t.ID, reviewResult); err != nil {
 		log.Error("failed to complete review", "error", err)
-		e.failTask(ctx, t, fmt.Sprintf("failed to complete review: %v", err), startTime, log)
+		e.failSession(ctx, t, fmt.Sprintf("failed to complete review: %v", err), startTime, log)
 		return
 	}
 

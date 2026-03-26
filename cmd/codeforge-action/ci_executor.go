@@ -17,7 +17,7 @@ import (
 	"github.com/freema/codeforge/internal/tool/runner"
 )
 
-// CIExecutor runs a single CI task — no Redis, no queue, no HTTP server.
+// CIExecutor runs a single CI session — no Redis, no queue, no HTTP server.
 type CIExecutor struct {
 	cfg Config
 }
@@ -27,7 +27,7 @@ func NewCIExecutor(cfg Config) *CIExecutor {
 	return &CIExecutor{cfg: cfg}
 }
 
-// Execute runs the CI task and returns an exit code (0 = success, 1 = failure/request_changes).
+// Execute runs the CI session and returns an exit code (0 = success, 1 = failure/request_changes).
 func (e *CIExecutor) Execute(ctx context.Context) int {
 	ciCtx, err := DetectCIContext()
 	if err != nil {
@@ -126,7 +126,7 @@ func (e *CIExecutor) Execute(ctx context.Context) int {
 		slog.Warn("CLI returned empty output")
 	}
 
-	// Handle result based on task type
+	// Handle result based on session type
 	return e.handleResult(ctx, ciCtx, result, duration)
 }
 
@@ -196,7 +196,7 @@ func (e *CIExecutor) writeMCPConfig(workDir string) (string, error) {
 	return mcpPath, nil
 }
 
-// buildPrompt constructs the prompt based on task type and CI context.
+// buildPrompt constructs the prompt based on session type and CI context.
 func (e *CIExecutor) buildPrompt(ciCtx *CIContext) (string, error) {
 	switch e.cfg.SessionType {
 	case "pr_review":
@@ -208,7 +208,7 @@ func (e *CIExecutor) buildPrompt(ciCtx *CIContext) (string, error) {
 	case "custom":
 		return e.cfg.Prompt, nil
 	default:
-		return "", fmt.Errorf("unknown task type: %s", e.cfg.SessionType)
+		return "", fmt.Errorf("unknown session type: %s", e.cfg.SessionType)
 	}
 }
 
@@ -286,7 +286,7 @@ func (e *CIExecutor) createRunner() runner.Runner {
 	}
 }
 
-// handleResult processes the CLI output based on task type.
+// handleResult processes the CLI output based on session type.
 func (e *CIExecutor) handleResult(ctx context.Context, ciCtx *CIContext, result *runner.RunResult, duration time.Duration) int {
 	switch e.cfg.SessionType {
 	case "pr_review", "code_review":

@@ -10,7 +10,7 @@ import (
 	"github.com/freema/codeforge/internal/keys"
 )
 
-// Resolver resolves TaskTool requests into ToolInstances by looking up
+// Resolver resolves SessionTool requests into ToolInstances by looking up
 // definitions in the registry (with built-in fallback) and validating config.
 type Resolver struct {
 	registry Registry
@@ -26,15 +26,15 @@ func NewResolver(registry Registry, keyReg ...keys.Registry) *Resolver {
 	return r
 }
 
-// Resolve converts a list of per-task tool requests into fully resolved ToolInstances.
-func (r *Resolver) Resolve(ctx context.Context, projectID string, taskTools []TaskTool) ([]ToolInstance, error) {
-	if len(taskTools) == 0 {
+// Resolve converts a list of per-session tool requests into fully resolved ToolInstances.
+func (r *Resolver) Resolve(ctx context.Context, projectID string, sessionTools []SessionTool) ([]ToolInstance, error) {
+	if len(sessionTools) == 0 {
 		return nil, nil
 	}
 
-	instances := make([]ToolInstance, 0, len(taskTools))
+	instances := make([]ToolInstance, 0, len(sessionTools))
 
-	for _, tt := range taskTools {
+	for _, tt := range sessionTools {
 		def, err := r.findDefinition(ctx, projectID, tt.Name)
 		if err != nil {
 			return nil, fmt.Errorf("tool %q: %w", tt.Name, err)

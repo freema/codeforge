@@ -58,9 +58,9 @@ func BuildSessionRequest(ctx context.Context, def WorkflowDefinition, params map
 	outputMode, _ := Render(cfg.OutputMode, tctx)
 
 	// Decode tools and MCP servers from raw JSON
-	var taskTools []tools.TaskTool
+	var sessionTools []tools.SessionTool
 	if len(cfg.Tools) > 0 {
-		_ = json.Unmarshal(cfg.Tools, &taskTools)
+		_ = json.Unmarshal(cfg.Tools, &sessionTools)
 	}
 	var mcpServers []session.MCPServer
 	if len(cfg.MCPServers) > 0 {
@@ -68,19 +68,19 @@ func BuildSessionRequest(ctx context.Context, def WorkflowDefinition, params map
 	}
 
 	// Resolve tool key reference — inject auth_token from key registry
-	if cfg.ToolKeyRef != "" && keyReg != nil && len(taskTools) > 0 {
+	if cfg.ToolKeyRef != "" && keyReg != nil && len(sessionTools) > 0 {
 		toolKeyRef, _ := Render(cfg.ToolKeyRef, tctx)
 		if toolKeyRef != "" {
 			token, _, err := keyReg.ResolveByName(ctx, toolKeyRef)
 			if err != nil {
 				slog.Warn("failed to resolve tool key ref", "key", toolKeyRef, "error", err)
 			} else {
-				for i := range taskTools {
-					if taskTools[i].Config == nil {
-						taskTools[i].Config = make(map[string]string)
+				for i := range sessionTools {
+					if sessionTools[i].Config == nil {
+						sessionTools[i].Config = make(map[string]string)
 					}
-					if _, exists := taskTools[i].Config["auth_token"]; !exists {
-						taskTools[i].Config["auth_token"] = token
+					if _, exists := sessionTools[i].Config["auth_token"]; !exists {
+						sessionTools[i].Config["auth_token"] = token
 					}
 				}
 			}
@@ -96,19 +96,19 @@ func BuildSessionRequest(ctx context.Context, def WorkflowDefinition, params map
 	}
 
 	// Build Config if any overrides are set
-	var taskConfig *session.Config
+	var sessionConfig *session.Config
 	hasConfig := cli != "" || aiModel != "" || sourceBranch != "" ||
 		targetBranch != "" || cfg.PRNumber > 0 || outputMode != "" ||
-		len(taskTools) > 0 || len(mcpServers) > 0 || timeoutSeconds > 0
+		len(sessionTools) > 0 || len(mcpServers) > 0 || timeoutSeconds > 0
 	if hasConfig {
-		taskConfig = &session.Config{
+		sessionConfig = &session.Config{
 			CLI:            cli,
 			AIModel:        aiModel,
 			SourceBranch:   sourceBranch,
 			TargetBranch:   targetBranch,
 			PRNumber:       cfg.PRNumber,
 			OutputMode:     outputMode,
-			Tools:          taskTools,
+			Tools:          sessionTools,
 			MCPServers:     mcpServers,
 			TimeoutSeconds: timeoutSeconds,
 		}
@@ -120,7 +120,7 @@ func BuildSessionRequest(ctx context.Context, def WorkflowDefinition, params map
 		SessionType: sessionType,
 		ProviderKey: providerKey,
 		AccessToken: accessToken,
-		Config:      taskConfig,
+		Config:      sessionConfig,
 	}
 
 	return req, nil

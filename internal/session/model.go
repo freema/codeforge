@@ -91,8 +91,8 @@ type Config struct {
 	TargetBranch    string           `json:"target_branch,omitempty"`
 	MaxBudgetUSD    float64          `json:"max_budget_usd,omitempty"`
 	MCPServers      []MCPServer      `json:"mcp_servers,omitempty"`
-	Tools           []tools.TaskTool `json:"tools,omitempty"`
-	WorkspaceTaskID string           `json:"workspace_task_id,omitempty"` // reuse workspace from another session
+	Tools              []tools.SessionTool `json:"tools,omitempty"`
+	WorkspaceSessionID string              `json:"workspace_session_id,omitempty"` // reuse workspace from another session
 	PRNumber           int              `json:"pr_number,omitempty"`            // input PR/MR number to review (for pr_review sessions)
 	OutputMode         string           `json:"output_mode,omitempty"`          // "post_comments" or "api_only" (for pr_review sessions)
 	AutoReviewAfterFix bool             `json:"auto_review_after_fix,omitempty"` // auto-start review after each fix iteration
