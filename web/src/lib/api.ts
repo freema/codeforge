@@ -181,9 +181,12 @@ export function createApiClient(serverUrl: string, token: string) {
     deleteWorkflow: (name: string) =>
       del<void>(`/workflows/${encodeURIComponent(name)}`),
 
-    // Workflow Runs
+    // Workflow Runs (preset → session)
     runWorkflow: (name: string, req?: RunWorkflowRequest) =>
-      post<WorkflowRun>(`/workflows/${encodeURIComponent(name)}/run`, req),
+      post<{ session_id: string; workflow_name: string }>(
+        `/workflows/${encodeURIComponent(name)}/run`,
+        req,
+      ),
     listWorkflowRuns: (workflowName?: string) =>
       get<{ runs: WorkflowRun[] }>(
         `/workflow-runs${workflowName ? `?workflow=${encodeURIComponent(workflowName)}` : ""}`,
@@ -209,7 +212,7 @@ export function createApiClient(serverUrl: string, token: string) {
     deleteWorkflowConfig: (id: number) =>
       del<void>(`/workflow-configs/${id}`),
     runWorkflowConfig: (id: number) =>
-      post<{ run_id: string; workflow_name: string; status: string }>(
+      post<{ session_id: string; config_id: number; config_name: string }>(
         `/workflow-configs/${id}/run`,
       ),
 

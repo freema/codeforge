@@ -130,7 +130,7 @@ export default function SentryFixerRunForm() {
         max_issues: maxIssues,
       },
     });
-    void navigate(`/workflows/runs/${run.id}`);
+    void navigate(`/sessions/${run.session_id}`);
   }
 
   // Cascade step

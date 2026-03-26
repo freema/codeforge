@@ -622,7 +622,7 @@ function SentryIssuesView({
   const [sort, setSort] = useState<IssueSort>("freq");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [drawerIssueId, setDrawerIssueId] = useState<string | null>(null);
-  const [fixingIds, setFixingIds] = useState<Map<string, string>>(new Map()); // issueId -> runId
+  const [fixingIds, setFixingIds] = useState<Map<string, string>>(new Map()); // issueId -> sessionId
 
   const sortParam =
     sort === "freq"
@@ -676,7 +676,7 @@ function SentryIssuesView({
           ...(config.provider_key ? { provider_key: config.provider_key } : {}),
         },
       });
-      setFixingIds((prev) => new Map(prev).set(issue.id, run.id));
+      setFixingIds((prev) => new Map(prev).set(issue.id, run.session_id));
     } catch {
       // error handled by mutation state
     }
@@ -702,7 +702,7 @@ function SentryIssuesView({
                 : {}),
             },
           });
-          newFixing.set(issue.id, run.id);
+          newFixing.set(issue.id, run.session_id);
         } catch {
           // skip failed ones
         }

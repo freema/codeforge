@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/workflow"
 )
@@ -33,6 +34,8 @@ type WorkflowHandler struct {
 	runCanceller  WorkflowRunCanceller
 	taskCanceller func(taskID string) error
 	redis         *redisclient.Client
+	sessions      PresetSessionCreator
+	keys          keys.Registry
 }
 
 // NewWorkflowHandler creates a new workflow handler.
@@ -43,6 +46,8 @@ func NewWorkflowHandler(
 	runCanceller WorkflowRunCanceller,
 	taskCanceller func(taskID string) error,
 	redis *redisclient.Client,
+	sessions PresetSessionCreator,
+	keys keys.Registry,
 ) *WorkflowHandler {
 	return &WorkflowHandler{
 		registry:      registry,
@@ -51,6 +56,8 @@ func NewWorkflowHandler(
 		runCanceller:  runCanceller,
 		taskCanceller: taskCanceller,
 		redis:         redis,
+		sessions:      sessions,
+		keys:          keys,
 	}
 }
 
@@ -133,6 +140,7 @@ func (h *WorkflowHandler) DeleteWorkflow(w http.ResponseWriter, r *http.Request)
 }
 
 // RunWorkflow handles POST /api/v1/workflows/{name}/run.
+// Creates a session directly from the workflow definition.
 func (h *WorkflowHandler) RunWorkflow(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
@@ -140,30 +148,40 @@ func (h *WorkflowHandler) RunWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
+	var body struct {
 		Params map[string]string `json:"params"`
 	}
 	if r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}
 	}
-	if req.Params == nil {
-		req.Params = make(map[string]string)
+	if body.Params == nil {
+		body.Params = make(map[string]string)
 	}
 
-	run, err := h.runCreator.CreateRun(r.Context(), name, req.Params)
+	def, err := h.registry.Get(r.Context(), name)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+
+	req, err := workflow.BuildSessionRequest(r.Context(), *def, body.Params, h.keys)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	sess, err := h.sessions.Create(r.Context(), *req)
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"run_id":        run.ID,
-		"workflow_name": run.WorkflowName,
-		"status":        run.Status,
-		"created_at":    run.CreatedAt,
+		"session_id":    sess.ID,
+		"workflow_name": name,
 	})
 }
 

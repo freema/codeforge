@@ -74,7 +74,7 @@ export default function WorkflowList() {
   const runConfig = useMutation({
     mutationFn: (id: number) => api.runWorkflowConfig(id),
     onSuccess: (data) => {
-      void navigate(`/workflows/runs/${data.run_id}`);
+      void navigate(`/sessions/${data.session_id}`);
     },
   });
 

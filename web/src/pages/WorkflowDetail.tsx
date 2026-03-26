@@ -124,7 +124,7 @@ export default function WorkflowDetail() {
       name: decodedName,
       params: hasParams ? allParams : undefined,
     });
-    void navigate(`/workflows/runs/${run.id}`);
+    void navigate(`/sessions/${run.session_id}`);
   }
 
   function updateParam(key: string, value: string) {

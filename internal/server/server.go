@@ -82,8 +82,8 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 	wsHandler := handlers.NewWorkspaceHandler(workspaceMgr, sessionService)
 	repoHandler := handlers.NewRepoHandler(keyRegistry)
 	sentryHandler := handlers.NewSentryHandler(keyRegistry)
-	workflowHandler := handlers.NewWorkflowHandler(workflowRegistry, workflowRunStore, workflowRunCreator, workflowRunCanceller, canceller.Cancel, redis)
-	workflowConfigHandler := handlers.NewWorkflowConfigHandler(workflowConfigStore, workflowRunCreator)
+	workflowHandler := handlers.NewWorkflowHandler(workflowRegistry, workflowRunStore, workflowRunCreator, workflowRunCanceller, canceller.Cancel, redis, sessionService, keyRegistry)
+	workflowConfigHandler := handlers.NewWorkflowConfigHandler(workflowConfigStore, workflowRegistry, sessionService, keyRegistry)
 
 	// Protected API routes
 	r.Route("/api/v1", func(r chi.Router) {
