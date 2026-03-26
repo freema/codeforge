@@ -15,7 +15,6 @@ import (
 	"github.com/freema/codeforge/internal/review"
 	"github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/tool/runner"
-	"github.com/freema/codeforge/internal/workflow"
 )
 
 // CIExecutor runs a single CI task — no Redis, no queue, no HTTP server.
@@ -249,7 +248,7 @@ func (e *CIExecutor) buildCodeReviewPrompt(ciCtx *CIContext) (string, error) {
 
 func (e *CIExecutor) buildKnowledgeUpdatePrompt() (string, error) {
 	// Two-phase: analyze then update — combined into one prompt for CI mode
-	return workflow.AnalyzeRepoPrompt + "\n\n---\n\n" + workflow.UpdateKnowledgePrompt, nil
+	return prompt.AnalyzeRepoPrompt + "\n\n---\n\n" + prompt.UpdateKnowledgePrompt, nil
 }
 
 // buildSystemContext reads .codeforge/ knowledge files and CLAUDE.md to build system context.
