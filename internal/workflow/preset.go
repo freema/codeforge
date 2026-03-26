@@ -33,9 +33,20 @@ func BuildSessionRequest(ctx context.Context, def WorkflowDefinition, params map
 		return nil, fmt.Errorf("parsing session config: %w", err)
 	}
 
-	// Build template context (no step outputs or run ID in preset mode)
+	// Apply parameter defaults for missing keys
+	merged := make(map[string]string, len(params))
+	for k, v := range params {
+		merged[k] = v
+	}
+	for _, p := range def.Parameters {
+		if _, ok := merged[p.Name]; !ok && p.Default != "" {
+			merged[p.Name] = p.Default
+		}
+	}
+
+	// Build template context
 	tctx := TemplateContext{
-		Params: params,
+		Params: merged,
 		Steps:  make(map[string]map[string]string),
 	}
 

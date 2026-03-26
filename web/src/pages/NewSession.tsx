@@ -52,14 +52,6 @@ const SESSION_TYPE_CONFIG: Record<
   },
 };
 
-const SESSION_TYPE_HINTS: Record<string, string> = {
-  code: "Be specific about the changes you want. The agent will clone the repo and work autonomously.",
-  plan: "Describe what you want planned. The agent will analyze the repo and produce a step-by-step plan.",
-  review: "Describe the review focus, or leave empty for a general review.",
-  pr_review:
-    "Select a merge request / pull request to review. Leave the prompt empty for a standard review, or add specific focus areas.",
-};
-
 export default function NewSession() {
   usePageTitle("New Session");
   const navigate = useNavigate();
@@ -176,8 +168,6 @@ export default function NewSession() {
   }, [cliModels, aiModel]);
 
   const typeConfig = SESSION_TYPE_CONFIG[taskType];
-  const sessionTypeHint =
-    SESSION_TYPE_HINTS[taskType] ?? typeConfig?.desc ?? "";
   const sessionTypePlaceholder =
     typeConfig?.desc ??
     "Describe what the AI agent should do with this repository...";
