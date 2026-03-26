@@ -127,6 +127,15 @@ func (s *SQLiteConfigStore) Delete(ctx context.Context, id int) error {
 	return nil
 }
 
+// DeleteByWorkflow removes all configs referencing a given workflow name.
+func (s *SQLiteConfigStore) DeleteByWorkflow(ctx context.Context, workflowName string) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM workflow_configs WHERE workflow = ?`, workflowName)
+	if err != nil {
+		return 0, fmt.Errorf("deleting configs for workflow %q: %w", workflowName, err)
+	}
+	return result.RowsAffected()
+}
+
 type configRowScanner interface {
 	Scan(dest ...interface{}) error
 }

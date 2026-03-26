@@ -16,16 +16,23 @@ import (
 // preset params, and key registry. It finds the first "session" step in the
 // definition and renders its config with the provided params.
 func BuildSessionRequest(ctx context.Context, def WorkflowDefinition, params map[string]string, keyReg keys.Registry) (*session.CreateSessionRequest, error) {
-	// Find first session step
+	// Find session step — only single-step workflows are supported in preset mode
 	var stepDef *StepDefinition
+	sessionCount := 0
 	for i := range def.Steps {
 		if def.Steps[i].Type == StepTypeSession {
-			stepDef = &def.Steps[i]
-			break
+			if stepDef == nil {
+				stepDef = &def.Steps[i]
+			}
+			sessionCount++
 		}
 	}
 	if stepDef == nil {
 		return nil, fmt.Errorf("workflow %q has no session step", def.Name)
+	}
+	if sessionCount > 1 || len(def.Steps) > 1 {
+		slog.Warn("workflow has multiple steps but only the first session step will be used",
+			"workflow", def.Name, "total_steps", len(def.Steps), "session_steps", sessionCount)
 	}
 
 	var cfg SessionStepConfig
@@ -33,14 +40,18 @@ func BuildSessionRequest(ctx context.Context, def WorkflowDefinition, params map
 		return nil, fmt.Errorf("parsing session config: %w", err)
 	}
 
-	// Apply parameter defaults for missing keys
+	// Apply parameter defaults and validate required params
 	merged := make(map[string]string, len(params))
 	for k, v := range params {
 		merged[k] = v
 	}
 	for _, p := range def.Parameters {
-		if _, ok := merged[p.Name]; !ok && p.Default != "" {
-			merged[p.Name] = p.Default
+		if _, ok := merged[p.Name]; !ok {
+			if p.Default != "" {
+				merged[p.Name] = p.Default
+			} else if p.Required {
+				return nil, fmt.Errorf("missing required parameter %q for workflow %q", p.Name, def.Name)
+			}
 		}
 	}
 

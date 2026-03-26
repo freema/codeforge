@@ -11,12 +11,12 @@ func TestSeedBuiltins_Idempotent(t *testing.T) {
 	ctx := context.Background()
 
 	// First call
-	if err := SeedBuiltins(ctx, reg); err != nil {
+	if err := SeedBuiltins(ctx, reg, NewSQLiteConfigStore(db)); err != nil {
 		t.Fatalf("first SeedBuiltins: %v", err)
 	}
 
 	// Second call — should not error
-	if err := SeedBuiltins(ctx, reg); err != nil {
+	if err := SeedBuiltins(ctx, reg, NewSQLiteConfigStore(db)); err != nil {
 		t.Fatalf("second SeedBuiltins: %v", err)
 	}
 

@@ -68,9 +68,9 @@ var BuiltinWorkflows = []WorkflowDefinition{
 }
 
 // SeedBuiltins inserts or replaces built-in workflow definitions.
-// It also removes stale built-in workflows that are no longer defined in code.
+// It also removes stale built-in workflows (and their configs) that are no longer defined in code.
 // This is idempotent and safe to call on every startup.
-func SeedBuiltins(ctx context.Context, reg Registry) error {
+func SeedBuiltins(ctx context.Context, reg Registry, cfgStore *SQLiteConfigStore) error {
 	// Build set of current builtin names
 	currentNames := make(map[string]bool, len(BuiltinWorkflows))
 	for _, def := range BuiltinWorkflows {
@@ -82,6 +82,14 @@ func SeedBuiltins(ctx context.Context, reg Registry) error {
 	if err == nil {
 		for _, wf := range existing {
 			if wf.Builtin && !currentNames[wf.Name] {
+				// Remove orphaned configs referencing this workflow
+				if cfgStore != nil {
+					if n, err := cfgStore.DeleteByWorkflow(ctx, wf.Name); err != nil {
+						slog.Warn("failed to remove configs for stale workflow", "workflow", wf.Name, "error", err)
+					} else if n > 0 {
+						slog.Info("removed orphaned workflow configs", "workflow", wf.Name, "count", n)
+					}
+				}
 				if err := reg.DeleteBuiltin(ctx, wf.Name); err != nil {
 					slog.Warn("failed to remove stale builtin workflow", "name", wf.Name, "error", err)
 				} else {

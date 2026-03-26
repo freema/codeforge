@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -48,6 +49,24 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 
 	// User-created workflows are never builtin
 	def.Builtin = false
+
+	// Validate steps: only single session step is supported
+	if len(def.Steps) == 0 {
+		writeError(w, http.StatusBadRequest, "workflow must have at least one step")
+		return
+	}
+	sessionStepCount := 0
+	for _, s := range def.Steps {
+		if s.Type != workflow.StepTypeSession {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("unsupported step type %q — only %q is supported", s.Type, workflow.StepTypeSession))
+			return
+		}
+		sessionStepCount++
+	}
+	if sessionStepCount > 1 {
+		writeError(w, http.StatusBadRequest, "multi-step workflows are not supported — workflow must have exactly one session step")
+		return
+	}
 
 	if err := h.registry.Create(r.Context(), def); err != nil {
 		writeAppError(w, err)

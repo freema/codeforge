@@ -228,7 +228,7 @@ func run() error {
 	workflowRegistry := workflow.NewSQLiteRegistry(sqliteDB.Unwrap())
 	workflowConfigStore := workflow.NewSQLiteConfigStore(sqliteDB.Unwrap())
 
-	if err := workflow.SeedBuiltins(context.Background(), workflowRegistry); err != nil {
+	if err := workflow.SeedBuiltins(context.Background(), workflowRegistry, workflowConfigStore); err != nil {
 		return fmt.Errorf("seeding builtin workflows: %w", err)
 	}
 
