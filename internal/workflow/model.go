@@ -9,38 +9,7 @@ import (
 type StepType string
 
 const (
-	StepTypeFetch  StepType = "fetch"
-	StepTypeSession   StepType = "session"
-	StepTypeAction StepType = "action"
-)
-
-// RunStatus represents the current state of a workflow run.
-type RunStatus string
-
-const (
-	RunStatusPending   RunStatus = "pending"
-	RunStatusRunning   RunStatus = "running"
-	RunStatusCompleted RunStatus = "completed"
-	RunStatusFailed    RunStatus = "failed"
-	RunStatusCanceled  RunStatus = "canceled"
-)
-
-// StepStatus represents the current state of a workflow step execution.
-type StepStatus string
-
-const (
-	StepStatusPending   StepStatus = "pending"
-	StepStatusRunning   StepStatus = "running"
-	StepStatusCompleted StepStatus = "completed"
-	StepStatusFailed    StepStatus = "failed"
-	StepStatusSkipped   StepStatus = "skipped"
-)
-
-// ActionKind identifies a built-in action.
-type ActionKind string
-
-const (
-	ActionCreatePR ActionKind = "create_pr"
+	StepTypeSession StepType = "session"
 )
 
 // WorkflowDefinition describes a reusable workflow template.
@@ -60,44 +29,26 @@ type StepDefinition struct {
 	Config json.RawMessage `json:"config"`
 }
 
-// FetchConfig is the configuration for a fetch step.
-type FetchConfig struct {
-	URL     string            `json:"url"`
-	Method  string            `json:"method,omitempty"`
-	Headers map[string]string `json:"headers,omitempty"`
-	KeyName string            `json:"key_name,omitempty"`
-	Outputs map[string]string `json:"outputs"` // field name → JSONPath expression
-}
-
 // SessionStepConfig is the configuration for a session step.
 type SessionStepConfig struct {
-	RepoURL          string `json:"repo_url"`
-	Prompt           string `json:"prompt"`
-	SessionType         string `json:"session_type,omitempty"` // session type override: "code", "plan", "review", "pr_review"
-	ProviderKey      string `json:"provider_key,omitempty"`
-	AccessToken      string `json:"access_token,omitempty"`
-	CLI              string `json:"cli,omitempty"`                // CLI runner override (e.g. "claude-code", "codex")
-	AIModel          string `json:"ai_model,omitempty"`           // AI model override
-	SourceBranch     string `json:"source_branch,omitempty"`      // branch to clone/checkout
-	TargetBranch     string `json:"target_branch,omitempty"`      // base branch for PR review / PR creation
-	WorkspaceTaskRef string `json:"workspace_task_ref,omitempty"` // step name whose workspace to reuse
+	RepoURL      string `json:"repo_url"`
+	Prompt       string `json:"prompt"`
+	SessionType  string `json:"session_type,omitempty"`
+	ProviderKey  string `json:"provider_key,omitempty"`
+	AccessToken  string `json:"access_token,omitempty"`
+	CLI          string `json:"cli,omitempty"`
+	AIModel      string `json:"ai_model,omitempty"`
+	SourceBranch string `json:"source_branch,omitempty"`
+	TargetBranch string `json:"target_branch,omitempty"`
 
 	// PR review fields
-	PRNumber   int    `json:"pr_number,omitempty"`   // PR/MR number (for pr_review tasks)
-	OutputMode string `json:"output_mode,omitempty"` // "post_comments" or "api_only" (for pr_review tasks)
+	PRNumber   int    `json:"pr_number,omitempty"`
+	OutputMode string `json:"output_mode,omitempty"`
 
-	// Tool/MCP overrides (raw JSON, forwarded to session.CreateSessionRequest as-is)
-	Tools      json.RawMessage `json:"tools,omitempty"`        // per-task tool requests ([]tools.TaskTool)
-	MCPServers json.RawMessage `json:"mcp_servers,omitempty"`  // per-task MCP servers ([]session.MCPServer)
-	ToolKeyRef string          `json:"tool_key_ref,omitempty"` // key name → resolve token as auth_token for tools
-}
-
-// ActionConfig is the configuration for an action step.
-type ActionConfig struct {
-	Kind        ActionKind `json:"kind"`
-	TaskStepRef string     `json:"task_step_ref,omitempty"`
-	Title       string     `json:"title,omitempty"`
-	Description string     `json:"description,omitempty"`
+	// Tool/MCP overrides
+	Tools      json.RawMessage `json:"tools,omitempty"`
+	MCPServers json.RawMessage `json:"mcp_servers,omitempty"`
+	ToolKeyRef string          `json:"tool_key_ref,omitempty"`
 }
 
 // ParameterDefinition describes a workflow input parameter.
@@ -105,32 +56,6 @@ type ParameterDefinition struct {
 	Name     string `json:"name"`
 	Required bool   `json:"required"`
 	Default  string `json:"default,omitempty"`
-}
-
-// WorkflowRun represents a single execution of a workflow.
-type WorkflowRun struct {
-	ID           string            `json:"id"`
-	WorkflowName string            `json:"workflow_name"`
-	Status       RunStatus         `json:"status"`
-	Params       map[string]string `json:"params,omitempty"`
-	Error        string            `json:"error,omitempty"`
-	Steps        []WorkflowRunStep `json:"steps,omitempty"`
-	CreatedAt    time.Time         `json:"created_at"`
-	StartedAt    *time.Time        `json:"started_at,omitempty"`
-	FinishedAt   *time.Time        `json:"finished_at,omitempty"`
-}
-
-// WorkflowRunStep records the execution state of a single step within a run.
-type WorkflowRunStep struct {
-	RunID      string            `json:"run_id"`
-	StepName   string            `json:"step_name"`
-	StepType   StepType          `json:"step_type"`
-	Status     StepStatus        `json:"status"`
-	Result     map[string]string `json:"result,omitempty"`
-	TaskID     string            `json:"task_id,omitempty"`
-	Error      string            `json:"error,omitempty"`
-	StartedAt  *time.Time        `json:"started_at,omitempty"`
-	FinishedAt *time.Time        `json:"finished_at,omitempty"`
 }
 
 // MarshalMapJSON serializes a map to a JSON string.

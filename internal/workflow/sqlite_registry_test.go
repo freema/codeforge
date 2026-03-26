@@ -69,7 +69,7 @@ func TestSQLiteRegistry_CRUD(t *testing.T) {
 		Name:        "test-workflow",
 		Description: "A test workflow",
 		Steps: []StepDefinition{
-			{Name: "step1", Type: StepTypeFetch, Config: json.RawMessage(`{"url":"https://example.com"}`)},
+			{Name: "step1", Type: StepTypeSession, Config: json.RawMessage(`{"repo_url":"https://example.com","prompt":"test"}`)},
 		},
 		Parameters: []ParameterDefinition{
 			{Name: "repo_url", Required: true},

@@ -22,7 +22,6 @@ type Config struct {
 	Encryption EncryptionConfig `koanf:"encryption"`
 	Webhooks   WebhookConfig    `koanf:"webhooks"`
 	RateLimit  RateLimitConfig  `koanf:"rate_limit"`
-	Workflow   WorkflowConfig   `koanf:"workflow"`
 	CodeReview CodeReviewConfig `koanf:"code_review"`
 	Tracing    TracingConfig    `koanf:"tracing"`
 	Logging    LoggingConfig    `koanf:"logging"`
@@ -87,10 +86,6 @@ type EncryptionConfig struct {
 	Key string `koanf:"key"`
 }
 
-type WorkflowConfig struct {
-	ContextTTLHours   int `koanf:"context_ttl_hours"`
-	MaxRunDurationSec int `koanf:"max_run_duration_sec"`
-}
 
 type WebhookConfig struct {
 	HMACSecret string        `koanf:"hmac_secret"`
@@ -186,10 +181,6 @@ func Defaults() *Config {
 		RateLimit: RateLimitConfig{
 			Enabled:        true,
 			SessionsPerMinute: 10,
-		},
-		Workflow: WorkflowConfig{
-			ContextTTLHours:   24,
-			MaxRunDurationSec: 7200,
 		},
 		CodeReview: CodeReviewConfig{
 			ReviewDrafts:    false,

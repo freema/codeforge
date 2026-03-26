@@ -229,31 +229,11 @@ func run() error {
 
 	// Initialize workflow subsystem
 	workflowRegistry := workflow.NewSQLiteRegistry(sqliteDB.Unwrap())
-	workflowRunStore := workflow.NewSQLiteRunStore(sqliteDB.Unwrap())
 	workflowConfigStore := workflow.NewSQLiteConfigStore(sqliteDB.Unwrap())
 
 	if err := workflow.SeedBuiltins(context.Background(), workflowRegistry); err != nil {
 		return fmt.Errorf("seeding builtin workflows: %w", err)
 	}
-
-	wfStreamer := workflow.NewStreamer(rdb, time.Duration(cfg.Workflow.ContextTTLHours)*time.Hour)
-	fetchExecutor := workflow.NewFetchExecutor(keyRegistry)
-	sessionExecutor := workflow.NewSessionExecutor(sessionService, rdb, keyRegistry)
-	actionExecutor := workflow.NewActionExecutor(prService)
-
-	orchestrator := workflow.NewOrchestrator(
-		workflowRegistry,
-		workflowRunStore,
-		fetchExecutor,
-		sessionExecutor,
-		actionExecutor,
-		wfStreamer,
-		rdb,
-		workflow.OrchestratorConfig{
-			ContextTTLHours:   cfg.Workflow.ContextTTLHours,
-			MaxRunDurationSec: cfg.Workflow.MaxRunDurationSec,
-		},
-	)
 
 	// Initialize webhook receiver handler for PR review
 	var webhookReceiverHandler *handlers.WebhookReceiverHandler
@@ -261,7 +241,7 @@ func run() error {
 		webhookReceiverHandler = handlers.NewWebhookReceiverHandler(sessionService, rdb, cfg.CodeReview)
 	}
 
-	srv := server.New(cfg, rdb, sqliteDB, sessionService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowRunStore, orchestrator, orchestrator, workflowConfigStore, cliRegistry, cliConfigs, webhookReceiverHandler, version)
+	srv := server.New(cfg, rdb, sqliteDB, sessionService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowConfigStore, cliRegistry, cliConfigs, webhookReceiverHandler, version)
 
 	// Start background services
 	appCtx, appCancel := context.WithCancel(context.Background())
@@ -270,7 +250,6 @@ func run() error {
 	pool.Start(appCtx)
 	go listener.Start(appCtx)
 	go wsCleaner.Start(appCtx)
-	go orchestrator.Start(appCtx)
 
 	errCh := make(chan error, 1)
 	go func() {

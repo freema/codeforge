@@ -35,7 +35,7 @@ type Server struct {
 }
 
 // New creates and configures the HTTP server with all routes and middleware.
-func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, sessionService *session.Service, prService *session.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, toolRegistry tools.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowRunStore workflow.RunStore, workflowRunCreator handlers.WorkflowRunCreator, workflowRunCanceller handlers.WorkflowRunCanceller, workflowConfigStore workflow.ConfigStore, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, webhookReceiverHandler *handlers.WebhookReceiverHandler, version string) *Server {
+func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, sessionService *session.Service, prService *session.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, toolRegistry tools.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowConfigStore workflow.ConfigStore, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, webhookReceiverHandler *handlers.WebhookReceiverHandler, version string) *Server {
 	r := chi.NewRouter()
 
 	// Global middleware (timeout applied per-route-group, not globally, for SSE support)
@@ -82,7 +82,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 	wsHandler := handlers.NewWorkspaceHandler(workspaceMgr, sessionService)
 	repoHandler := handlers.NewRepoHandler(keyRegistry)
 	sentryHandler := handlers.NewSentryHandler(keyRegistry)
-	workflowHandler := handlers.NewWorkflowHandler(workflowRegistry, workflowRunStore, workflowRunCreator, workflowRunCanceller, canceller.Cancel, redis, sessionService, keyRegistry)
+	workflowHandler := handlers.NewWorkflowHandler(workflowRegistry, sessionService, keyRegistry)
 	workflowConfigHandler := handlers.NewWorkflowConfigHandler(workflowConfigStore, workflowRegistry, sessionService, keyRegistry)
 
 	// Protected API routes
@@ -94,7 +94,6 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 
 		// SSE stream endpoints — no timeout middleware (long-lived connection)
 		r.Get("/sessions/{taskID}/stream", streamHandler.Stream)
-		r.Get("/workflow-runs/{runID}/stream", workflowHandler.StreamRun)
 
 		// All other routes — with timeout
 		r.Group(func(r chi.Router) {
@@ -170,13 +169,6 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 				r.Post("/{name}/run", workflowHandler.RunWorkflow)
 			})
 
-			r.Route("/workflow-runs", func(r chi.Router) {
-				r.Get("/", workflowHandler.ListRuns)
-				r.Post("/cancel-all", workflowHandler.CancelAllRuns)
-				r.Get("/{runID}", workflowHandler.GetRun)
-				r.Post("/{runID}/cancel", workflowHandler.CancelRun)
-			})
-
 			r.Route("/workflow-configs", func(r chi.Router) {
 				r.Post("/", workflowConfigHandler.Create)
 				r.Get("/", workflowConfigHandler.List)
@@ -192,7 +184,6 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 	// does not support http.Flusher, which breaks real-time streaming.
 	otelHandler := otelhttp.NewHandler(r, "codeforge",
 		otelhttp.WithFilter(func(r *http.Request) bool {
-			// Skip tracing for health/ready/metrics endpoints
 			return r.URL.Path != "/health" && r.URL.Path != "/ready" && r.URL.Path != "/metrics"
 		}),
 	)

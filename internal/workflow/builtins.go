@@ -55,17 +55,7 @@ var BuiltinWorkflows = []WorkflowDefinition{
 					}),
 				}),
 			},
-			{
-				Name: "create_pr",
-				Type: StepTypeAction,
-				Config: mustJSON(ActionConfig{
-					Kind:        ActionCreatePR,
-					TaskStepRef: "fix_bugs",
-					Title:       "fix(sentry): automated error fixes for {{.Params.sentry_project}}",
-					Description: "## Sentry Error Fixes\n\nAutomated fixes for unresolved errors in **{{.Params.sentry_org}}/{{.Params.sentry_project}}**.\n\nSee individual commits for details on each fix.\n\n---\n*Automated by CodeForge sentry-fixer workflow.*",
-				}),
 			},
-		},
 		Parameters: []ParameterDefinition{
 			{Name: "sentry_org", Required: true},
 			{Name: "sentry_project", Required: true},
