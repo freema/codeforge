@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useNavigate, Link } from "react-router";
+import { useNavigate } from "react-router";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useSessions } from "../hooks/useSessions";
 import StatusBadge from "../components/StatusBadge";
@@ -293,19 +293,6 @@ function SessionRow({
                 }
               />
             )}
-          {session.workflow_run_id && (
-            <Link
-              to={`/workflows/runs/${session.workflow_run_id}`}
-              onClick={(e) => e.stopPropagation()}
-              className="flex items-center gap-0.5 font-mono text-[10px] text-purple-400 hover:text-purple-300 transition-colors"
-              title="Workflow run"
-            >
-              <span className="material-symbols-outlined text-xs">
-                account_tree
-              </span>
-              WF
-            </Link>
-          )}
           {session.pr_url && (
             <span className="flex items-center gap-0.5 font-mono text-[10px] text-teal-500">
               <span className="material-symbols-outlined text-xs">

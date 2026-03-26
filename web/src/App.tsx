@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router";
+import { Routes, Route, Navigate } from "react-router";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AppLayout from "./layouts/AppLayout";
 import Login from "./pages/Login";
@@ -9,7 +9,6 @@ import SessionDetail from "./pages/SessionDetail";
 import WorkflowList from "./pages/WorkflowList";
 import WorkflowCreate from "./pages/WorkflowCreate";
 import WorkflowDetail from "./pages/WorkflowDetail";
-import WorkflowRunDetail from "./pages/WorkflowRunDetail";
 import Settings from "./pages/Settings";
 
 export default function App() {
@@ -26,8 +25,8 @@ export default function App() {
           <Route path="/workflows" element={<WorkflowList />} />
           <Route path="/workflows/new" element={<WorkflowCreate />} />
           <Route
-            path="/workflows/runs/:runId"
-            element={<WorkflowRunDetail />}
+            path="/workflows/runs/*"
+            element={<Navigate to="/sessions" replace />}
           />
           <Route path="/workflows/:name" element={<WorkflowDetail />} />
           <Route path="/settings" element={<Settings />} />

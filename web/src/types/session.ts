@@ -53,7 +53,6 @@ export interface Session {
   branch?: string;
   pr_number?: number;
   pr_url?: string;
-  workflow_run_id?: string;
   trace_id?: string;
   created_at: string;
   started_at?: string;

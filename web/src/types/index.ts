@@ -24,14 +24,10 @@ export type { ProviderKey, CreateKeyRequest, KeyVerifyResult } from "./keys";
 export type { MCPServer, CreateMCPServerRequest } from "./mcp";
 export type { Workspace } from "./workspace";
 export type {
-  RunStatus,
-  StepStatus,
   StepType,
   ParameterDefinition,
   StepDefinition,
   WorkflowDefinition,
-  WorkflowRunStep,
-  WorkflowRun,
   CreateWorkflowRequest,
   RunWorkflowRequest,
   WorkflowConfig,

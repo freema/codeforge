@@ -226,19 +226,6 @@ export default function SessionDetail() {
               </span>
             </span>
           )}
-          {session.workflow_run_id && (
-            <Link
-              to={`/workflows/runs/${session.workflow_run_id}`}
-              className="flex items-center gap-1 text-purple-400 transition-colors hover:text-purple-300"
-              title="Workflow run"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <span className="material-symbols-outlined text-sm">
-                account_tree
-              </span>
-              Workflow
-            </Link>
-          )}
           {session.pr_url && (
             <Link
               to={session.pr_url}

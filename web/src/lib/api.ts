@@ -11,7 +11,6 @@ import type {
   CreateMCPServerRequest,
   Workspace,
   WorkflowDefinition,
-  WorkflowRun,
   CreateWorkflowRequest,
   RunWorkflowRequest,
   WorkflowConfig,
@@ -186,18 +185,6 @@ export function createApiClient(serverUrl: string, token: string) {
       post<{ session_id: string; workflow_name: string }>(
         `/workflows/${encodeURIComponent(name)}/run`,
         req,
-      ),
-    listWorkflowRuns: (workflowName?: string) =>
-      get<{ runs: WorkflowRun[] }>(
-        `/workflow-runs${workflowName ? `?workflow=${encodeURIComponent(workflowName)}` : ""}`,
-      ).then((r) => r.runs),
-    getWorkflowRun: (runId: string) =>
-      get<WorkflowRun>(`/workflow-runs/${runId}`),
-    cancelWorkflowRun: (runId: string) =>
-      post<void>(`/workflow-runs/${runId}/cancel`),
-    cancelAllWorkflowRuns: (workflowName?: string) =>
-      post<{ cancelled: number; message: string }>(
-        `/workflow-runs/cancel-all${workflowName ? `?workflow=${encodeURIComponent(workflowName)}` : ""}`,
       ),
 
     // Workflow Configs (saved configurations)

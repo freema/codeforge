@@ -14,13 +14,11 @@ import {
   useSentryLatestEvent,
   useFixSentryIssue,
 } from "../hooks/useSentry";
-import { useWorkflowRuns } from "../hooks/useWorkflowRuns";
-import { useWorkflowRunStream } from "../hooks/useWorkflowRuns";
+import { useSessionStream } from "../hooks/useSessionStream";
 import type {
   SentryConfig,
   SentryIssue,
   ProviderKey,
-  WorkflowRun,
 } from "../types";
 
 const STORAGE_KEY = "sentry-configs";
@@ -644,9 +642,6 @@ function SentryIssuesView({
 
   const fixIssue = useFixSentryIssue();
 
-  const { data: runs } = useWorkflowRuns("sentry-fixer");
-  const recentRuns = useMemo(() => (runs ?? []).slice(0, 10), [runs]);
-
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -822,7 +817,7 @@ function SentryIssuesView({
           </div>
 
           {issues.map((issue) => {
-            const runId = fixingIds.get(issue.id);
+            const sessionId = fixingIds.get(issue.id);
             return (
               <IssueRow
                 key={issue.id}
@@ -830,7 +825,7 @@ function SentryIssuesView({
                 selected={selectedIds.has(issue.id)}
                 onToggle={() => toggleSelect(issue.id)}
                 onClick={() => setDrawerIssueId(issue.id)}
-                runId={runId}
+                sessionId={sessionId}
                 onFix={() => void handleFixSingle(issue)}
                 isFixing={fixIssue.isPending}
               />
@@ -850,9 +845,6 @@ function SentryIssuesView({
       {fixingIds.size > 0 && (
         <FixProgressSection fixingIds={fixingIds} issues={issues ?? []} />
       )}
-
-      {/* Run history */}
-      {recentRuns.length > 0 && <RunHistorySection runs={recentRuns} />}
 
       {/* Issue drawer */}
       {drawerIssueId && (
@@ -896,7 +888,7 @@ function IssueRow({
   selected,
   onToggle,
   onClick,
-  runId,
+  sessionId,
   onFix,
   isFixing,
 }: {
@@ -904,7 +896,7 @@ function IssueRow({
   selected: boolean;
   onToggle: () => void;
   onClick: () => void;
-  runId?: string;
+  sessionId?: string;
   onFix: () => void;
   isFixing: boolean;
 }) {
@@ -947,8 +939,8 @@ function IssueRow({
         </div>
       </button>
 
-      {runId ? (
-        <InlineRunStatus runId={runId} />
+      {sessionId ? (
+        <InlineSessionStatus sessionId={sessionId} />
       ) : (
         <button
           onClick={(e) => {
@@ -966,10 +958,10 @@ function IssueRow({
   );
 }
 
-// ─── Inline Run Status ──────────────────────────────────
+// ─── Inline Session Status ──────────────────────────────
 
-function InlineRunStatus({ runId }: { runId: string }) {
-  const stream = useWorkflowRunStream(runId);
+function InlineSessionStatus({ sessionId }: { sessionId: string }) {
+  const stream = useSessionStream(sessionId);
 
   const currentStep = useMemo(() => {
     const lastEvent = stream.events[stream.events.length - 1];
@@ -981,16 +973,16 @@ function InlineRunStatus({ runId }: { runId: string }) {
   }, [stream.events]);
 
   const statusIcon =
-    stream.runStatus === "completed"
+    stream.sessionStatus === "completed"
       ? "check_circle"
-      : stream.runStatus === "failed"
+      : stream.sessionStatus === "failed"
         ? "error"
         : "progress_activity";
 
   const statusColor =
-    stream.runStatus === "completed"
+    stream.sessionStatus === "completed"
       ? "text-accent"
-      : stream.runStatus === "failed"
+      : stream.sessionStatus === "failed"
         ? "text-red-400"
         : "text-yellow-400";
 
@@ -998,7 +990,7 @@ function InlineRunStatus({ runId }: { runId: string }) {
     <div className="flex shrink-0 items-center gap-1.5">
       <span
         className={`material-symbols-outlined text-sm ${statusColor} ${
-          stream.runStatus === "running" || stream.runStatus === "pending"
+          stream.sessionStatus === "running" || stream.sessionStatus === "pending"
             ? "animate-spin"
             : ""
         }`}
@@ -1006,7 +998,7 @@ function InlineRunStatus({ runId }: { runId: string }) {
         {statusIcon}
       </span>
       <span className="font-mono text-[10px] text-fg-4">
-        {currentStep ?? stream.runStatus ?? "starting"}
+        {currentStep ?? stream.sessionStatus ?? "starting"}
       </span>
     </div>
   );
@@ -1308,7 +1300,7 @@ function SentryIssueDrawer({
                 </div>
               )}
 
-              {/* Fix button — pass a synthetic issue for the callback */}
+              {/* Fix button -- pass a synthetic issue for the callback */}
               <button
                 onClick={() =>
                   onFix({
@@ -1359,7 +1351,7 @@ function FixProgressSection({
         Fixing {entries.length} issue{entries.length !== 1 && "s"}
       </h4>
       <div className="space-y-2">
-        {entries.map(([issueId, runId]) => {
+        {entries.map(([issueId, sessionId]) => {
           const issue = issues.find((i) => i.id === issueId);
           return (
             <FixProgressRow
@@ -1367,7 +1359,7 @@ function FixProgressSection({
               issueId={issueId}
               shortId={issue?.shortId ?? issueId.slice(0, 8)}
               title={issue?.title ?? "Unknown"}
-              runId={runId}
+              sessionId={sessionId}
             />
           );
         })}
@@ -1379,14 +1371,14 @@ function FixProgressSection({
 function FixProgressRow({
   shortId,
   title,
-  runId,
+  sessionId,
 }: {
   issueId: string;
   shortId: string;
   title: string;
-  runId: string;
+  sessionId: string;
 }) {
-  const stream = useWorkflowRunStream(runId);
+  const stream = useSessionStream(sessionId);
 
   const currentStep = useMemo(() => {
     for (let i = stream.events.length - 1; i >= 0; i--) {
@@ -1400,16 +1392,16 @@ function FixProgressRow({
   }, [stream.events]);
 
   const statusIcon =
-    stream.runStatus === "completed"
+    stream.sessionStatus === "completed"
       ? "check_circle"
-      : stream.runStatus === "failed"
+      : stream.sessionStatus === "failed"
         ? "error"
         : "progress_activity";
 
   const statusColor =
-    stream.runStatus === "completed"
+    stream.sessionStatus === "completed"
       ? "text-accent"
-      : stream.runStatus === "failed"
+      : stream.sessionStatus === "failed"
         ? "text-red-400"
         : "text-yellow-400 animate-spin";
 
@@ -1423,64 +1415,12 @@ function FixProgressRow({
       </span>
       <span className="min-w-0 truncate text-xs text-fg-2">{title}</span>
       <span className="ml-auto shrink-0 font-mono text-[10px] text-fg-4">
-        {stream.runStatus === "completed"
+        {stream.sessionStatus === "completed"
           ? "done"
-          : stream.runStatus === "failed"
+          : stream.sessionStatus === "failed"
             ? (stream.error ?? "failed")
             : (currentStep ?? "starting")}
       </span>
-    </div>
-  );
-}
-
-// ─── Run History ────────────────────────────────────────
-
-const FALLBACK_STYLE = { icon: "schedule", color: "text-fg-4" };
-const RUN_STATUS_STYLES: Record<string, { icon: string; color: string }> = {
-  completed: { icon: "check_circle", color: "text-accent" },
-  failed: { icon: "error", color: "text-red-400" },
-  running: { icon: "progress_activity", color: "text-yellow-400" },
-  pending: FALLBACK_STYLE,
-};
-
-function RunHistorySection({ runs }: { runs: WorkflowRun[] }) {
-  return (
-    <div>
-      <h4 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-fg-3">
-        <span className="material-symbols-outlined text-sm">history</span>
-        Recent Sentry Fixes
-      </h4>
-      <div className="rounded-xl border border-edge overflow-hidden">
-        {runs.map((run) => {
-          const style = RUN_STATUS_STYLES[run.status] ?? FALLBACK_STYLE;
-          return (
-            <a
-              key={run.id}
-              href={`/workflows/runs/${run.id}`}
-              className="flex items-center gap-3 border-b border-edge px-4 py-2.5 transition-colors hover:bg-surface-alt/50 last:border-b-0"
-            >
-              <span
-                className={`material-symbols-outlined text-base ${style.color} ${
-                  run.status === "running" ? "animate-spin" : ""
-                }`}
-              >
-                {style.icon}
-              </span>
-              <span className="font-mono text-[11px] text-fg-4">
-                {run.id.slice(0, 8)}
-              </span>
-              <span className="min-w-0 truncate text-xs text-fg-3">
-                {run.params?.issue_id
-                  ? `Issue ${run.params.issue_id}`
-                  : "sentry-fixer"}
-              </span>
-              <span className="ml-auto shrink-0 text-[10px] text-fg-4">
-                {relativeTime(run.created_at)}
-              </span>
-            </a>
-          );
-        })}
-      </div>
     </div>
   );
 }
