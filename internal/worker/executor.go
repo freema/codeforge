@@ -137,7 +137,11 @@ func (e *Executor) Execute(ctx context.Context, t *session.Session) {
 	}
 
 	// Phase 2: resolve tools + MCP config
-	mcpConfigPath := e.setupMCP(taskCtx, t, workDir, log)
+	mcpConfigPath, mcpErr := e.setupMCP(taskCtx, t, workDir, log)
+	if mcpErr != nil {
+		e.failTask(ctx, t, fmt.Sprintf("tool/MCP setup failed: %v", mcpErr), startTime, log)
+		return
+	}
 
 	// Phase 3: run CLI
 	result, err := e.runStep(taskCtx, t, workDir, mcpConfigPath, log)
@@ -234,20 +238,21 @@ func (e *Executor) setupWorkspace(taskCtx, parentCtx context.Context, t *session
 }
 
 // setupMCP resolves tool definitions and MCP server configs, writes .mcp.json.
-func (e *Executor) setupMCP(ctx context.Context, t *session.Session, workDir string, log *slog.Logger) string {
+// Returns an error if the session explicitly requires tools/MCP and setup fails (fail-closed).
+func (e *Executor) setupMCP(ctx context.Context, t *session.Session, workDir string, log *slog.Logger) (string, error) {
 	// Resolve tool definitions → MCP servers
 	var toolMCPServers []mcp.Server
 	if e.toolResolver != nil && t.Config != nil && len(t.Config.Tools) > 0 {
 		instances, err := e.toolResolver.Resolve(ctx, t.RepoURL, t.Config.Tools)
 		if err != nil {
-			log.Warn("tool resolution failed (continuing without tools)", "error", err)
-		} else {
-			toolMCPServers = tools.ToMCPServers(instances)
+			// Fail-closed: session explicitly requested tools but resolve failed
+			return "", fmt.Errorf("tool resolution failed: %w", err)
 		}
+		toolMCPServers = tools.ToMCPServers(instances)
 	}
 
 	if e.mcpInstaller == nil {
-		return ""
+		return "", nil
 	}
 
 	// Collect task-level MCP servers
@@ -269,16 +274,20 @@ func (e *Executor) setupMCP(ctx context.Context, t *session.Session, workDir str
 	taskMCPServers = append(taskMCPServers, toolMCPServers...)
 
 	if err := e.mcpInstaller.Setup(ctx, workDir, t.RepoURL, taskMCPServers); err != nil {
-		log.Warn("MCP setup failed (continuing without MCP)", "error", err)
-		return ""
+		if len(taskMCPServers) > 0 {
+			// Fail-closed: MCP servers were configured but install failed
+			return "", fmt.Errorf("MCP setup failed: %w", err)
+		}
+		log.Warn("MCP setup failed (no servers configured, continuing)", "error", err)
+		return "", nil
 	}
 
 	cfgPath := filepath.Join(workDir, ".mcp.json")
 	if _, statErr := os.Stat(cfgPath); statErr == nil {
 		log.Info("MCP config written", "path", cfgPath)
-		return cfgPath
+		return cfgPath, nil
 	}
-	return ""
+	return "", nil
 }
 
 // handleTimeout gracefully completes a timed-out session instead of failing it.
