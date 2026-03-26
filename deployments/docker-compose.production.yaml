@@ -52,6 +52,16 @@ services:
       timeout: 3s
       retries: 3
 
+  ui:
+    image: ghcr.io/freema/codeforge-ui:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      CODEFORGE_URL: http://codeforge:8080
+    depends_on:
+      - codeforge
+
 volumes:
   codeforge-data:
   redis-data:

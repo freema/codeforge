@@ -110,3 +110,40 @@ tasks:
     desc: Build mock Claude CLI for testing
     cmds:
       - "{{.DC_DEV}} run --rm --no-deps app go build -o bin/mock-claude ./tests/mockcli"
+
+  # --- UI tasks ---
+
+  ui:lint:
+    desc: Run ESLint on UI
+    cmds:
+      - "{{.DC_DEV}} run --rm --no-deps ui npx eslint ."
+
+  ui:format:
+    desc: Run Prettier format on UI
+    cmds:
+      - "{{.DC_DEV}} run --rm --no-deps ui npx prettier --write ."
+
+  ui:format:check:
+    desc: Check Prettier formatting on UI
+    cmds:
+      - "{{.DC_DEV}} run --rm --no-deps ui npx prettier --check ."
+
+  ui:typecheck:
+    desc: Run TypeScript type checking on UI
+    cmds:
+      - "{{.DC_DEV}} run --rm --no-deps ui npx tsc --noEmit"
+
+  ui:build:
+    desc: Build UI production assets
+    cmds:
+      - "{{.DC_DEV}} run --rm --no-deps ui npm run build"
+
+  ui:shell:
+    desc: Open shell in UI container
+    cmds:
+      - "{{.DC_DEV}} exec ui sh"
+
+  logs:ui:
+    desc: Tail only UI logs
+    cmds:
+      - "{{.DC_DEV}} logs -f ui"

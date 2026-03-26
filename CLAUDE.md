@@ -22,7 +22,7 @@ task dev:detach
 ## Commands (Taskfile.yaml)
 
 ```bash
-task dev              # Start dev env with hot reload (CodeForge + Redis)
+task dev              # Start dev env with hot reload (CodeForge + Redis + UI)
 task down             # Stop containers
 task down:clean       # Stop containers + remove volumes
 task build            # Build production Docker image
@@ -35,6 +35,13 @@ task shell            # Open shell in container
 task redis:cli        # Open redis-cli
 task mod:tidy         # Run go mod tidy
 task build:action     # Build CI Action Docker image
+task ui:lint          # Run ESLint on UI
+task ui:typecheck     # Run TypeScript type checking
+task ui:build         # Build UI production assets
+task ui:format        # Run Prettier format on UI
+task ui:format:check  # Check Prettier formatting
+task ui:shell         # Open shell in UI container
+task logs:ui          # Tail only UI logs
 ```
 
 ## Project Structure
@@ -67,6 +74,10 @@ internal/
   worker/              Worker pool, executor, streaming, normalizer
   workflow/            Workflow orchestrator, step executors, templates
   workspace/           Workspace lifecycle, cleanup
+web/                   React UI (Vite + TypeScript + Tailwind CSS 4)
+  src/                 Components, hooks, pages, types, lib, context, layouts
+  public/              Static assets
+  server.js            Express production server (serves static + proxies API)
 api/                   OpenAPI specification
 configs/               Example config files
 deployments/           Dockerfiles, docker-compose
@@ -88,6 +99,9 @@ tasks/                 Planning documents (not code)
 - **Multi-CLI**: per-session CLI selection via `config.cli` field (claude-code, codex)
 - **Review as action**: user triggers review via `POST /sessions/:id/review`, not automatic
 - **PR review is a session**: `pr_review` session type reuses the entire session system, no separate infrastructure
+- **UI**: React 19 + TypeScript + Vite + Tailwind CSS 4 + React Query, lives in `web/`
+- **UI dev**: Vite hot reload in Docker container, proxies API to Go app container
+- **UI prod**: Vite build + Express server with API proxy
 
 ## Architecture
 

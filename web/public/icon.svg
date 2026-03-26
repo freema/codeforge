@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="1" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+  <text x="16" y="24" font-family="'Courier New', monospace" font-size="24" font-weight="bold" fill="#00ff41" text-anchor="middle" filter="url(#glow)">&lt;&gt;</text>
+</svg>

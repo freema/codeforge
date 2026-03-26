@@ -32,6 +32,11 @@ codeforge.yaml
 *.swp
 *.swo
 
+# UI
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
+
 # Docker
 .docker/
 

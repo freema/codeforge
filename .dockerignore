@@ -9,6 +9,8 @@ tasks/
 coverage.*
 .env
 .env.*
+web/node_modules
+web/dist
 .DS_Store
 .idea/
 .vscode/

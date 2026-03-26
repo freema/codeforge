@@ -14,6 +14,27 @@ services:
       CODEFORGE_LOGGING__LEVEL: debug
       CODEFORGE_LOGGING__FORMAT: text
 
+  ui:
+    build:
+      context: ../
+      dockerfile: deployments/Dockerfile.ui
+      target: dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ../web/src:/app/src
+      - ../web/index.html:/app/index.html
+      - ../web/public:/app/public
+      - ../web/vite.config.ts:/app/vite.config.ts
+      - ../web/tsconfig.json:/app/tsconfig.json
+      - ../web/tsconfig.app.json:/app/tsconfig.app.json
+      - ../web/server.js:/app/server.js
+      - ../web/eslint.config.js:/app/eslint.config.js
+      - ../web/.prettierrc:/app/.prettierrc
+      - ../web/.prettierignore:/app/.prettierignore
+    environment:
+      CODEFORGE_URL: http://app:8080
+
 volumes:
   go-mod-cache:
   go-build-cache:

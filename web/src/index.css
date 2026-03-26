@@ -1,0 +1,267 @@
+@import "tailwindcss";
+
+/* Enable class-based dark mode for Tailwind v4 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ─── Theme tokens ─── */
+@theme {
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --color-neon: #00ff41;
+
+  /* Dynamic semantic colors — resolved via CSS vars set in :root / .dark */
+  --color-page: var(--th-page);
+  --color-surface: var(--th-surface);
+  --color-surface-alt: var(--th-surface-alt);
+  --color-surface-glass: var(--th-surface-glass);
+  --color-input: var(--th-input);
+  --color-edge: var(--th-edge);
+  --color-fg: var(--th-fg);
+  --color-fg-2: var(--th-fg-2);
+  --color-fg-3: var(--th-fg-3);
+  --color-fg-4: var(--th-fg-4);
+  --color-accent: var(--th-accent);
+  --color-accent-bold: var(--th-accent-bold);
+  --color-accent-hover: var(--th-accent-hover);
+  --color-accent-soft: var(--th-accent-soft);
+  --color-accent-muted: var(--th-accent-muted);
+}
+
+/* ─── Light mode (default) ─── */
+:root {
+  --th-page: #f6f8fa;
+  --th-surface: #ffffff;
+  --th-surface-alt: #f0f3f6;
+  --th-surface-glass: rgba(255, 255, 255, 0.92);
+  --th-input: #f0f3f6;
+  --th-edge: #d1d9e0;
+  --th-fg: #1f2328;
+  --th-fg-2: #59636e;
+  --th-fg-3: #818b98;
+  --th-fg-4: #afb8c1;
+  --th-accent: #0d7a4a;
+  --th-accent-bold: #16a34a;
+  --th-accent-hover: #15803d;
+  --th-accent-soft: #dcfce7;
+  --th-accent-muted: #0d7a4a20;
+  --th-grid-line: #d1d9e012;
+  --th-scrollbar: #d1d9e0;
+  --th-scrollbar-hover: #b1b8c0;
+}
+
+/* ─── Dark mode ─── */
+.dark {
+  --th-page: #050a06;
+  --th-surface: #0f1611;
+  --th-surface-alt: #161b18;
+  --th-surface-glass: rgba(16, 24, 18, 0.7);
+  --th-input: #0f1611;
+  --th-edge: #273a2c;
+  --th-fg: #f1f5f9;
+  --th-fg-2: #cbd5e1;
+  --th-fg-3: #94a3b8;
+  --th-fg-4: #64748b;
+  --th-accent: #00ff40;
+  --th-accent-bold: #00cc33;
+  --th-accent-hover: #33ff66;
+  --th-accent-soft: #00ff4015;
+  --th-accent-muted: #00ff4025;
+  --th-grid-line: #1a2e20;
+  --th-scrollbar: #273a2c;
+  --th-scrollbar-hover: #3a5440;
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--th-scrollbar);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--th-scrollbar-hover);
+}
+
+/* ─── Animations ─── */
+@keyframes scanline {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(100vh);
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 8px #00ff4120,
+      0 0 20px #00ff4108;
+  }
+  50% {
+    box-shadow:
+      0 0 12px #00ff4130,
+      0 0 30px #00ff4110;
+  }
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-scanline {
+  animation: scanline 8s linear infinite;
+}
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+.animate-blink {
+  animation: blink 1.2s step-end infinite;
+}
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s ease-out both;
+}
+
+/* ─── Theme-aware glow utilities ─── */
+.glow-border {
+  border-color: var(--th-accent-muted);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.dark .glow-border {
+  box-shadow:
+    0 0 10px #00ff4110,
+    inset 0 0 10px #00ff4105;
+}
+
+.glow-border-strong {
+  border-color: var(--th-accent-muted);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1);
+}
+.dark .glow-border-strong {
+  border-color: #00ff4140;
+  box-shadow:
+    0 0 15px #00ff4118,
+    inset 0 0 15px #00ff4108;
+}
+
+.text-glow {
+  /* no glow in light mode */
+}
+.dark .text-glow {
+  text-shadow:
+    0 0 10px #00ff4160,
+    0 0 30px #00ff4120;
+}
+
+.text-glow-strong {
+  /* no glow in light mode */
+}
+.dark .text-glow-strong {
+  text-shadow:
+    0 0 8px #00ff4180,
+    0 0 20px #00ff4140,
+    0 0 40px #00ff4120;
+}
+
+/* ─── Login page: CRT scanline overlay ─── */
+.crt-overlay {
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0) 50%,
+    rgba(0, 0, 0, 0.2) 50%,
+    rgba(0, 0, 0, 0.2) 100%
+  );
+  background-size: 100% 4px;
+}
+
+/* ─── Login page: Cyber card clip-path ─── */
+.cyber-card {
+  clip-path: polygon(
+    20px 0,
+    100% 0,
+    100% calc(100% - 20px),
+    calc(100% - 20px) 100%,
+    0 100%,
+    0 20px
+  );
+}
+
+/* ─── Login page: Neon effects ─── */
+.neon-text {
+  text-shadow:
+    0 0 10px rgba(0, 255, 64, 0.7),
+    0 0 20px rgba(0, 255, 64, 0.5);
+}
+
+.neon-border {
+  box-shadow:
+    0 0 15px rgba(0, 255, 64, 0.3),
+    inset 0 0 15px rgba(0, 255, 64, 0.1);
+}
+
+@keyframes cursor-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.animate-cursor-blink {
+  animation: cursor-blink 1s step-end infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-200%) skewX(-12deg);
+  }
+  100% {
+    transform: translateX(400%) skewX(-12deg);
+  }
+}
+
+/* ─── Grid pattern background ─── */
+.bg-grid {
+  background-image:
+    linear-gradient(var(--th-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--th-grid-line) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* ─── Noise texture overlay — dark mode only ─── */
+.bg-noise::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  opacity: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+}
+.dark .bg-noise::before {
+  opacity: 0.015;
+}

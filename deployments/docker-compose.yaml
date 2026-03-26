@@ -29,5 +29,17 @@ services:
       timeout: 3s
       retries: 3
 
+  ui:
+    build:
+      context: ../
+      dockerfile: deployments/Dockerfile.ui
+      target: prod
+    ports:
+      - "3000:3000"
+    environment:
+      CODEFORGE_URL: http://app:8080
+    depends_on:
+      - app
+
 volumes:
   codeforge-data:

@@ -55,3 +55,17 @@ jobs:
             ghcr.io/freema/codeforge-action:${{ steps.version.outputs.VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Build and push UI image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deployments/Dockerfile.ui
+          target: prod
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/freema/codeforge-ui:latest
+            ghcr.io/freema/codeforge-ui:${{ steps.version.outputs.VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
