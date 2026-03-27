@@ -243,15 +243,15 @@ func TestE2ESessionTimeout(t *testing.T) {
 	t.Logf("session created: %s", sessionID)
 
 	result := waitForTerminal(t, sessionID, 30*time.Second)
-	if result["status"] != "failed" {
-		t.Fatalf("expected failed (timeout), got %v", result["status"])
+	if result["status"] != "completed" {
+		t.Fatalf("expected completed (graceful timeout), got %v", result["status"])
 	}
 
-	errMsg, _ := result["error"].(string)
-	if !bytes.Contains([]byte(errMsg), []byte("timed out")) {
-		t.Errorf("expected 'timed out' in error, got: %s", errMsg)
+	resultText, _ := result["result"].(string)
+	if !bytes.Contains([]byte(resultText), []byte("timed out")) {
+		t.Errorf("expected 'timed out' in result, got: %s", resultText)
 	}
-	t.Logf("timeout error: %s", errMsg)
+	t.Logf("timeout result: %s", resultText)
 }
 
 func TestE2ESessionCancel(t *testing.T) {

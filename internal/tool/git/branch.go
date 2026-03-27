@@ -44,7 +44,7 @@ func CreateBranchAndPush(ctx context.Context, opts BranchOptions) error {
 	}
 
 	// Check if there's anything to commit
-	statusOut, err := gitOutput(ctx, workDir, nil, "status", "--porcelain")
+	statusOut, err := gitOutput(ctx, workDir, "status", "--porcelain")
 	if err != nil {
 		return fmt.Errorf("checking status: %w", err)
 	}
@@ -117,12 +117,9 @@ func gitCmd(ctx context.Context, workDir string, extraEnv []string, args ...stri
 }
 
 // gitOutput runs a git command and returns stdout.
-func gitOutput(ctx context.Context, workDir string, extraEnv []string, args ...string) (string, error) {
+func gitOutput(ctx context.Context, workDir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = workDir
-	if len(extraEnv) > 0 {
-		cmd.Env = append(os.Environ(), extraEnv...)
-	}
 
 	out, err := cmd.Output()
 	if err != nil {
@@ -151,7 +148,7 @@ func GenerateBranchName(ctx context.Context, workDir, prefix, slug string) strin
 // by reading the symbolic-ref of origin/HEAD.
 func DefaultBranch(ctx context.Context, workDir string) (string, error) {
 	// Try symbolic-ref first (set by clone)
-	out, err := gitOutput(ctx, workDir, nil, "symbolic-ref", "refs/remotes/origin/HEAD")
+	out, err := gitOutput(ctx, workDir, "symbolic-ref", "refs/remotes/origin/HEAD")
 	if err == nil {
 		// Output: "refs/remotes/origin/master" → extract "master"
 		ref := strings.TrimSpace(out)
@@ -160,7 +157,7 @@ func DefaultBranch(ctx context.Context, workDir string) (string, error) {
 		}
 	}
 	// Fallback: check current branch name (what was cloned)
-	out, err = gitOutput(ctx, workDir, nil, "rev-parse", "--abbrev-ref", "HEAD")
+	out, err = gitOutput(ctx, workDir, "rev-parse", "--abbrev-ref", "HEAD")
 	if err == nil {
 		branch := strings.TrimSpace(out)
 		if branch != "" && branch != "HEAD" {
@@ -183,7 +180,7 @@ func branchExists(ctx context.Context, workDir, name string) bool {
 
 // GetUnstagedDiff returns the diff of all uncommitted changes in the workspace.
 func GetUnstagedDiff(ctx context.Context, workDir string) (string, error) {
-	return gitOutput(ctx, workDir, nil, "diff", "HEAD")
+	return gitOutput(ctx, workDir, "diff", "HEAD")
 }
 
 // PushExistingOptions configures pushing follow-up changes to an existing branch.
@@ -207,7 +204,7 @@ func CommitAndPushToExisting(ctx context.Context, opts PushExistingOptions) erro
 	}
 
 	// Check if there are any changes to commit
-	statusOut, err := gitOutput(ctx, workDir, nil, "status", "--porcelain")
+	statusOut, err := gitOutput(ctx, workDir, "status", "--porcelain")
 	if err != nil {
 		return fmt.Errorf("checking status: %w", err)
 	}

@@ -151,7 +151,7 @@ func (e *Executor) Execute(ctx context.Context, t *session.Session) {
 			e.handleTimeout(ctx, t, result, workDir, timeout, startTime, log)
 			return
 		}
-		e.handleRunError(ctx, sessionCtx, t, err, timeout, startTime, log)
+		e.handleRunError(ctx, t, err, timeout, startTime, log)
 		return
 	}
 
@@ -318,7 +318,7 @@ func (e *Executor) handleTimeout(ctx context.Context, t *session.Session, result
 }
 
 // handleRunError classifies the CLI run error and calls failSession with the appropriate message.
-func (e *Executor) handleRunError(ctx, sessionCtx context.Context, t *session.Session, err error, timeout int, startTime time.Time, log *slog.Logger) {
+func (e *Executor) handleRunError(ctx context.Context, t *session.Session, err error, timeout int, startTime time.Time, log *slog.Logger) {
 	if ctx.Err() == context.Canceled {
 		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "task_canceled", nil), log, "task_canceled", t.ID)
 		e.failSession(context.Background(), t, "canceled by user", startTime, log)
