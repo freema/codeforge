@@ -4,10 +4,20 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>CODEFORGE | AI Code Orchestration</title>
-<meta name="description" content="AI-powered code orchestration over git repos. Stateful sessions, automated PR reviews, multi-step workflows."/>
-<meta property="og:title" content="CodeForge — AI Code Orchestration"/>
-<meta property="og:description" content="Forge code, not excuses. AI-powered orchestration over git repos."/>
+<link rel="icon" type="image/png" href="favicon.png"/>
+<meta name="description" content="Open-source AI code review and PR review tool. Orchestrate AI coding sessions over git repos with automated reviews, multi-turn conversations, and CI/CD integration."/>
+<meta name="keywords" content="ai code review, ai pr review, code orchestration, automated code review, ai coding agent, github action ai, pull request review, claude code, codex"/>
+<meta property="og:title" content="CodeForge — AI Code Review & Orchestration"/>
+<meta property="og:description" content="Open-source AI code review and PR review tool. Stateful sessions, automated reviews, and CI/CD integration over git repos."/>
 <meta property="og:type" content="website"/>
+<meta property="og:url" content="https://codeforge.tomasgrasl.cz"/>
+<meta name="twitter:card" content="summary"/>
+<meta name="twitter:title" content="CodeForge — AI Code Review & Orchestration"/>
+<meta name="twitter:description" content="Open-source AI code review and PR review tool. Orchestrate AI coding sessions over git repos."/>
+<link rel="canonical" href="https://codeforge.tomasgrasl.cz"/>
+<!-- GA4 -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-HPSXR8KK8N"></script>
+<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-HPSXR8KK8N');</script>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;700;900&family=Inter:wght@400;600&family=Press+Start+2P&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
@@ -146,9 +156,19 @@
     <a class="font-pixel text-[10px] uppercase tracking-widest text-[#a8abb3] hover:text-[#8eff71] transition-colors duration-0" href="#pipeline">PROCESS</a>
     <a class="font-pixel text-[10px] uppercase tracking-widest text-[#a8abb3] hover:text-[#8eff71] transition-colors duration-0" href="#integrations">PLUGINS</a>
   </nav>
-  <a href="https://github.com/freema/codeforge" class="bg-primary text-on-primary font-pixel text-[10px] px-4 py-2 pixel-button-shadow hover:bg-[#151a21] hover:text-primary transition-colors duration-0 active:translate-y-1 no-underline">
-    INITIALIZE_SYS
-  </a>
+  <div class="flex items-center gap-4">
+    <a href="https://github.com/freema/codeforge/stargazers" class="hidden sm:flex items-center gap-2 px-3 py-1 border-2 border-outline-variant hover:border-primary transition-colors no-underline group">
+      <span class="material-symbols-outlined text-sm text-primary">star</span>
+      <span class="font-pixel text-[9px] text-on-surface-variant group-hover:text-primary" id="nav-star-count">...</span>
+    </a>
+    <a href="https://github.com/freema/codeforge/network/members" class="hidden sm:flex items-center gap-2 px-3 py-1 border-2 border-outline-variant hover:border-secondary transition-colors no-underline group">
+      <span class="material-symbols-outlined text-sm text-secondary">fork_right</span>
+      <span class="font-pixel text-[9px] text-on-surface-variant group-hover:text-secondary" id="nav-fork-count">...</span>
+    </a>
+    <a href="https://github.com/freema/codeforge" class="bg-primary text-on-primary font-pixel text-[10px] px-4 py-2 pixel-button-shadow hover:bg-[#151a21] hover:text-primary transition-colors duration-0 active:translate-y-1 no-underline">
+      INITIALIZE_SYS
+    </a>
+  </div>
 </header>
 
 <main class="pt-16">
@@ -156,8 +176,8 @@
 <!-- Hero Section -->
 <section class="relative min-h-[921px] flex flex-col items-center justify-center text-center px-4 overflow-hidden">
   <div class="absolute inset-0 opacity-10 dither-bg pointer-events-none"></div>
-  <div class="mb-8 p-6 bg-surface-container border-4 border-outline-variant inline-block">
-    <span class="material-symbols-outlined text-8xl text-primary" style="font-variation-settings: 'FILL' 1;">hardware</span>
+  <div class="mb-8 inline-block" style="image-rendering: pixelated;">
+    <img src="assets/hero-anvil.png" alt="CodeForge" width="192" height="192" style="image-rendering: pixelated;"/>
   </div>
   <h1 class="font-pixel text-4xl md:text-7xl lg:text-8xl text-primary mb-6 scanline-text tracking-tighter">
     CODEFORGE
@@ -601,8 +621,18 @@
       const fmt = n => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
       const stars = document.getElementById('star-count');
       const forks = document.getElementById('fork-count');
-      if (stars && data.stargazers_count !== undefined) stars.textContent = fmt(data.stargazers_count);
-      if (forks && data.forks_count !== undefined) forks.textContent = fmt(data.forks_count);
+      const navStars = document.getElementById('nav-star-count');
+      const navForks = document.getElementById('nav-fork-count');
+      if (data.stargazers_count !== undefined) {
+        const s = fmt(data.stargazers_count);
+        if (stars) stars.textContent = s;
+        if (navStars) navStars.textContent = s;
+      }
+      if (data.forks_count !== undefined) {
+        const f = fmt(data.forks_count);
+        if (forks) forks.textContent = f;
+        if (navForks) navForks.textContent = f;
+      }
     })
     .catch(() => {});
 </script>

@@ -31,6 +31,7 @@ func TestValidTransitions(t *testing.T) {
 		{StatusPRCreated, StatusAwaitingInstruction},
 		{StatusPRCreated, StatusReviewing},
 		{StatusPRCreated, StatusCreatingPR},
+		{StatusPRCreated, StatusCompleted},
 	}
 
 	for _, tt := range valid {
@@ -55,7 +56,6 @@ func TestInvalidTransitions(t *testing.T) {
 		{StatusFailed, StatusCompleted},
 		{StatusCompleted, StatusPending},
 		{StatusCompleted, StatusRunning},
-		{StatusPRCreated, StatusCompleted},
 		{StatusPRCreated, StatusRunning},
 	}
 
