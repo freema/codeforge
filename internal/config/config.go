@@ -152,7 +152,7 @@ func Defaults() *Config {
 			Default: "claude-code",
 			ClaudeCode: ClaudeCodeConfig{
 				Path:         "claude",
-				DefaultModel: "claude-sonnet-4-6-20250627",
+				DefaultModel: "",
 				Models: []string{
 					"claude-sonnet-4-6-20250627",
 					"claude-opus-4-6-20250625",

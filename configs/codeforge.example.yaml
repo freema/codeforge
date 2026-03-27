@@ -31,7 +31,7 @@ cli:
   default: "claude-code"
   claude_code:
     path: "claude"
-    default_model: "claude-sonnet-4-6-20250627"
+    default_model: ""  # empty = CLI picks its own default based on API key
     models:
       - "claude-sonnet-4-6-20250627"
       - "claude-opus-4-6-20250625"

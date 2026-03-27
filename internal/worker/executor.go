@@ -840,7 +840,11 @@ func (e *Executor) handlePRReviewCompletion(ctx context.Context, t *session.Sess
 			model = m
 		}
 	}
-	reviewResult.ReviewedBy = cli + ":" + model
+	if model != "" {
+		reviewResult.ReviewedBy = cli + ":" + model
+	} else {
+		reviewResult.ReviewedBy = cli
+	}
 
 	// Store ReviewResult on the session
 	if err := e.sessionService.SetReviewResult(ctx, t.ID, reviewResult); err != nil {
@@ -1056,7 +1060,11 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 		}
 	}
 
-	reviewResult.ReviewedBy = cli + ":" + model
+	if model != "" {
+		reviewResult.ReviewedBy = cli + ":" + model
+	} else {
+		reviewResult.ReviewedBy = cli
+	}
 	reviewResult.DurationSeconds = time.Since(startTime).Seconds()
 
 	// Store raw result + usage

@@ -73,6 +73,15 @@ func (s *Service) Create(ctx context.Context, req CreateSessionRequest) (*Sessio
 		case "pr_review":
 			req.Prompt = "Review this pull request."
 		}
+	} else {
+		// For review types, always prefix with the base instruction so that
+		// user-supplied text becomes additional instructions, not a replacement.
+		switch taskType {
+		case "review":
+			req.Prompt = "Review this repository for code quality, security, and architecture.\n" + req.Prompt
+		case "pr_review":
+			req.Prompt = "Review this pull request.\n" + req.Prompt
+		}
 	}
 
 	t := &Session{

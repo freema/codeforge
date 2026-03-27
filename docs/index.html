@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CODEFORGE | AI Code Orchestration</title>
+<meta name="description" content="AI-powered code orchestration over git repos. Stateful sessions, automated PR reviews, multi-step workflows."/>
+<meta property="og:title" content="CodeForge — AI Code Orchestration"/>
+<meta property="og:description" content="Forge code, not excuses. AI-powered orchestration over git repos."/>
+<meta property="og:type" content="website"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;700;900&family=Inter:wght@400;600&family=Press+Start+2P&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script>
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "tertiary-fixed-dim": "#ff61f8",
+          "outline": "#72757d",
+          "on-surface": "#f1f3fc",
+          "on-tertiary": "#400040",
+          "tertiary-container": "#fe00fe",
+          "surface-dim": "#0a0e14",
+          "secondary-fixed-dim": "#1cd5ff",
+          "inverse-surface": "#f8f9ff",
+          "tertiary": "#ff51fa",
+          "inverse-primary": "#106f00",
+          "surface-container-high": "#1b2028",
+          "error-container": "#b92902",
+          "on-primary-fixed": "#064200",
+          "error": "#ff7351",
+          "inverse-on-surface": "#51555c",
+          "secondary-dim": "#00c3eb",
+          "secondary-fixed": "#79dfff",
+          "on-primary-fixed-variant": "#0d6200",
+          "surface-container-lowest": "#000000",
+          "surface-container": "#151a21",
+          "on-error": "#450900",
+          "on-primary-container": "#0b5800",
+          "tertiary-dim": "#ff51fa",
+          "primary": "#8eff71",
+          "on-primary": "#0d6100",
+          "surface-container-highest": "#20262f",
+          "surface-bright": "#262c36",
+          "error-dim": "#d53d18",
+          "primary-dim": "#2be800",
+          "background": "#0a0e14",
+          "primary-container": "#2ff801",
+          "surface-container-low": "#0f141a",
+          "tertiary-fixed": "#ff81f5",
+          "primary-fixed-dim": "#2be800",
+          "on-tertiary-container": "#230023",
+          "on-surface-variant": "#a8abb3",
+          "on-tertiary-fixed": "#320032",
+          "secondary-container": "#00677e",
+          "on-secondary-fixed-variant": "#00586c",
+          "on-tertiary-fixed-variant": "#6a006a",
+          "surface-variant": "#20262f",
+          "primary-fixed": "#2ff801",
+          "on-secondary-container": "#eefaff",
+          "secondary": "#00d2fd",
+          "on-secondary-fixed": "#003a47",
+          "on-background": "#f1f3fc",
+          "on-error-container": "#ffd2c8",
+          "on-secondary": "#004352",
+          "surface": "#0a0e14",
+          "outline-variant": "#44484f",
+          "surface-tint": "#8eff71"
+        },
+        fontFamily: {
+          "headline": ["Space Grotesk"],
+          "body": ["Inter"],
+          "label": ["Space Grotesk"],
+          "pixel": ["'Press Start 2P'"]
+        },
+        borderRadius: {"DEFAULT": "0px", "lg": "0px", "xl": "0px", "full": "0px"},
+      },
+    },
+  }
+</script>
+<style>
+  body {
+    background-color: #0a0e14;
+    position: relative;
+    image-rendering: pixelated;
+  }
+  body::after {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(241, 243, 252, 0.03) 0px,
+      rgba(241, 243, 252, 0.03) 1px,
+      transparent 1px,
+      transparent 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+  .pixel-border-4 {
+    box-shadow:
+      0 -4px 0 0 #151a21,
+      0 4px 0 0 #151a21,
+      -4px 0 0 0 #151a21,
+      4px 0 0 0 #151a21;
+  }
+  .pixel-button-shadow {
+    box-shadow: 4px 4px 0px 0px #064200;
+  }
+  .pixel-button-shadow:active {
+    box-shadow: 0px 0px 0px 0px #064200;
+    transform: translate(2px, 2px);
+  }
+  .dither-bg {
+    background-image: radial-gradient(#2ff801 1px, transparent 1px);
+    background-size: 4px 4px;
+  }
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+  .scanline-text {
+    text-shadow: 2px 2px #000;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+</style>
+</head>
+<body class="font-body text-on-surface antialiased overflow-x-hidden">
+
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 bg-[#0a0e14] border-b-4 border-[#151a21]">
+  <div class="flex items-center gap-2">
+    <span class="text-2xl font-black text-[#39ff14] tracking-tighter font-pixel">CODEFORGE</span>
+  </div>
+  <nav class="hidden md:flex gap-6">
+    <a class="font-pixel text-[10px] uppercase tracking-widest text-[#a8abb3] hover:text-[#8eff71] transition-colors duration-0" href="#features">FEATURES</a>
+    <a class="font-pixel text-[10px] uppercase tracking-widest text-[#a8abb3] hover:text-[#8eff71] transition-colors duration-0" href="#security">SECURITY</a>
+    <a class="font-pixel text-[10px] uppercase tracking-widest text-[#a8abb3] hover:text-[#8eff71] transition-colors duration-0" href="#mcp">MCP</a>
+    <a class="font-pixel text-[10px] uppercase tracking-widest text-[#a8abb3] hover:text-[#8eff71] transition-colors duration-0" href="#pipeline">PROCESS</a>
+    <a class="font-pixel text-[10px] uppercase tracking-widest text-[#a8abb3] hover:text-[#8eff71] transition-colors duration-0" href="#integrations">PLUGINS</a>
+  </nav>
+  <a href="https://github.com/freema/codeforge" class="bg-primary text-on-primary font-pixel text-[10px] px-4 py-2 pixel-button-shadow hover:bg-[#151a21] hover:text-primary transition-colors duration-0 active:translate-y-1 no-underline">
+    INITIALIZE_SYS
+  </a>
+</header>
+
+<main class="pt-16">
+
+<!-- Hero Section -->
+<section class="relative min-h-[921px] flex flex-col items-center justify-center text-center px-4 overflow-hidden">
+  <div class="absolute inset-0 opacity-10 dither-bg pointer-events-none"></div>
+  <div class="mb-8 p-6 bg-surface-container border-4 border-outline-variant inline-block">
+    <span class="material-symbols-outlined text-8xl text-primary" style="font-variation-settings: 'FILL' 1;">hardware</span>
+  </div>
+  <h1 class="font-pixel text-4xl md:text-7xl lg:text-8xl text-primary mb-6 scanline-text tracking-tighter">
+    CODEFORGE
+  </h1>
+  <p class="font-pixel text-xs md:text-base text-secondary-dim mb-8 max-w-2xl leading-relaxed">
+    AI-powered code orchestration over git repos.<br/>
+    Forge code, not excuses.
+  </p>
+  <!-- GitHub Stats -->
+  <div class="flex items-center gap-6 mb-12" id="github-stats">
+    <a href="https://github.com/freema/codeforge/stargazers" class="flex items-center gap-2 px-4 py-2 bg-surface-container border-2 border-outline-variant hover:border-primary transition-colors no-underline group">
+      <span class="material-symbols-outlined text-xl text-primary">star</span>
+      <span class="font-pixel text-[10px] text-on-surface-variant group-hover:text-primary" id="star-count">...</span>
+      <span class="font-pixel text-[8px] text-on-surface-variant opacity-60">STARS</span>
+    </a>
+    <a href="https://github.com/freema/codeforge/network/members" class="flex items-center gap-2 px-4 py-2 bg-surface-container border-2 border-outline-variant hover:border-secondary transition-colors no-underline group">
+      <span class="material-symbols-outlined text-xl text-secondary">fork_right</span>
+      <span class="font-pixel text-[10px] text-on-surface-variant group-hover:text-secondary" id="fork-count">...</span>
+      <span class="font-pixel text-[8px] text-on-surface-variant opacity-60">FORKS</span>
+    </a>
+  </div>
+  <div class="flex flex-col md:flex-row gap-6">
+    <a href="https://github.com/freema/codeforge" class="bg-primary text-on-primary font-pixel text-sm md:text-lg px-8 py-4 pixel-button-shadow transition-all active:translate-y-1 no-underline">
+      GET STARTED
+    </a>
+    <a href="https://github.com/freema/codeforge/tree/main/docs" class="bg-surface-container-highest text-secondary font-pixel text-sm md:text-lg px-8 py-4 border-b-4 border-secondary-container hover:bg-secondary-container hover:text-on-secondary transition-all no-underline">
+      DOCUMENTATION
+    </a>
+  </div>
+  <!-- Install -->
+  <div class="mt-16 w-full max-w-2xl mx-auto px-4">
+    <p class="font-pixel text-[10px] text-on-surface-variant mb-4 uppercase tracking-widest">INSTALL VIA GITHUB PACKAGES</p>
+    <a href="https://github.com/freema?tab=packages&repo_name=codeforge" class="block bg-surface-container-lowest border-4 border-outline-variant hover:border-primary transition-colors p-6 font-mono text-left text-primary-dim no-underline group">
+      <div class="flex items-center gap-3">
+        <span class="material-symbols-outlined text-2xl text-primary">package_2</span>
+        <span class="text-primary group-hover:text-primary-dim">ghcr.io/freema/codeforge</span>
+      </div>
+      <p class="text-on-surface-variant text-sm mt-3">docker pull ghcr.io/freema/codeforge:latest</p>
+    </a>
+  </div>
+</section>
+
+<!-- Features Section -->
+<section id="features" class="py-24 bg-surface-container-low">
+  <div class="container mx-auto px-6">
+    <div class="mb-16 text-left border-l-8 border-primary pl-6">
+      <h2 class="font-pixel text-2xl text-primary mb-2">SYSTEM_CAPABILITIES</h2>
+      <p class="font-pixel text-[10px] text-on-surface-variant uppercase">High-density orchestration modules</p>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-0 border-4 border-outline-variant">
+      <!-- Sessions -->
+      <div class="p-10 border-outline-variant md:border-r-4 border-b-4 md:border-b-0 hover:bg-surface-container-highest transition-colors group">
+        <div class="mb-8 text-primary group-hover:scale-110 transition-transform inline-block">
+          <span class="material-symbols-outlined text-5xl">terminal</span>
+        </div>
+        <h3 class="font-pixel text-lg text-on-surface mb-4">SESSIONS</h3>
+        <p class="font-body text-on-surface-variant leading-relaxed">
+          Stateful AI work units over git repos with multi-turn conversations. The AI maintains context across entire file trees.
+        </p>
+      </div>
+      <!-- PR Reviews -->
+      <div class="p-10 border-outline-variant md:border-r-4 border-b-4 md:border-b-0 hover:bg-surface-container-highest transition-colors group">
+        <div class="mb-8 text-secondary group-hover:scale-110 transition-transform inline-block">
+          <span class="material-symbols-outlined text-5xl">search</span>
+        </div>
+        <h3 class="font-pixel text-lg text-on-surface mb-4">PR REVIEWS</h3>
+        <p class="font-body text-on-surface-variant leading-relaxed">
+          Automated pull request reviews via webhooks. Instant feedback on logic, security, and architectural debt.
+        </p>
+      </div>
+      <!-- Workflows -->
+      <div class="p-10 hover:bg-surface-container-highest transition-colors group">
+        <div class="mb-8 text-tertiary group-hover:scale-110 transition-transform inline-block">
+          <span class="material-symbols-outlined text-5xl" style="font-variation-settings: 'FILL' 1;">settings</span>
+        </div>
+        <h3 class="font-pixel text-lg text-on-surface mb-4">WORKFLOWS</h3>
+        <p class="font-body text-on-surface-variant leading-relaxed">
+          Multi-step pipelines composing sessions into complex scenarios. Automate entire migration paths with one command.
+        </p>
+      </div>
+      <!-- CI Action Mode -->
+      <div class="p-10 border-outline-variant md:border-r-4 border-t-4 hover:bg-surface-container-highest transition-colors group">
+        <div class="mb-8 text-primary group-hover:scale-110 transition-transform inline-block">
+          <span class="material-symbols-outlined text-5xl">rocket_launch</span>
+        </div>
+        <h3 class="font-pixel text-lg text-on-surface mb-4">CI_ACTION</h3>
+        <p class="font-body text-on-surface-variant leading-relaxed">
+          Run CodeForge as a GitHub Action or GitLab CI step. AI-powered code changes and PR reviews directly in your CI/CD pipeline — zero infrastructure needed.
+        </p>
+      </div>
+      <!-- Web UI -->
+      <div class="p-10 border-outline-variant md:border-r-4 border-t-4 hover:bg-surface-container-highest transition-colors group">
+        <div class="mb-8 text-secondary group-hover:scale-110 transition-transform inline-block">
+          <span class="material-symbols-outlined text-5xl">dashboard</span>
+        </div>
+        <h3 class="font-pixel text-lg text-on-surface mb-4">WEB_UI</h3>
+        <p class="font-body text-on-surface-variant leading-relaxed">
+          Full React dashboard to manage sessions, watch live AI output via SSE streaming, trigger reviews, and create PRs — all from your browser.
+        </p>
+      </div>
+      <!-- Multi-CLI -->
+      <div class="p-10 border-t-4 hover:bg-surface-container-highest transition-colors group">
+        <div class="mb-8 text-tertiary group-hover:scale-110 transition-transform inline-block">
+          <span class="material-symbols-outlined text-5xl">swap_horiz</span>
+        </div>
+        <h3 class="font-pixel text-lg text-on-surface mb-4">MULTI_CLI</h3>
+        <p class="font-body text-on-surface-variant leading-relaxed">
+          Choose your AI backend per session — Claude Code or OpenAI Codex. Same orchestration, same security, different brain under the hood.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Security Philosophy Section -->
+<section id="security" class="py-24 bg-surface relative overflow-hidden">
+  <div class="container mx-auto px-6">
+    <div class="mb-16 text-center">
+      <h2 class="font-pixel text-3xl text-error mb-4 uppercase">SECURITY_DOCTRINE</h2>
+      <div class="h-1 w-32 bg-error mx-auto mb-6"></div>
+      <p class="font-body text-on-surface-variant max-w-3xl mx-auto text-lg leading-relaxed">
+        CodeForge is built for one purpose: running AI coding agents on your server in a <span class="text-error font-bold">hardened, isolated environment</span>.
+        No trust-the-prompt security. No "please don't do bad things" in the system message.
+        Real, system-level enforcement.
+      </p>
+    </div>
+
+    <!-- Isolation Architecture -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-0 mb-16">
+      <!-- Left: The Problem -->
+      <div class="p-10 bg-surface-container-low border-4 border-error">
+        <div class="flex items-center gap-4 mb-6">
+          <span class="material-symbols-outlined text-4xl text-error">shield</span>
+          <h3 class="font-pixel text-lg text-on-surface">ISOLATION_MATRIX</h3>
+        </div>
+        <p class="font-body text-on-surface-variant mb-8 leading-relaxed">
+          Every AI session runs in a sandboxed workspace. The agent physically cannot escape its boundaries —
+          this isn't a prompt instruction, it's OS-level containment configured by you.
+        </p>
+        <div class="space-y-4">
+          <div class="flex items-start gap-4 p-4 bg-surface-container-lowest border-l-4 border-error">
+            <span class="material-symbols-outlined text-error text-2xl mt-1">block</span>
+            <div>
+              <p class="font-pixel text-[10px] text-error mb-1">WORKSPACE_JAIL</p>
+              <p class="font-body text-on-surface-variant text-sm">Agent can only access its assigned workspace directory. No filesystem traversal, no reading other sessions, no escape.</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-4 p-4 bg-surface-container-lowest border-l-4 border-error">
+            <span class="material-symbols-outlined text-error text-2xl mt-1">wifi_off</span>
+            <div>
+              <p class="font-pixel text-[10px] text-error mb-1">NETWORK_LOCKDOWN</p>
+              <p class="font-body text-on-surface-variant text-sm">Runs behind a proxy server. Only whitelisted ports are open — Anthropic API and OpenAI API endpoints for LLM communication. Everything else is blocked. <span class="text-tertiary font-pixel text-[8px]">[WIP: full proxy integration]</span></p>
+            </div>
+          </div>
+          <div class="flex items-start gap-4 p-4 bg-surface-container-lowest border-l-4 border-error">
+            <span class="material-symbols-outlined text-error text-2xl mt-1">do_not_disturb</span>
+            <div>
+              <p class="font-pixel text-[10px] text-error mb-1">NO_INSTALL_POLICY</p>
+              <p class="font-body text-on-surface-variant text-sm">No package installations, no binary downloads, no system modifications. The agent works with what you give it — nothing more.</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-4 p-4 bg-surface-container-lowest border-l-4 border-primary">
+            <span class="material-symbols-outlined text-primary text-2xl mt-1">tune</span>
+            <div>
+              <p class="font-pixel text-[10px] text-primary mb-1">USER_CONFIGURED</p>
+              <p class="font-body text-on-surface-variant text-sm">You define what the agent can and cannot do. CodeForge enforces your rules at the system level, not via prompts.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Not Prompt Security -->
+      <div class="p-10 bg-surface-container border-4 border-outline-variant border-l-0 lg:border-l-0 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center gap-4 mb-6">
+            <span class="material-symbols-outlined text-4xl text-secondary">compare_arrows</span>
+            <h3 class="font-pixel text-lg text-on-surface">SYSTEM vs PROMPT</h3>
+          </div>
+          <p class="font-body text-on-surface-variant mb-8 leading-relaxed">
+            Most AI platforms rely on prompt-level instructions: "don't access files outside the project."
+            That's a suggestion, not a wall. CodeForge builds the wall.
+          </p>
+        </div>
+        <!-- Terminal comparison -->
+        <div class="space-y-6">
+          <div class="bg-surface-container-lowest p-6 border-4 border-outline-variant">
+            <p class="font-pixel text-[10px] text-error mb-3 line-through opacity-60">PROMPT_SECURITY.txt</p>
+            <div class="font-mono text-sm text-on-surface-variant opacity-50 space-y-1">
+              <p>"Please do not access /etc/passwd"</p>
+              <p>"You should not install packages"</p>
+              <p>"Don't make network requests"</p>
+            </div>
+            <p class="font-pixel text-[8px] text-error mt-3">// BYPASSABLE. NOT REAL SECURITY.</p>
+          </div>
+          <div class="bg-surface-container-lowest p-6 border-4 border-primary">
+            <p class="font-pixel text-[10px] text-primary mb-3">CODEFORGE_ENFORCEMENT.sys</p>
+            <div class="font-mono text-sm text-primary-dim space-y-1">
+              <p>chroot /workspace/session-a8f3 <span class="text-on-surface-variant">// jailed</span></p>
+              <p>proxy.allow: [api.anthropic.com, api.openai.com] <span class="text-on-surface-variant">// whitelist</span></p>
+              <p>proxy.deny: [*] <span class="text-on-surface-variant">// everything else blocked</span></p>
+              <p>capabilities: [git, read, write] <span class="text-on-surface-variant">// explicit</span></p>
+            </div>
+            <p class="font-pixel text-[8px] text-primary mt-3">// ENFORCED. SYSTEM-LEVEL. NO OVERRIDE.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MCP Architecture Section -->
+<section id="mcp" class="py-24 bg-surface-container-low">
+  <div class="container mx-auto px-6">
+    <div class="mb-16 text-left border-l-8 border-secondary pl-6">
+      <h2 class="font-pixel text-2xl text-secondary mb-2">DATA_CHANNELS</h2>
+      <p class="font-pixel text-[10px] text-on-surface-variant uppercase">MCP-first architecture for external data</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+      <!-- Built-in -->
+      <div class="p-8 bg-surface-container border-4 border-outline-variant">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="material-symbols-outlined text-3xl text-primary">inventory_2</span>
+          <h3 class="font-pixel text-base text-on-surface">BUILT_IN</h3>
+        </div>
+        <p class="font-body text-on-surface-variant mb-6 leading-relaxed">
+          Core integrations ship with CodeForge. Git operations, GitHub/GitLab API, PR management,
+          and code review are native — no external dependencies.
+        </p>
+        <div class="flex flex-wrap gap-3">
+          <span class="px-4 py-2 bg-surface-container-lowest border-2 border-primary font-pixel text-[9px] text-primary">GIT</span>
+          <span class="px-4 py-2 bg-surface-container-lowest border-2 border-primary font-pixel text-[9px] text-primary">GITHUB_API</span>
+          <span class="px-4 py-2 bg-surface-container-lowest border-2 border-primary font-pixel text-[9px] text-primary">GITLAB_API</span>
+          <span class="px-4 py-2 bg-surface-container-lowest border-2 border-primary font-pixel text-[9px] text-primary">PR_REVIEW</span>
+          <span class="px-4 py-2 bg-surface-container-lowest border-2 border-primary font-pixel text-[9px] text-primary">PR_CREATE</span>
+        </div>
+      </div>
+
+      <!-- MCP Providers -->
+      <div class="p-8 bg-surface-container border-4 border-outline-variant">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="material-symbols-outlined text-3xl text-secondary">electrical_services</span>
+          <h3 class="font-pixel text-base text-on-surface">MCP_PROVIDERS</h3>
+        </div>
+        <p class="font-body text-on-surface-variant mb-6 leading-relaxed">
+          External data flows through MCP (Model Context Protocol) servers.
+          Sentry errors, monitoring data, documentation — all injected as read-only context, controlled by you.
+        </p>
+        <div class="flex flex-wrap gap-3">
+          <span class="px-4 py-2 bg-surface-container-lowest border-2 border-secondary font-pixel text-[9px] text-secondary">SENTRY</span>
+          <span class="px-4 py-2 bg-surface-container-lowest border-2 border-secondary font-pixel text-[9px] text-secondary">CONFLUENCE</span>
+          <span class="px-4 py-2 bg-surface-container-lowest border-2 border-secondary font-pixel text-[9px] text-secondary">JIRA</span>
+          <span class="px-4 py-2 bg-surface-container-lowest border-2 border-secondary font-pixel text-[9px] text-secondary">CUSTOM_MCP</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- MCP Flow Diagram -->
+    <div class="bg-surface-container-lowest p-8 border-4 border-outline-variant">
+      <p class="font-pixel text-[10px] text-on-surface-variant mb-6 text-center">DATA_FLOW_DIAGRAM</p>
+      <div class="flex flex-col lg:flex-row items-center justify-center gap-4 lg:gap-6 text-center">
+        <div class="px-6 py-3 border-2 border-secondary bg-surface-container">
+          <span class="font-pixel text-[9px] text-secondary">SENTRY</span>
+        </div>
+        <span class="material-symbols-outlined text-outline hidden lg:block">arrow_forward</span>
+        <span class="material-symbols-outlined text-outline lg:hidden">arrow_downward</span>
+        <div class="px-6 py-3 border-2 border-secondary bg-surface-container">
+          <span class="font-pixel text-[9px] text-secondary">MCP_SERVER</span>
+        </div>
+        <span class="material-symbols-outlined text-outline hidden lg:block">arrow_forward</span>
+        <span class="material-symbols-outlined text-outline lg:hidden">arrow_downward</span>
+        <div class="px-8 py-4 border-4 border-primary bg-surface-container">
+          <span class="font-pixel text-[10px] text-primary">CODEFORGE</span>
+        </div>
+        <span class="material-symbols-outlined text-outline hidden lg:block">arrow_forward</span>
+        <span class="material-symbols-outlined text-outline lg:hidden">arrow_downward</span>
+        <div class="px-6 py-3 border-2 border-tertiary bg-surface-container">
+          <span class="font-pixel text-[9px] text-tertiary">AI_SESSION</span>
+        </div>
+        <span class="material-symbols-outlined text-outline hidden lg:block">arrow_forward</span>
+        <span class="material-symbols-outlined text-outline lg:hidden">arrow_downward</span>
+        <div class="px-6 py-3 border-2 border-primary bg-surface-container">
+          <span class="font-pixel text-[9px] text-primary">GIT_PUSH</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Memory Section -->
+<section class="py-24 bg-surface">
+  <div class="container mx-auto px-6">
+    <div class="max-w-4xl mx-auto">
+      <div class="mb-12 text-left border-l-8 border-tertiary pl-6">
+        <h2 class="font-pixel text-2xl text-tertiary mb-2">MEMORY_SYSTEM</h2>
+        <p class="font-pixel text-[10px] text-on-surface-variant uppercase">Persistent context across sessions</p>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-0">
+        <div class="p-10 bg-surface-container border-4 border-outline-variant">
+          <span class="material-symbols-outlined text-4xl text-tertiary mb-4">description</span>
+          <h3 class="font-pixel text-base text-on-surface mb-4">MEMORY_FILES</h3>
+          <p class="font-body text-on-surface-variant leading-relaxed">
+            AI sessions persist knowledge via memory files — structured documents that carry context between sessions.
+            The agent remembers project conventions, past decisions, and architectural patterns without re-learning from scratch.
+          </p>
+        </div>
+        <div class="p-10 bg-surface-container-highest border-4 border-outline-variant border-l-0">
+          <span class="material-symbols-outlined text-4xl text-tertiary mb-4">sync</span>
+          <h3 class="font-pixel text-base text-on-surface mb-4">CROSS_SESSION</h3>
+          <p class="font-body text-on-surface-variant leading-relaxed">
+            Each new session in the same repo picks up where the last one left off.
+            Memory files live in the workspace — versioned, auditable, and under your control. No hidden state, no magic databases.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- How It Works Section -->
+<section id="pipeline" class="py-24 bg-surface-container-low overflow-hidden">
+  <div class="container mx-auto px-6">
+    <div class="mb-20 text-center">
+      <h2 class="font-pixel text-3xl text-primary mb-4 uppercase">FORGING_PIPELINE</h2>
+      <div class="h-1 w-32 bg-primary mx-auto"></div>
+    </div>
+    <div class="flex flex-col lg:flex-row items-center justify-between gap-8 lg:gap-0 relative">
+      <!-- Step 1 -->
+      <div class="z-10 bg-surface-container border-4 border-primary p-6 text-center w-64 h-48 flex flex-col justify-center">
+        <span class="font-pixel text-[10px] text-primary mb-4">01_INIT</span>
+        <p class="font-pixel text-[10px] text-on-surface">CREATE SESSION</p>
+      </div>
+      <div class="hidden lg:block h-1 flex-grow border-t-4 border-dotted border-outline-variant mx-4"></div>
+      <span class="lg:hidden material-symbols-outlined text-primary">arrow_downward</span>
+      <!-- Step 2 -->
+      <div class="z-10 bg-surface-container border-4 border-outline-variant p-6 text-center w-64 h-48 flex flex-col justify-center">
+        <span class="font-pixel text-[10px] text-on-surface-variant mb-4">02_SYNC</span>
+        <p class="font-pixel text-[10px] text-on-surface">CLONE REPO</p>
+      </div>
+      <div class="hidden lg:block h-1 flex-grow border-t-4 border-dotted border-outline-variant mx-4"></div>
+      <span class="lg:hidden material-symbols-outlined text-primary">arrow_downward</span>
+      <!-- Step 3 -->
+      <div class="z-10 bg-surface-container border-4 border-secondary p-6 text-center w-64 h-48 flex flex-col justify-center">
+        <span class="font-pixel text-[10px] text-secondary mb-4">03_EXEC</span>
+        <p class="font-pixel text-[10px] text-on-surface">AI RUNS</p>
+      </div>
+      <div class="hidden lg:block h-1 flex-grow border-t-4 border-dotted border-outline-variant mx-4"></div>
+      <span class="lg:hidden material-symbols-outlined text-primary">arrow_downward</span>
+      <!-- Step 4 -->
+      <div class="z-10 bg-surface-container border-4 border-outline-variant p-6 text-center w-64 h-48 flex flex-col justify-center">
+        <span class="font-pixel text-[10px] text-on-surface-variant mb-4">04_DATA</span>
+        <p class="font-pixel text-[10px] text-on-surface">STREAM PROGRESS</p>
+      </div>
+      <div class="hidden lg:block h-1 flex-grow border-t-4 border-dotted border-outline-variant mx-4"></div>
+      <span class="lg:hidden material-symbols-outlined text-primary">arrow_downward</span>
+      <!-- Step 5 -->
+      <div class="z-10 bg-surface-container border-4 border-tertiary p-6 text-center w-64 h-48 flex flex-col justify-center">
+        <span class="font-pixel text-[10px] text-tertiary mb-4">05_DONE</span>
+        <p class="font-pixel text-[10px] text-on-surface">REVIEW &amp; PR</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Integrations Section -->
+<section id="integrations" class="py-24 border-y-4 border-[#151a21] bg-surface-container">
+  <div class="container mx-auto px-6">
+    <div class="flex flex-col md:flex-row items-center justify-between gap-12">
+      <div class="max-w-md">
+        <h2 class="font-pixel text-xl text-on-surface mb-4">COMPATIBILITY_LAYER</h2>
+        <p class="font-body text-on-surface-variant">Seamlessly connects with your existing stack. High-fidelity integrations for modern dev workflows.</p>
+      </div>
+      <div class="flex flex-wrap justify-center gap-6">
+        <div class="px-6 py-4 bg-surface border-4 border-outline-variant hover:border-primary transition-colors flex items-center gap-3">
+          <span class="material-symbols-outlined text-primary">hub</span>
+          <span class="font-pixel text-[10px]">GITHUB</span>
+        </div>
+        <div class="px-6 py-4 bg-surface border-4 border-outline-variant hover:border-secondary transition-colors flex items-center gap-3">
+          <span class="material-symbols-outlined text-secondary">source_environment</span>
+          <span class="font-pixel text-[10px]">GITLAB</span>
+        </div>
+        <div class="px-6 py-4 bg-surface border-4 border-outline-variant hover:border-tertiary transition-colors flex items-center gap-3">
+          <span class="material-symbols-outlined text-tertiary">psychology</span>
+          <span class="font-pixel text-[10px]">CLAUDE</span>
+        </div>
+        <div class="px-6 py-4 bg-surface border-4 border-outline-variant hover:border-primary transition-colors flex items-center gap-3">
+          <span class="material-symbols-outlined text-primary">code</span>
+          <span class="font-pixel text-[10px]">CODEX</span>
+        </div>
+        <div class="px-6 py-4 bg-surface border-4 border-outline-variant hover:border-secondary transition-colors flex items-center gap-3">
+          <span class="material-symbols-outlined text-secondary">construction</span>
+          <span class="font-pixel text-[10px]">MCP_TOOLS</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA / Final Section -->
+<section class="py-32 relative">
+  <div class="container mx-auto px-6 text-center">
+    <div class="inline-block border-4 border-primary p-12 bg-surface-container relative">
+      <div class="absolute -top-6 -left-6 w-12 h-12 bg-primary border-4 border-surface"></div>
+      <div class="absolute -bottom-6 -right-6 w-12 h-12 bg-secondary border-4 border-surface"></div>
+      <h2 class="font-pixel text-3xl md:text-5xl text-on-surface mb-8">READY TO FORGE?</h2>
+      <p class="font-body text-on-surface-variant mb-12 max-w-xl mx-auto">Open-source AI orchestration for your codebase. Sessions, reviews, workflows — all over git.</p>
+      <div class="flex flex-col sm:flex-row justify-center gap-4">
+        <a href="https://github.com/freema/codeforge" class="bg-primary text-on-primary font-pixel text-lg px-12 py-6 pixel-button-shadow no-underline">
+          INITIALIZE NOW
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- Footer -->
+<footer class="w-full py-12 px-8 flex flex-col md:flex-row justify-between items-center gap-4 bg-[#0a0e14] border-t-4 border-[#151a21]">
+  <div class="flex flex-col gap-2">
+    <div class="text-lg font-bold text-[#39ff14] font-pixel">CODEFORGE</div>
+    <p class="font-pixel text-[10px] text-[#39ff14] tracking-widest uppercase">&copy;2026 BIT-STREAM ARCHITECTURE. ALL BITS RESERVED.</p>
+  </div>
+  <div class="flex gap-8">
+    <a class="font-pixel text-[10px] uppercase tracking-widest text-[#a8abb3] hover:text-[#39ff14] transition-colors" href="https://github.com/freema/codeforge">TERMINAL</a>
+    <a class="font-pixel text-[10px] uppercase tracking-widest text-[#a8abb3] hover:text-[#39ff14] transition-colors" href="https://github.com/freema/codeforge/tree/main/docs">DOCS</a>
+    <a class="font-pixel text-[10px] uppercase tracking-widest text-[#a8abb3] hover:text-[#39ff14] transition-colors" href="https://github.com/freema/codeforge/issues">ISSUES</a>
+  </div>
+  <div class="flex items-center gap-4">
+    <span class="font-pixel text-[8px] text-on-surface-variant opacity-50">FORGED WITH PIXELS AND MASS AMOUNTS OF MASS</span>
+    <a class="text-primary hover:text-secondary" href="https://github.com/freema/codeforge">
+      <span class="material-symbols-outlined text-2xl">hub</span>
+    </a>
+  </div>
+</footer>
+
+<script>
+  fetch('https://api.github.com/repos/freema/codeforge')
+    .then(r => r.json())
+    .then(data => {
+      const fmt = n => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+      const stars = document.getElementById('star-count');
+      const forks = document.getElementById('fork-count');
+      if (stars && data.stargazers_count !== undefined) stars.textContent = fmt(data.stargazers_count);
+      if (forks && data.forks_count !== undefined) forks.textContent = fmt(data.forks_count);
+    })
+    .catch(() => {});
+</script>
+</body>
+</html>

@@ -91,7 +91,7 @@ export default function NewSession() {
 
   // PR Review fields
   const [prNumber, setPrNumber] = useState("");
-  const [outputMode, setOutputMode] = useState("post_comments");
+  const [outputMode, setOutputMode] = useState("api_only");
 
   // CLI & Model
   const [selectedCli, setSelectedCli] = useState("");
@@ -160,12 +160,8 @@ export default function NewSession() {
   );
   const cliModels = selectedCliEntry?.models ?? [];
 
-  // Auto-select the first (newest) model when CLI changes and no model is set
-  useEffect(() => {
-    if (cliModels.length > 0 && !aiModel) {
-      setAiModel(cliModels[0]!);
-    }
-  }, [cliModels, aiModel]);
+  // Default to "" (auto) — CLI picks the best model for the API key
+  // No auto-select needed; empty string means "auto"
 
   const typeConfig = SESSION_TYPE_CONFIG[taskType];
   const sessionTypePlaceholder =
@@ -179,7 +175,7 @@ export default function NewSession() {
     setTaskType(newType);
     // Reset type-specific fields
     setPrNumber("");
-    setOutputMode("post_comments");
+    setOutputMode("api_only");
   }
 
   function handleRepoSelect(repo: Repository) {
@@ -539,9 +535,10 @@ export default function NewSession() {
             <Select
               value={aiModel}
               onChange={setAiModel}
-              options={
-                cliModels.map((m) => ({ value: m, label: m }))
-              }
+              options={[
+                { value: "", label: "(auto)" },
+                ...cliModels.map((m) => ({ value: m, label: m })),
+              ]}
               placeholder="Select model..."
             />
           </div>
