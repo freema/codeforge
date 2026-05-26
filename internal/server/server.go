@@ -35,7 +35,7 @@ type Server struct {
 }
 
 // New creates and configures the HTTP server with all routes and middleware.
-func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, sessionService *session.Service, prService *session.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, toolRegistry tools.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowConfigStore workflow.ConfigStore, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, webhookReceiverHandler *handlers.WebhookReceiverHandler, version string) *Server {
+func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, sessionService *session.Service, prService *session.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, toolRegistry tools.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowConfigStore workflow.ConfigStore, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, webhookReceiverHandler *handlers.WebhookReceiverHandler, tenantHandler *handlers.TenantHandler, version string) *Server {
 	r := chi.NewRouter()
 
 	// Global middleware (timeout applied per-route-group, not globally, for SSE support)
@@ -176,6 +176,23 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 				r.Delete("/{id}", workflowConfigHandler.Delete)
 				r.Post("/{id}/run", workflowConfigHandler.Run)
 			})
+
+			if tenantHandler != nil {
+				r.Route("/admin/tenants", func(r chi.Router) {
+					r.Post("/", tenantHandler.Create)
+					r.Get("/", tenantHandler.List)
+					r.Get("/{tenantID}", tenantHandler.Get)
+					r.Patch("/{tenantID}", tenantHandler.Update)
+					r.Delete("/{tenantID}", tenantHandler.Delete)
+					r.Get("/{tenantID}/usage", tenantHandler.Usage)
+				})
+
+				r.Route("/admin/key-pool", func(r chi.Router) {
+					r.Post("/", tenantHandler.AddKeyPool)
+					r.Get("/", tenantHandler.ListKeyPool)
+					r.Delete("/{keyID}", tenantHandler.DeleteKeyPool)
+				})
+			}
 		})
 	})
 

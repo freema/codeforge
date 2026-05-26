@@ -23,6 +23,7 @@ import (
 	"github.com/freema/codeforge/internal/server/handlers"
 	"github.com/freema/codeforge/internal/session"
 	"github.com/freema/codeforge/internal/tool/mcp"
+	"github.com/freema/codeforge/internal/tenant"
 	"github.com/freema/codeforge/internal/tool/runner"
 	"github.com/freema/codeforge/internal/tools"
 	"github.com/freema/codeforge/internal/tracing"
@@ -152,11 +153,25 @@ func run() error {
 
 	// Initialize CLI registry
 	cliRegistry := runner.NewRegistry(cfg.CLI.Default)
-	cliRegistry.Register("claude-code", runner.NewClaudeRunner(cfg.CLI.ClaudeCode.Path))
-	cliRegistry.Register("codex", runner.NewCodexRunner(cfg.CLI.Codex.Path))
+	cliRegistry.Register("claude-code", runner.NewClaudeRunner(cfg.CLI.ClaudeCode.Path), runner.RunnerMeta{
+		NormalizerFactory: func() runner.StreamNormalizer { return runner.NewClaudeNormalizer() },
+		AIProvider:        "anthropic",
+	})
+	cliRegistry.Register("codex", runner.NewCodexRunner(cfg.CLI.Codex.Path), runner.RunnerMeta{
+		NormalizerFactory: func() runner.StreamNormalizer { return runner.NewCodexNormalizer() },
+		AIProvider:        "openai",
+	})
+	cliRegistry.Register("cursor", runner.NewCursorRunner(cfg.CLI.Cursor.Path), runner.RunnerMeta{
+		NormalizerFactory: func() runner.StreamNormalizer { return runner.NewCursorNormalizer() },
+		AIProvider:        "cursor",
+	})
+	cliRegistry.Register("claude-agent", runner.NewClaudeAgentRunner(cfg.CLI.ClaudeCode.Path), runner.RunnerMeta{
+		NormalizerFactory: func() runner.StreamNormalizer { return runner.NewClaudeNormalizer() },
+		AIProvider:        "anthropic",
+	})
 
 	// Log availability of registered CLI runners
-	for _, name := range []string{cfg.CLI.ClaudeCode.Path, cfg.CLI.Codex.Path} {
+	for _, name := range []string{cfg.CLI.ClaudeCode.Path, cfg.CLI.Codex.Path, cfg.CLI.Cursor.Path} {
 		if _, err := exec.LookPath(name); err != nil {
 			slog.Warn("CLI runner not found on PATH — sessions using this CLI will fail", "cli", name)
 		}
@@ -164,8 +179,10 @@ func run() error {
 
 	// Build CLI info map for HTTP handler
 	cliConfigs := map[string]handlers.CLIInfo{
-		"claude-code": {Name: "claude-code", BinaryPath: cfg.CLI.ClaudeCode.Path, DefaultModel: cfg.CLI.ClaudeCode.DefaultModel, Models: cfg.CLI.ClaudeCode.Models},
-		"codex":       {Name: "codex", BinaryPath: cfg.CLI.Codex.Path, DefaultModel: cfg.CLI.Codex.DefaultModel, Models: cfg.CLI.Codex.Models},
+		"claude-code":  {Name: "claude-code", BinaryPath: cfg.CLI.ClaudeCode.Path, DefaultModel: cfg.CLI.ClaudeCode.DefaultModel, Models: cfg.CLI.ClaudeCode.Models},
+		"codex":        {Name: "codex", BinaryPath: cfg.CLI.Codex.Path, DefaultModel: cfg.CLI.Codex.DefaultModel, Models: cfg.CLI.Codex.Models},
+		"cursor":       {Name: "cursor", BinaryPath: cfg.CLI.Cursor.Path, DefaultModel: cfg.CLI.Cursor.DefaultModel, Models: cfg.CLI.Cursor.Models},
+		"claude-agent": {Name: "claude-agent", BinaryPath: cfg.CLI.ClaudeCode.Path, DefaultModel: cfg.CLI.ClaudeCode.DefaultModel, Models: cfg.CLI.ClaudeCode.Models},
 	}
 
 	// Initialize streamer
@@ -187,8 +204,10 @@ func run() error {
 			MaxTimeout:      cfg.Sessions.MaxTimeout,
 			ProviderDomains: cfg.Git.ProviderDomains,
 			DefaultModels: map[string]string{
-				"claude-code": cfg.CLI.ClaudeCode.DefaultModel,
-				"codex":       cfg.CLI.Codex.DefaultModel,
+				"claude-code":  cfg.CLI.ClaudeCode.DefaultModel,
+				"codex":        cfg.CLI.Codex.DefaultModel,
+				"cursor":       cfg.CLI.Cursor.DefaultModel,
+				"claude-agent": cfg.CLI.ClaudeCode.DefaultModel,
 			},
 		},
 	)
@@ -238,7 +257,12 @@ func run() error {
 		webhookReceiverHandler = handlers.NewWebhookReceiverHandler(sessionService, rdb, cfg.CodeReview)
 	}
 
-	srv := server.New(cfg, rdb, sqliteDB, sessionService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowConfigStore, cliRegistry, cliConfigs, webhookReceiverHandler, version)
+	// Initialize tenant service and handler
+	tenantStore := tenant.NewStore(sqliteDB.Unwrap())
+	tenantService := tenant.NewService(tenantStore, cryptoSvc)
+	tenantHandler := handlers.NewTenantHandler(tenantService, cryptoSvc)
+
+	srv := server.New(cfg, rdb, sqliteDB, sessionService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowConfigStore, cliRegistry, cliConfigs, webhookReceiverHandler, tenantHandler, version)
 
 	// Start background services
 	appCtx, appCancel := context.WithCancel(context.Background())

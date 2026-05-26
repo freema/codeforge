@@ -119,7 +119,7 @@ func TestReview_Returns202(t *testing.T) {
 func TestReview_InvalidCLI(t *testing.T) {
 	// Test that unknown CLI returns 400 validation error.
 	cliRegistry := runner.NewRegistry("claude-code")
-	cliRegistry.Register("claude-code", runner.NewClaudeRunner("claude"))
+	cliRegistry.Register("claude-code", runner.NewClaudeRunner("claude"), runner.RunnerMeta{AIProvider: "anthropic"})
 
 	h := NewSessionHandler(nil, nil, nil, cliRegistry, nil, nil)
 

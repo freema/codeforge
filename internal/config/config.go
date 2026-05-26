@@ -61,6 +61,13 @@ type CLIConfig struct {
 	Default    string           `koanf:"default"`
 	ClaudeCode ClaudeCodeConfig `koanf:"claude_code"`
 	Codex      CodexConfig      `koanf:"codex"`
+	Cursor     CursorConfig     `koanf:"cursor"`
+}
+
+type CursorConfig struct {
+	Path         string   `koanf:"path"`
+	DefaultModel string   `koanf:"default_model"`
+	Models       []string `koanf:"models"`
 }
 
 type CodexConfig struct {
@@ -165,6 +172,13 @@ func Defaults() *Config {
 				DefaultModel: "",
 				Models: []string{
 					"gpt-5.2", "gpt-5.1", "gpt-5", "gpt-4.1", "o3", "o4-mini",
+				},
+			},
+			Cursor: CursorConfig{
+				Path:         "cursor-agent",
+				DefaultModel: "",
+				Models: []string{
+					"composer-2",
 				},
 			},
 		},

@@ -12,8 +12,8 @@ import (
 
 func TestCLIHandler_List(t *testing.T) {
 	registry := runner.NewRegistry("claude-code")
-	registry.Register("claude-code", runner.NewClaudeRunner("claude"))
-	registry.Register("codex", runner.NewCodexRunner("codex"))
+	registry.Register("claude-code", runner.NewClaudeRunner("claude"), runner.RunnerMeta{AIProvider: "anthropic"})
+	registry.Register("codex", runner.NewCodexRunner("codex"), runner.RunnerMeta{AIProvider: "openai"})
 
 	configs := map[string]CLIInfo{
 		"claude-code": {Name: "claude-code", BinaryPath: "claude", DefaultModel: "claude-sonnet-4-6-20250627"},
@@ -65,7 +65,7 @@ func TestCLIHandler_List(t *testing.T) {
 func TestCLIHandler_Health_Available(t *testing.T) {
 	// Use "go" as binary — it's always available in test environments
 	registry := runner.NewRegistry("test-cli")
-	registry.Register("test-cli", runner.NewClaudeRunner("go"))
+	registry.Register("test-cli", runner.NewClaudeRunner("go"), runner.RunnerMeta{AIProvider: "anthropic"})
 
 	configs := map[string]CLIInfo{
 		"test-cli": {Name: "test-cli", BinaryPath: "go"},
@@ -92,7 +92,7 @@ func TestCLIHandler_Health_Available(t *testing.T) {
 
 func TestCLIHandler_Health_Unavailable(t *testing.T) {
 	registry := runner.NewRegistry("missing-cli")
-	registry.Register("missing-cli", runner.NewClaudeRunner("nonexistent-binary-abc123"))
+	registry.Register("missing-cli", runner.NewClaudeRunner("nonexistent-binary-abc123"), runner.RunnerMeta{AIProvider: "anthropic"})
 
 	configs := map[string]CLIInfo{
 		"missing-cli": {Name: "missing-cli", BinaryPath: "nonexistent-binary-abc123"},

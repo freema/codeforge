@@ -555,7 +555,7 @@ func (e *Executor) runStep(ctx context.Context, t *session.Session, workDir stri
 	if t.Config != nil {
 		cliName = t.Config.CLI
 	}
-	cliRunner, err := e.cliRegistry.Get(cliName)
+	cliRunner, cliMeta, err := e.cliRegistry.GetWithMeta(cliName)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		return nil, fmt.Errorf("resolving CLI runner: %w", err)
@@ -569,13 +569,10 @@ func (e *Executor) runStep(ctx context.Context, t *session.Session, workDir stri
 	}
 	span.SetAttributes(attribute.String("cli.name", resolvedCLI))
 
-	// Select stream normalizer for the resolved CLI
+	// Select stream normalizer from registry metadata
 	var normalizer runner.StreamNormalizer
-	switch resolvedCLI {
-	case defaultCLI:
-		normalizer = runner.NewClaudeNormalizer()
-	case "codex":
-		normalizer = runner.NewCodexNormalizer()
+	if cliMeta.NormalizerFactory != nil {
+		normalizer = cliMeta.NormalizerFactory()
 	}
 
 	e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "cli_started", map[string]string{
@@ -602,11 +599,7 @@ func (e *Executor) runStep(ctx context.Context, t *session.Session, workDir stri
 
 	// If no per-session AI key, try to resolve from key registry.
 	if apiKey == "" && e.keyResolver != nil {
-		aiProvider := "anthropic" // default for claude-code
-		if resolvedCLI == "codex" {
-			aiProvider = "openai"
-		}
-		if resolved, err := e.keyResolver.ResolveAIKey(ctx, aiProvider); err == nil {
+		if resolved, err := e.keyResolver.ResolveAIKey(ctx, cliMeta.AIProvider); err == nil {
 			apiKey = resolved
 		}
 	}
@@ -959,7 +952,7 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 		cli = t.Config.CLI
 	}
 
-	cliRunner, err := e.cliRegistry.Get(cli)
+	cliRunner, cliMeta, err := e.cliRegistry.GetWithMeta(cli)
 	if err != nil {
 		e.failSession(ctx, t, fmt.Sprintf("failed to resolve CLI %q for review: %v", cli, err), startTime, log)
 		return
@@ -987,13 +980,10 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 		"model": model,
 	}), log, "review_started", t.ID)
 
-	// Select stream normalizer for CLI output
+	// Select stream normalizer from registry metadata
 	var normalizer runner.StreamNormalizer
-	switch cli {
-	case defaultCLI:
-		normalizer = runner.NewClaudeNormalizer()
-	case "codex":
-		normalizer = runner.NewCodexNormalizer()
+	if cliMeta.NormalizerFactory != nil {
+		normalizer = cliMeta.NormalizerFactory()
 	}
 
 	apiKey := ""
@@ -1003,11 +993,7 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 
 	// If no per-session AI key, try to resolve from key registry.
 	if apiKey == "" && e.keyResolver != nil {
-		aiProvider := "anthropic" // default for claude-code
-		if cli == "codex" {
-			aiProvider = "openai"
-		}
-		if resolved, resolveErr := e.keyResolver.ResolveAIKey(ctx, aiProvider); resolveErr == nil {
+		if resolved, resolveErr := e.keyResolver.ResolveAIKey(ctx, cliMeta.AIProvider); resolveErr == nil {
 			apiKey = resolved
 		}
 	}

@@ -33,3 +33,10 @@ type RunResult struct {
 	InputTokens  int
 	OutputTokens int
 }
+
+// RunnerMeta holds CLI-specific metadata used by the executor to select
+// the correct normalizer and AI provider without hardcoded switch statements.
+type RunnerMeta struct {
+	NormalizerFactory func() StreamNormalizer
+	AIProvider        string // "anthropic", "openai", "cursor"
+}
