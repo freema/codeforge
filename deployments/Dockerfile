@@ -11,15 +11,16 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o codeforge ./cmd/codefo
 FROM alpine:3.20
 ARG CLAUDE_CODE_VERSION=1.0.88
 ARG CODEX_VERSION=0.104.0
-# Pin once a known-good @cursor/cli version is confirmed in CI.
-ARG CURSOR_VERSION=latest
 RUN apk add --no-cache git nodejs npm ca-certificates tzdata wget coreutils \
     && npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
     && npm install -g @openai/codex@${CODEX_VERSION} \
-    && npm install -g @cursor/cli@${CURSOR_VERSION} \
     && adduser -D -h /home/codeforge codeforge \
     && mkdir -p /data/workspaces \
     && chown -R codeforge:codeforge /data
+# NOTE: cursor-agent (cli=cursor) is intentionally NOT bundled here — Cursor ships a
+# shell installer (https://cursor.com/install), not an npm package, so it can't be
+# pinned/installed like the others. Provide it in a derived image or via the official
+# installer. The Cursor runner is fully wired and works once cursor-agent is on PATH.
 
 USER codeforge
 WORKDIR /home/codeforge
