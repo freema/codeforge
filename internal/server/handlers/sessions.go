@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +16,9 @@ import (
 	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/prompt"
 	"github.com/freema/codeforge/internal/review"
+	"github.com/freema/codeforge/internal/server/middleware"
 	"github.com/freema/codeforge/internal/session"
+	"github.com/freema/codeforge/internal/tenant"
 	gitpkg "github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/tool/runner"
 )
@@ -27,6 +30,12 @@ type Canceller interface {
 	Cancel(sessionID string) error
 }
 
+// tenantSessionCounter counts a tenant's in-flight sessions for concurrency limits.
+// Implemented by *session.Service; kept as an interface so handler tests can fake it.
+type tenantSessionCounter interface {
+	CountActiveByTenant(ctx context.Context, tenantID string) (int, error)
+}
+
 // SessionHandler handles session-related HTTP endpoints.
 type SessionHandler struct {
 	service         *session.Service
@@ -35,11 +44,17 @@ type SessionHandler struct {
 	cliRegistry     *runner.Registry
 	keyRegistry     keys.Registry
 	providerDomains map[string]string
+	tenantService   *tenant.Service      // optional, nil = subscription disabled
+	sessionCounter  tenantSessionCounter // optional, nil = concurrency limit not enforced
 }
 
 // NewSessionHandler creates a new session handler.
-func NewSessionHandler(service *session.Service, prService *session.PRService, canceller Canceller, cliRegistry *runner.Registry, keyRegistry keys.Registry, providerDomains map[string]string) *SessionHandler {
-	return &SessionHandler{service: service, prService: prService, canceller: canceller, cliRegistry: cliRegistry, keyRegistry: keyRegistry, providerDomains: providerDomains}
+func NewSessionHandler(service *session.Service, prService *session.PRService, canceller Canceller, cliRegistry *runner.Registry, keyRegistry keys.Registry, providerDomains map[string]string, tenantService *tenant.Service) *SessionHandler {
+	h := &SessionHandler{service: service, prService: prService, canceller: canceller, cliRegistry: cliRegistry, keyRegistry: keyRegistry, providerDomains: providerDomains, tenantService: tenantService}
+	if service != nil {
+		h.sessionCounter = service
+	}
+	return h
 }
 
 // List handles GET /api/v1/sessions.
@@ -47,6 +62,10 @@ func NewSessionHandler(service *session.Service, prService *session.PRService, c
 func (h *SessionHandler) List(w http.ResponseWriter, r *http.Request) {
 	opts := session.ListOptions{
 		Status: r.URL.Query().Get("status"),
+	}
+	// Subscription tenants see only their own sessions.
+	if tnt := middleware.TenantFromContext(r.Context()); tnt != nil {
+		opts.TenantID = tnt.ID
 	}
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
@@ -67,7 +86,7 @@ func (h *SessionHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"sessions": sessions,
-		"total": total,
+		"total":    total,
 	})
 }
 
@@ -129,6 +148,15 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Subscription tenants: enforce tier limits + assign a managed key from the pool.
+	// req.TenantID is json:"-" so it can only be set server-side by applyTenant.
+	if tnt := middleware.TenantFromContext(r.Context()); tnt != nil {
+		if status, msg := h.applyTenant(r.Context(), &req, tnt); status != 0 {
+			writeError(w, status, msg)
+			return
+		}
+	}
+
 	t, err := h.service.Create(r.Context(), req)
 	if err != nil {
 		writeAppError(w, err)
@@ -140,6 +168,136 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		"status":     t.Status,
 		"created_at": t.CreatedAt,
 	})
+}
+
+// OwnershipMiddleware enforces tenant ownership of a session for any route with a
+// {sessionID} URL param. When the request is authenticated as a subscription
+// tenant, the target session must belong to that tenant (session metadata
+// tenant_id); operator/no-tenant requests pass unconditionally. A mismatch returns
+// 404 (not 403) so a tenant cannot probe other tenants' session IDs. Routes without
+// a sessionID (List, Create) pass through and enforce their own scoping.
+func (h *SessionHandler) OwnershipMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tnt := middleware.TenantFromContext(r.Context())
+		sessionID := chi.URLParam(r, "sessionID")
+		if tnt == nil || sessionID == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		t, err := h.service.Get(r.Context(), sessionID)
+		if err != nil {
+			writeAppError(w, err)
+			return
+		}
+		if t.TenantID != tnt.ID {
+			writeError(w, http.StatusNotFound, "session not found")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// applyTenant enforces a subscription tenant's tier limits and assigns a managed
+// API key from the operator pool when the request brings no BYOK key. Returns a
+// non-zero HTTP status + message on rejection, or (0, "") to proceed.
+func (h *SessionHandler) applyTenant(ctx context.Context, req *session.CreateSessionRequest, tnt *tenant.Tenant) (int, string) {
+	if h.tenantService == nil {
+		return 0, ""
+	}
+
+	cli := h.cliRegistry.DefaultCLI()
+	if req.Config != nil && req.Config.CLI != "" {
+		cli = req.Config.CLI
+	}
+
+	// Tier: allowed CLIs
+	if !stringInJSONList(tnt.AllowedCLIs, cli) {
+		return http.StatusForbidden, fmt.Sprintf("CLI %q is not allowed for the %q subscription tier", cli, tnt.Tier)
+	}
+
+	// Tier: allowed models (only enforced when the tenant restricts models)
+	if tnt.AllowedModels != nil && req.Config != nil && req.Config.AIModel != "" {
+		if !stringInJSONList(*tnt.AllowedModels, req.Config.AIModel) {
+			return http.StatusForbidden, fmt.Sprintf("model %q is not allowed for the %q subscription tier", req.Config.AIModel, tnt.Tier)
+		}
+	}
+
+	// Tier: daily session quota (-1 = unlimited). Fail closed on a store error so a
+	// transient DB problem cannot silently waive the quota.
+	if tnt.MaxSessionsPerDay >= 0 {
+		used, err := h.tenantService.Store().CountDailySessions(ctx, tnt.ID)
+		if err != nil {
+			return http.StatusServiceUnavailable, "could not verify session quota, try again"
+		}
+		if used >= tnt.MaxSessionsPerDay {
+			return http.StatusTooManyRequests, fmt.Sprintf("daily session limit reached (%d/%d) for the %q tier", used, tnt.MaxSessionsPerDay, tnt.Tier)
+		}
+	}
+
+	// Tier: concurrent in-flight sessions. Also bounds the daily-quota burst window,
+	// since at most MaxConcurrentSessions sessions can run before completing (and
+	// completed ones count toward the daily limit).
+	if h.sessionCounter != nil && tnt.MaxConcurrentSessions > 0 {
+		active, err := h.sessionCounter.CountActiveByTenant(ctx, tnt.ID)
+		if err != nil {
+			return http.StatusServiceUnavailable, "could not verify concurrency limit, try again"
+		}
+		if active >= tnt.MaxConcurrentSessions {
+			return http.StatusTooManyRequests, fmt.Sprintf("concurrent session limit reached (%d/%d) for the %q tier", active, tnt.MaxConcurrentSessions, tnt.Tier)
+		}
+	}
+
+	// Record the owning tenant on a server-side field (never client-trusted) for
+	// ownership scoping and usage attribution.
+	req.TenantID = tnt.ID
+
+	// Per-session budget cap from the tier (unless the caller set a tighter one).
+	if tnt.MaxBudgetUSDPerSession > 0 {
+		if req.Config == nil {
+			req.Config = &session.Config{}
+		}
+		if req.Config.MaxBudgetUSD == 0 || req.Config.MaxBudgetUSD > tnt.MaxBudgetUSDPerSession {
+			req.Config.MaxBudgetUSD = tnt.MaxBudgetUSDPerSession
+		}
+	}
+
+	// Assign a managed key from the pool when the tenant did not bring its own (BYOK).
+	if req.Config == nil || req.Config.AIApiKey == "" {
+		provider := "anthropic"
+		if _, meta, err := h.cliRegistry.GetWithMeta(cli); err == nil && meta.AIProvider != "" {
+			provider = meta.AIProvider
+		}
+		key, err := h.tenantService.ResolveKeyFromPool(ctx, provider)
+		if err != nil || key == "" {
+			return http.StatusServiceUnavailable, fmt.Sprintf("no managed API key available for provider %q — contact the operator", provider)
+		}
+		if req.Config == nil {
+			req.Config = &session.Config{}
+		}
+		req.Config.AIApiKey = key
+	}
+
+	return 0, ""
+}
+
+// stringInJSONList reports whether target is allowed by a JSON array allow-list like
+// `["claude-code","codex"]`. An empty/whitespace list means "no restriction" (allow).
+// A NON-empty but malformed list fails CLOSED (deny) — a corrupt restriction must not
+// silently grant access to everything.
+func stringInJSONList(list, target string) bool {
+	if strings.TrimSpace(list) == "" {
+		return true // no restriction configured
+	}
+	var items []string
+	if err := json.Unmarshal([]byte(list), &items); err != nil {
+		return false // malformed restriction → deny (fail closed)
+	}
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
 }
 
 // Get handles GET /api/v1/sessions/{sessionID}.

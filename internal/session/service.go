@@ -91,11 +91,12 @@ func (s *Service) Create(ctx context.Context, req CreateSessionRequest) (*Sessio
 		ProviderKey:   req.ProviderKey,
 		AccessToken:   req.AccessToken,
 		Prompt:        req.Prompt,
-		SessionType:      taskType,
+		SessionType:   taskType,
 		CallbackURL:   req.CallbackURL,
 		Config:        req.Config,
 		WorkflowRunID: req.WorkflowRunID,
 		Metadata:      req.Metadata,
+		TenantID:      req.TenantID,
 		Iteration:     1,
 		CreatedAt:     time.Now().UTC(),
 	}
@@ -139,6 +140,15 @@ func (s *Service) Create(ctx context.Context, req CreateSessionRequest) (*Sessio
 	})
 
 	return t, nil
+}
+
+// CountActiveByTenant returns the number of in-flight sessions owned by a tenant.
+// Returns 0 when SQLite is not configured.
+func (s *Service) CountActiveByTenant(ctx context.Context, tenantID string) (int, error) {
+	if s.sqlite == nil {
+		return 0, nil
+	}
+	return s.sqlite.CountActiveByTenant(ctx, tenantID)
 }
 
 // Get retrieves a session from Redis by ID. Sensitive fields are decrypted in memory.
@@ -396,10 +406,10 @@ func (s *Service) GetIterations(ctx context.Context, sessionID string) ([]Iterat
 // Summary is a lightweight view of a session for listing.
 type Summary struct {
 	ID             string                 `json:"id"`
-	Status         Status             `json:"status"`
+	Status         Status                 `json:"status"`
 	RepoURL        string                 `json:"repo_url"`
 	Prompt         string                 `json:"prompt"`
-	SessionType       string                 `json:"session_type,omitempty"`
+	SessionType    string                 `json:"session_type,omitempty"`
 	Iteration      int                    `json:"iteration"`
 	Error          string                 `json:"error,omitempty"`
 	Branch         string                 `json:"branch,omitempty"`
@@ -413,9 +423,10 @@ type Summary struct {
 
 // ListOptions configures session listing.
 type ListOptions struct {
-	Status string // filter by status (empty = all)
-	Limit  int    // max results (0 = 50)
-	Offset int    // pagination offset
+	Status   string // filter by status (empty = all)
+	TenantID string // filter to a tenant's own sessions (empty = no tenant filter)
+	Limit    int    // max results (0 = 50)
+	Offset   int    // pagination offset
 }
 
 // List returns session summaries from SQLite (persistent storage).
@@ -480,7 +491,7 @@ func (s *Service) List(ctx context.Context, opts ListOptions) ([]Summary, int, e
 			Status:         t.Status,
 			RepoURL:        t.RepoURL,
 			Prompt:         truncatePrompt(t.Prompt, 200),
-			SessionType:       t.SessionType,
+			SessionType:    t.SessionType,
 			Iteration:      t.Iteration,
 			Error:          t.Error,
 			Branch:         t.Branch,
@@ -662,9 +673,9 @@ func (s *Service) sessionToHash(t *Session) map[string]interface{} {
 		"repo_url":     t.RepoURL,
 		"prompt":       t.Prompt,
 		"session_type": t.SessionType,
-		"iteration":  t.Iteration,
-		"created_at": t.CreatedAt.Format(time.RFC3339Nano),
-		"updated_at": t.CreatedAt.Format(time.RFC3339Nano),
+		"iteration":    t.Iteration,
+		"created_at":   t.CreatedAt.Format(time.RFC3339Nano),
+		"updated_at":   t.CreatedAt.Format(time.RFC3339Nano),
 	}
 
 	if t.ProviderKey != "" {
@@ -678,6 +689,9 @@ func (s *Service) sessionToHash(t *Session) map[string]interface{} {
 	}
 	if t.WorkflowRunID != "" {
 		fields["workflow_run_id"] = t.WorkflowRunID
+	}
+	if t.TenantID != "" {
+		fields["tenant_id"] = t.TenantID
 	}
 	if t.TraceID != "" {
 		fields["trace_id"] = t.TraceID
@@ -704,13 +718,14 @@ func (s *Service) hashToSession(fields map[string]string) *Session {
 		RepoURL:       fields["repo_url"],
 		ProviderKey:   fields["provider_key"],
 		Prompt:        fields["prompt"],
-		SessionType:      fields["session_type"],
+		SessionType:   fields["session_type"],
 		CallbackURL:   fields["callback_url"],
 		CurrentPrompt: fields["current_prompt"],
 		Branch:        fields["branch"],
 		PRURL:         fields["pr_url"],
 		Error:         fields["error"],
 		WorkflowRunID: fields["workflow_run_id"],
+		TenantID:      fields["tenant_id"],
 		TraceID:       fields["trace_id"],
 	}
 
@@ -753,11 +768,14 @@ type CreateSessionRequest struct {
 	ProviderKey   string            `json:"provider_key,omitempty"`
 	AccessToken   string            `json:"access_token,omitempty"`
 	Prompt        string            `json:"prompt" validate:"max=102400"`
-	SessionType      string            `json:"session_type,omitempty"`
+	SessionType   string            `json:"session_type,omitempty"`
 	CallbackURL   string            `json:"callback_url,omitempty" validate:"omitempty,url"`
-	Config        *Config       `json:"config,omitempty"`
+	Config        *Config           `json:"config,omitempty"`
 	WorkflowRunID string            `json:"workflow_run_id,omitempty"`
 	Metadata      map[string]string `json:"metadata,omitempty"`
+	// TenantID is set server-side (never decoded from client JSON) by the session
+	// handler when the request is authenticated as a subscription tenant.
+	TenantID string `json:"-"`
 }
 
 // FindByPR finds the most recent active session for a given repo + PR/MR number.

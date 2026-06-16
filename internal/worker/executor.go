@@ -22,6 +22,7 @@ import (
 	"github.com/freema/codeforge/internal/prompt"
 	"github.com/freema/codeforge/internal/review"
 	"github.com/freema/codeforge/internal/session"
+	"github.com/freema/codeforge/internal/tenant"
 	gitpkg "github.com/freema/codeforge/internal/tool/git"
 	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/tool/runner"
@@ -45,17 +46,44 @@ type ExecutorConfig struct {
 	ProviderDomains map[string]string // custom domain → provider mappings
 }
 
+// PRCreator creates a PR/MR from a completed session's workspace.
+// Implemented by *session.PRService; injected via SetPRCreator to avoid a
+// constructor cycle (PRService is built after the executor in main.go).
+type PRCreator interface {
+	CreatePR(ctx context.Context, sessionID string, req session.CreatePRRequest) (*session.CreatePRResponse, error)
+}
+
+// UsageLogger records per-tenant resource usage for subscription sessions.
+// Implemented by *tenant.Store; optional (nil = no per-tenant usage tracking).
+type UsageLogger interface {
+	LogUsage(ctx context.Context, log *tenant.UsageLog) error
+}
+
 // Executor orchestrates the full session lifecycle: clone → run CLI → diff → report.
 type Executor struct {
-	sessionService  *session.Service
-	cliRegistry  *runner.Registry
-	streamer     *Streamer
-	webhook      *webhook.Sender
-	keyResolver  *keys.Resolver
-	mcpInstaller *mcp.Installer
-	toolResolver *tools.Resolver
-	workspaceMgr *workspace.Manager
-	cfg          ExecutorConfig
+	sessionService *session.Service
+	cliRegistry    *runner.Registry
+	streamer       *Streamer
+	webhook        *webhook.Sender
+	keyResolver    *keys.Resolver
+	mcpInstaller   *mcp.Installer
+	toolResolver   *tools.Resolver
+	workspaceMgr   *workspace.Manager
+	prCreator      PRCreator   // optional, nil = auto-PR disabled
+	usageLogger    UsageLogger // optional, nil = no per-tenant usage tracking
+	cfg            ExecutorConfig
+}
+
+// SetPRCreator wires the PR creator used for auto-PR-enabled sessions (workflows).
+// Optional — when unset, AutoCreatePR is a no-op.
+func (e *Executor) SetPRCreator(pc PRCreator) {
+	e.prCreator = pc
+}
+
+// SetUsageLogger wires per-tenant usage tracking. Optional — when unset,
+// subscription usage is not recorded.
+func (e *Executor) SetUsageLogger(ul UsageLogger) {
+	e.usageLogger = ul
 }
 
 // NewExecutor creates a new session executor.
@@ -71,15 +99,15 @@ func NewExecutor(
 	cfg ExecutorConfig,
 ) *Executor {
 	return &Executor{
-		sessionService:  sessionService,
-		cliRegistry:  cliRegistry,
-		streamer:     streamer,
-		webhook:      webhook,
-		keyResolver:  keyResolver,
-		mcpInstaller: mcpInstaller,
-		toolResolver: toolResolver,
-		workspaceMgr: workspaceMgr,
-		cfg:          cfg,
+		sessionService: sessionService,
+		cliRegistry:    cliRegistry,
+		streamer:       streamer,
+		webhook:        webhook,
+		keyResolver:    keyResolver,
+		mcpInstaller:   mcpInstaller,
+		toolResolver:   toolResolver,
+		workspaceMgr:   workspaceMgr,
+		cfg:            cfg,
 	}
 }
 
@@ -156,7 +184,7 @@ func (e *Executor) Execute(ctx context.Context, t *session.Session) {
 	}
 
 	// Phase 4: finalize
-	e.completeSession(ctx, t, result, workDir, startTime, log)
+	e.completeSession(ctx, t, result, workDir, startTime, false, log)
 }
 
 // resolveTimeout determines the effective session timeout in seconds.
@@ -273,7 +301,14 @@ func (e *Executor) setupMCP(ctx context.Context, t *session.Session, workDir str
 	}
 	taskMCPServers = append(taskMCPServers, toolMCPServers...)
 
-	if err := e.mcpInstaller.Setup(ctx, workDir, t.RepoURL, taskMCPServers); err != nil {
+	// Resolve the CLI so the installer writes the config where this CLI reads it
+	// (Cursor uses .cursor/cli.json, the others use .mcp.json).
+	cli := ""
+	if t.Config != nil {
+		cli = t.Config.CLI
+	}
+
+	if err := e.mcpInstaller.Setup(ctx, workDir, t.RepoURL, cli, taskMCPServers); err != nil {
 		if len(taskMCPServers) > 0 {
 			// Fail-closed: MCP servers were configured but install failed
 			return "", fmt.Errorf("MCP setup failed: %w", err)
@@ -282,7 +317,7 @@ func (e *Executor) setupMCP(ctx context.Context, t *session.Session, workDir str
 		return "", nil
 	}
 
-	cfgPath := filepath.Join(workDir, ".mcp.json")
+	cfgPath := mcp.ConfigPath(workDir, cli)
 	if _, statErr := os.Stat(cfgPath); statErr == nil {
 		log.Info("MCP config written", "path", cfgPath)
 		return cfgPath, nil
@@ -314,7 +349,7 @@ func (e *Executor) handleTimeout(ctx context.Context, t *session.Session, result
 	}
 
 	// Complete normally — this allows the user to instruct or create PR
-	e.completeSession(finalCtx, t, result, workDir, startTime, log)
+	e.completeSession(finalCtx, t, result, workDir, startTime, true, log)
 }
 
 // handleRunError classifies the CLI run error and calls failSession with the appropriate message.
@@ -329,7 +364,7 @@ func (e *Executor) handleRunError(ctx context.Context, t *session.Session, err e
 
 // completeSession handles post-CLI success: changes, result storage, status transition,
 // iteration record, events, pr_review handling, and webhook delivery.
-func (e *Executor) completeSession(ctx context.Context, t *session.Session, result *runner.RunResult, workDir string, startTime time.Time, log *slog.Logger) {
+func (e *Executor) completeSession(ctx context.Context, t *session.Session, result *runner.RunResult, workDir string, startTime time.Time, timedOut bool, log *slog.Logger) {
 	changes, err := gitpkg.CalculateChanges(ctx, workDir)
 	if err != nil {
 		log.Warn("failed to calculate changes", "error", err)
@@ -402,13 +437,141 @@ func (e *Executor) completeSession(ctx context.Context, t *session.Session, resu
 		}
 	}
 
-	e.emitOrLog(e.streamer.EmitDone(ctx, t.ID, session.StatusCompleted, changes), log, "task_done", t.ID)
+	// Record per-tenant usage for subscription sessions (best-effort).
+	e.maybeLogUsage(ctx, t, usage, log)
+
+	// Auto-create a PR/MR when the session config requests it (workflow fix→PR pipeline).
+	// Done BEFORE the "done" event/webhook so the terminal status they report is the
+	// real one (pr_created) — live SSE clients close on "done", so post-done work is
+	// invisible to them.
+	finalStatus := session.StatusCompleted
+	if e.maybeAutoCreatePR(ctx, t, result, changes, timedOut, log) {
+		finalStatus = session.StatusPRCreated
+	}
+
+	e.emitOrLog(e.streamer.EmitDone(ctx, t.ID, finalStatus, changes), log, "task_done", t.ID)
 
 	if t.CallbackURL != "" && e.webhook != nil {
 		e.sendWebhook(ctx, t, result.Output, changes, usage, log)
 	}
 
-	log.Info("session completed", "duration", result.Duration)
+	log.Info("session completed", "duration", result.Duration, "final_status", finalStatus)
+}
+
+// maybeLogUsage records a usage_logs row for the tenant that owns this session.
+// The tenant id is stamped into session metadata at creation time for subscription
+// sessions. Best-effort: failures are logged, never fatal.
+func (e *Executor) maybeLogUsage(ctx context.Context, t *session.Session, usage *session.UsageInfo, log *slog.Logger) {
+	if e.usageLogger == nil || usage == nil {
+		return
+	}
+	tenantID := t.TenantID
+	if tenantID == "" {
+		return
+	}
+
+	cli := defaultCLI
+	model := ""
+	if t.Config != nil {
+		if t.Config.CLI != "" {
+			cli = t.Config.CLI
+		}
+		model = t.Config.AIModel
+	}
+	if model == "" {
+		model = e.cfg.DefaultModels[cli]
+	}
+
+	if err := e.usageLogger.LogUsage(ctx, &tenant.UsageLog{
+		TenantID:     tenantID,
+		SessionID:    t.ID,
+		CLI:          cli,
+		Model:        model,
+		InputTokens:  usage.InputTokens,
+		OutputTokens: usage.OutputTokens,
+	}); err != nil {
+		log.Warn("failed to log tenant usage", "tenant_id", tenantID, "error", err)
+	}
+}
+
+// maybeAutoCreatePR creates a PR/MR for sessions that opted in via Config.AutoCreatePR.
+// Used by workflows (e.g. sentry-fixer) to finish the fix→PR pipeline without a manual
+// create-pr call. Returns true when a PR was actually created. Best-effort: failures
+// are logged and streamed, never fail the session.
+func (e *Executor) maybeAutoCreatePR(ctx context.Context, t *session.Session, result *runner.RunResult, changes *gitpkg.ChangesSummary, timedOut bool, log *slog.Logger) bool {
+	if e.prCreator == nil || t.Config == nil || !t.Config.AutoCreatePR {
+		return false
+	}
+
+	// Don't auto-open a PR from partial work left by a timeout — leave the session
+	// completed so a human can review, instruct, or create the PR explicitly.
+	if timedOut {
+		log.Info("auto-pr: session timed out, skipping PR creation")
+		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "auto_pr_skipped", map[string]string{
+			"reason": "timed out",
+		}), log, "auto_pr_skipped", t.ID)
+		return false
+	}
+
+	// Already has a PR (e.g. follow-up instruct iteration) — don't open a duplicate.
+	// The follow-up commits are already on the branch via the workspace; a human can
+	// push them with POST /sessions/:id/push.
+	if t.PRNumber != 0 || t.Branch != "" {
+		log.Info("auto-pr: session already has a PR, skipping duplicate", "pr_number", t.PRNumber, "branch", t.Branch)
+		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "auto_pr_skipped", map[string]string{
+			"reason": "pr already exists",
+		}), log, "auto_pr_skipped", t.ID)
+		return false
+	}
+
+	if changes == nil || (changes.FilesModified == 0 && changes.FilesCreated == 0 && changes.FilesDeleted == 0) {
+		log.Info("auto-pr: no changes produced, skipping PR creation")
+		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "auto_pr_skipped", map[string]string{
+			"reason": "no changes",
+		}), log, "auto_pr_skipped", t.ID)
+		return false
+	}
+
+	e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "auto_pr_starting", nil), log, "auto_pr_starting", t.ID)
+
+	req := session.CreatePRRequest{
+		Title:        t.Config.PRTitle,
+		Description:  buildAutoPRDescription(result.Output),
+		TargetBranch: t.Config.TargetBranch,
+	}
+
+	resp, err := e.prCreator.CreatePR(ctx, t.ID, req)
+	if err != nil {
+		log.Error("auto-pr: PR creation failed", "error", err)
+		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "auto_pr_failed", map[string]string{
+			"error": err.Error(),
+		}), log, "auto_pr_failed", t.ID)
+		return false
+	}
+
+	log.Info("auto-pr: PR created", "pr_url", resp.PRURL, "branch", resp.Branch)
+	e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "auto_pr_created", map[string]interface{}{
+		"pr_url":    resp.PRURL,
+		"pr_number": resp.PRNumber,
+		"branch":    resp.Branch,
+	}), log, "auto_pr_created", t.ID)
+	return true
+}
+
+// buildAutoPRDescription turns the CLI's final summary into a human-readable PR body.
+// The session prompt already instructs the model to end with a summary of what it
+// changed, so the final output is the most useful description — far better than the
+// raw prompt or error text. Capped to keep PR bodies reasonable.
+func buildAutoPRDescription(summary string) string {
+	const maxLen = 6000
+	body := strings.TrimSpace(summary)
+	if body == "" {
+		return "Automated changes by CodeForge."
+	}
+	if len(body) > maxLen {
+		body = body[:maxLen] + "\n\n_(summary truncated)_"
+	}
+	return body + "\n\n---\n_Created automatically by a CodeForge workflow._"
 }
 
 func (e *Executor) cloneStep(ctx context.Context, t *session.Session, workDir string, log *slog.Logger) error {

@@ -42,6 +42,7 @@ func openTestDB(t *testing.T) *sql.DB {
 			pr_url          TEXT NOT NULL DEFAULT '',
 			workflow_run_id TEXT NOT NULL DEFAULT '',
 			trace_id        TEXT NOT NULL DEFAULT '',
+			tenant_id       TEXT NOT NULL DEFAULT '',
 			created_at      TEXT NOT NULL,
 			started_at      TEXT,
 			finished_at     TEXT,
@@ -83,6 +84,45 @@ func makeSession(id string) *Session {
 		Iteration:   1,
 		TraceID:     "trace-123",
 		CreatedAt:   now,
+	}
+}
+
+func TestSQLiteStore_ListByTenant(t *testing.T) {
+	db := openTestDB(t)
+	store := NewSQLiteStore(db)
+	ctx := context.Background()
+
+	mk := func(id, tenantID string) *Session {
+		s := makeSession(id)
+		s.TenantID = tenantID
+		return s
+	}
+	for _, s := range []*Session{mk("t1-a", "tenant-1"), mk("t1-b", "tenant-1"), mk("t2-a", "tenant-2"), mk("op", "")} {
+		if err := store.Save(ctx, s); err != nil {
+			t.Fatalf("save %s: %v", s.ID, err)
+		}
+	}
+
+	got, total, err := store.List(ctx, ListOptions{TenantID: "tenant-1"})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if total != 2 || len(got) != 2 {
+		t.Fatalf("tenant-1 list: total=%d len=%d, want 2 (must not leak other tenants/operator sessions)", total, len(got))
+	}
+	for _, s := range got {
+		if s.ID != "t1-a" && s.ID != "t1-b" {
+			t.Errorf("unexpected session %q in tenant-1 list", s.ID)
+		}
+	}
+
+	if _, totalAll, _ := store.List(ctx, ListOptions{}); totalAll != 4 {
+		t.Errorf("unfiltered total = %d, want 4", totalAll)
+	}
+
+	g, err := store.Get(ctx, "t1-a")
+	if err != nil || g.TenantID != "tenant-1" {
+		t.Errorf("Get TenantID = %q (err %v), want tenant-1", g.TenantID, err)
 	}
 }
 

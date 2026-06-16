@@ -22,8 +22,8 @@ import (
 	"github.com/freema/codeforge/internal/server"
 	"github.com/freema/codeforge/internal/server/handlers"
 	"github.com/freema/codeforge/internal/session"
-	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/tenant"
+	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/tool/runner"
 	"github.com/freema/codeforge/internal/tools"
 	"github.com/freema/codeforge/internal/tracing"
@@ -236,6 +236,9 @@ func run() error {
 		ProviderDomains: cfg.Git.ProviderDomains,
 	}, aiClient)
 
+	// Wire the PR service into the executor for auto-PR-enabled sessions (workflows).
+	executor.SetPRCreator(prService)
+
 	// Initialize workspace cleaner
 	wsCleaner := workspace.NewCleaner(workspaceMgr, sessionService, workspace.CleanerConfig{
 		Interval:              10 * time.Minute,
@@ -262,7 +265,13 @@ func run() error {
 	tenantService := tenant.NewService(tenantStore, cryptoSvc)
 	tenantHandler := handlers.NewTenantHandler(tenantService, cryptoSvc)
 
-	srv := server.New(cfg, rdb, sqliteDB, sessionService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowConfigStore, cliRegistry, cliConfigs, webhookReceiverHandler, tenantHandler, version)
+	// Wire per-tenant usage tracking into the executor — only when the subscription
+	// model is enabled, so a stray client-supplied tenant_id can never trigger logging.
+	if cfg.Subscription.Enabled {
+		executor.SetUsageLogger(tenantStore)
+	}
+
+	srv := server.New(cfg, rdb, sqliteDB, sessionService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowConfigStore, cliRegistry, cliConfigs, webhookReceiverHandler, tenantHandler, tenantService, version)
 
 	// Start background services
 	appCtx, appCancel := context.WithCancel(context.Background())

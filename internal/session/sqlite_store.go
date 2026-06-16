@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/freema/codeforge/internal/apperror"
@@ -35,13 +36,13 @@ func (s *SQLiteStore) Save(ctx context.Context, t *Session) error {
 			result, error, changes_json, usage_json,
 			iteration, current_prompt,
 			branch, pr_number, pr_url,
-			workflow_run_id, trace_id,
+			workflow_run_id, trace_id, tenant_id,
 			created_at, started_at, finished_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?,
 			?, ?, ?, ?,
 			?, ?,
 			?, ?, ?,
-			?, ?,
+			?, ?, ?,
 			?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 			status = excluded.status,
@@ -69,7 +70,7 @@ func (s *SQLiteStore) Save(ctx context.Context, t *Session) error {
 		t.Result, t.Error, changesJSON, usageJSON,
 		t.Iteration, t.CurrentPrompt,
 		t.Branch, t.PRNumber, t.PRURL,
-		t.WorkflowRunID, t.TraceID,
+		t.WorkflowRunID, t.TraceID, t.TenantID,
 		t.CreatedAt.Format(time.RFC3339Nano), nullableTime(t.StartedAt), nullableTime(t.FinishedAt), now,
 	)
 	if err != nil {
@@ -196,7 +197,7 @@ func (s *SQLiteStore) Get(ctx context.Context, sessionID string) (*Session, erro
 			result, error, changes_json, usage_json,
 			iteration, current_prompt,
 			branch, pr_number, pr_url,
-			workflow_run_id, trace_id, created_at, started_at, finished_at, updated_at,
+			workflow_run_id, trace_id, tenant_id, created_at, started_at, finished_at, updated_at,
 			review_result_json
 		 FROM sessions WHERE id = ?`,
 		sessionID,
@@ -205,7 +206,7 @@ func (s *SQLiteStore) Get(ctx context.Context, sessionID string) (*Session, erro
 		&t.Result, &t.Error, &changesJSON, &usageJSON,
 		&t.Iteration, &t.CurrentPrompt,
 		&t.Branch, &t.PRNumber, &t.PRURL,
-		&t.WorkflowRunID, &t.TraceID, &createdAt, &startedAt, &finishedAt, &updatedAt,
+		&t.WorkflowRunID, &t.TraceID, &t.TenantID, &createdAt, &startedAt, &finishedAt, &updatedAt,
 		&reviewJSON,
 	)
 	if err == sql.ErrNoRows {
@@ -282,33 +283,30 @@ func (s *SQLiteStore) List(ctx context.Context, opts ListOptions) ([]Summary, in
 		limit = 200
 	}
 
-	// Count total
-	var countQuery string
-	var countArgs []interface{}
+	// Build optional filters (status, tenant ownership).
+	var where []string
+	var filterArgs []interface{}
 	if opts.Status != "" {
-		countQuery = `SELECT COUNT(*) FROM sessions WHERE status = ?`
-		countArgs = []interface{}{opts.Status}
-	} else {
-		countQuery = `SELECT COUNT(*) FROM sessions`
+		where = append(where, "status = ?")
+		filterArgs = append(filterArgs, opts.Status)
+	}
+	if opts.TenantID != "" {
+		where = append(where, "tenant_id = ?")
+		filterArgs = append(filterArgs, opts.TenantID)
+	}
+	whereClause := ""
+	if len(where) > 0 {
+		whereClause = " WHERE " + strings.Join(where, " AND ")
 	}
 
 	var total int
-	if err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sessions"+whereClause, filterArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("counting sessions: %w", err)
 	}
 
-	// Query sessions
-	var query string
-	var args []interface{}
-	if opts.Status != "" {
-		query = `SELECT id, status, repo_url, prompt, session_type, iteration, error, branch, pr_url, workflow_run_id, changes_json, created_at, started_at, finished_at
-			FROM sessions WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
-		args = []interface{}{opts.Status, limit, opts.Offset}
-	} else {
-		query = `SELECT id, status, repo_url, prompt, session_type, iteration, error, branch, pr_url, workflow_run_id, changes_json, created_at, started_at, finished_at
-			FROM sessions ORDER BY created_at DESC LIMIT ? OFFSET ?`
-		args = []interface{}{limit, opts.Offset}
-	}
+	const cols = `id, status, repo_url, prompt, session_type, iteration, error, branch, pr_url, workflow_run_id, changes_json, created_at, started_at, finished_at`
+	query := "SELECT " + cols + " FROM sessions" + whereClause + " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	args := append(append([]interface{}{}, filterArgs...), limit, opts.Offset)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -349,6 +347,21 @@ func (s *SQLiteStore) List(ctx context.Context, opts ListOptions) ([]Summary, in
 		sessions = append(sessions, ts)
 	}
 	return sessions, total, rows.Err()
+}
+
+// CountActiveByTenant returns the number of in-flight (non-terminal) sessions
+// owned by a tenant — used to enforce the per-tier concurrency limit.
+func (s *SQLiteStore) CountActiveByTenant(ctx context.Context, tenantID string) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sessions
+		 WHERE tenant_id = ? AND status NOT IN ('completed', 'failed', 'pr_created')`,
+		tenantID,
+	).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("counting active sessions: %w", err)
+	}
+	return n, nil
 }
 
 // FindByPR finds the most recent session for a given repo + PR/MR number.

@@ -121,7 +121,7 @@ func TestReview_InvalidCLI(t *testing.T) {
 	cliRegistry := runner.NewRegistry("claude-code")
 	cliRegistry.Register("claude-code", runner.NewClaudeRunner("claude"), runner.RunnerMeta{AIProvider: "anthropic"})
 
-	h := NewSessionHandler(nil, nil, nil, cliRegistry, nil, nil)
+	h := NewSessionHandler(nil, nil, nil, cliRegistry, nil, nil, nil)
 
 	r := chi.NewRouter()
 	r.Post("/api/v1/sessions/{sessionID}/review", h.Review)

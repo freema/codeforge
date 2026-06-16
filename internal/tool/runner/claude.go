@@ -17,32 +17,46 @@ import (
 )
 
 // ClaudeRunner executes Claude Code CLI.
+//
+// The same type backs both the standard "claude-code" runner and the
+// "claude-agent" runner (--bare mode): they share one binary and one execution
+// path, differing only by extraArgs. This keeps the two from silently diverging
+// (e.g. when the gosu privilege-drop logic is updated).
 type ClaudeRunner struct {
 	binaryPath string
+	extraArgs  []string // extra CLI flags injected on every run (e.g. ["--bare"] for agent mode)
+	label      string   // identifier used in log messages ("claude", "claude-agent")
 }
 
 // NewClaudeRunner creates a runner for the Claude Code CLI.
-// If binaryPath contains a directory separator, it is resolved to an
-// absolute path so it remains valid when cmd.Dir is set to the session
-// workspace. Bare command names (e.g. "claude") are left as-is so
-// exec.Command looks them up via PATH.
 func NewClaudeRunner(binaryPath string) *ClaudeRunner {
+	return newClaudeRunner(binaryPath, "claude", nil)
+}
+
+// newClaudeRunner is the shared constructor for ClaudeRunner-backed runners.
+// If binaryPath contains a directory separator, it is resolved to an absolute
+// path so it remains valid when cmd.Dir is set to the session workspace. Bare
+// command names (e.g. "claude") are left as-is so exec.Command looks them up via PATH.
+func newClaudeRunner(binaryPath, label string, extraArgs []string) *ClaudeRunner {
 	if strings.Contains(binaryPath, string(filepath.Separator)) {
 		if abs, err := filepath.Abs(binaryPath); err == nil {
 			binaryPath = abs
 		}
 	}
-	return &ClaudeRunner{binaryPath: binaryPath}
+	return &ClaudeRunner{binaryPath: binaryPath, label: label, extraArgs: extraArgs}
 }
 
-// Run executes Claude Code with stream-json output, calling OnEvent for each line.
-func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
+// buildArgs constructs the claude CLI argument list for a run. Extracted so the
+// flag composition (including extraArgs like --bare) is unit-testable without
+// executing the binary.
+func (c *ClaudeRunner) buildArgs(opts RunOptions) []string {
 	args := []string{
 		"-p", opts.Prompt,
 		"--output-format", "stream-json",
 		"--verbose",
 		"--permission-mode", "bypassPermissions",
 	}
+	args = append(args, c.extraArgs...)
 	if opts.MCPConfigPath != "" {
 		args = append(args, "--mcp-config", opts.MCPConfigPath)
 	}
@@ -61,6 +75,12 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 	if opts.AllowedTools != "" {
 		args = append(args, "--allowedTools", opts.AllowedTools)
 	}
+	return args
+}
+
+// Run executes Claude Code with stream-json output, calling OnEvent for each line.
+func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
+	args := c.buildArgs(opts)
 
 	// Resolve the binary to its real path. If it's a Node.js script (shebang),
 	// run it via "node" directly to avoid fork/exec ENOENT issues that can occur
@@ -76,7 +96,7 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 		}
 		// If the target is a .js file, invoke via node to bypass shebang
 		if strings.HasSuffix(resolved, ".js") {
-			slog.Debug("claude binary is a Node.js script, using node interpreter", "script", resolved)
+			slog.Debug(c.label+" binary is a Node.js script, using node interpreter", "script", resolved)
 			cmdArgs = append([]string{resolved}, args...)
 			binary = "node"
 		}
@@ -100,14 +120,14 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 				gosuArgs := append([]string{u.Username, cmd.Path}, cmd.Args[1:]...)
 				cmd = exec.CommandContext(ctx, gosuPath, gosuArgs...)
 				cmd.Dir = opts.WorkDir
-				slog.Debug("dropping privileges for claude CLI via gosu", "uid", uid, "gid", gid)
+				slog.Debug("dropping privileges for "+c.label+" CLI via gosu", "uid", uid, "gid", gid)
 			} else {
 				// Fallback: use SysProcAttr.Credential directly
 				cmd.SysProcAttr = &syscall.SysProcAttr{
 					Setpgid:    true,
 					Credential: &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)},
 				}
-				slog.Debug("dropping privileges for claude CLI via credential", "uid", uid, "gid", gid)
+				slog.Debug("dropping privileges for "+c.label+" CLI via credential", "uid", uid, "gid", gid)
 			}
 
 			// Filter out HOME/SHELL/USER from root env and replace them
@@ -146,10 +166,10 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 	startTime := time.Now()
 
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("starting claude CLI: %w", err)
+		return nil, fmt.Errorf("starting %s CLI: %w", c.label, err)
 	}
 
-	slog.Info("claude CLI started", "pid", cmd.Process.Pid, "work_dir", opts.WorkDir)
+	slog.Info(c.label+" CLI started", "pid", cmd.Process.Pid, "work_dir", opts.WorkDir)
 
 	// Read stream-json: each line is a complete JSON object
 	scanner := bufio.NewScanner(stdout)
@@ -207,15 +227,15 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 	}
 
 	if err != nil {
-		slog.Warn("claude CLI exited with error",
+		slog.Warn(c.label+" CLI exited with error",
 			"exit_code", result.ExitCode,
 			"stderr", stderrBuf.String(),
 			"duration", duration,
 		)
-		return result, fmt.Errorf("claude CLI exited with code %d: %w", result.ExitCode, err)
+		return result, fmt.Errorf("%s CLI exited with code %d: %w", c.label, result.ExitCode, err)
 	}
 
-	slog.Info("claude CLI completed",
+	slog.Info(c.label+" CLI completed",
 		"exit_code", result.ExitCode,
 		"duration", duration,
 		"input_tokens", inputTokens,

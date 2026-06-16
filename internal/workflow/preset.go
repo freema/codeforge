@@ -78,6 +78,7 @@ func BuildSessionRequest(ctx context.Context, def WorkflowDefinition, params map
 	sourceBranch, _ := Render(cfg.SourceBranch, tctx)
 	targetBranch, _ := Render(cfg.TargetBranch, tctx)
 	outputMode, _ := Render(cfg.OutputMode, tctx)
+	prTitle, _ := Render(cfg.PRTitle, tctx)
 
 	// Decode tools and MCP servers from raw JSON
 	var sessionTools []tools.SessionTool
@@ -121,7 +122,8 @@ func BuildSessionRequest(ctx context.Context, def WorkflowDefinition, params map
 	var sessionConfig *session.Config
 	hasConfig := cli != "" || aiModel != "" || sourceBranch != "" ||
 		targetBranch != "" || cfg.PRNumber > 0 || outputMode != "" ||
-		len(sessionTools) > 0 || len(mcpServers) > 0 || timeoutSeconds > 0
+		len(sessionTools) > 0 || len(mcpServers) > 0 || timeoutSeconds > 0 ||
+		cfg.AutoCreatePR || prTitle != ""
 	if hasConfig {
 		sessionConfig = &session.Config{
 			CLI:            cli,
@@ -133,6 +135,8 @@ func BuildSessionRequest(ctx context.Context, def WorkflowDefinition, params map
 			Tools:          sessionTools,
 			MCPServers:     mcpServers,
 			TimeoutSeconds: timeoutSeconds,
+			AutoCreatePR:   cfg.AutoCreatePR,
+			PRTitle:        prTitle,
 		}
 	}
 

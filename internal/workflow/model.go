@@ -45,6 +45,11 @@ type SessionStepConfig struct {
 	PRNumber   int    `json:"pr_number,omitempty"`
 	OutputMode string `json:"output_mode,omitempty"`
 
+	// Auto-PR — when true, the session auto-creates a PR/MR on successful completion
+	// with changes. Lets a single-session workflow complete the fix→PR pipeline.
+	AutoCreatePR bool   `json:"auto_create_pr,omitempty"`
+	PRTitle      string `json:"pr_title,omitempty"`
+
 	// Tool/MCP overrides
 	Tools      json.RawMessage `json:"tools,omitempty"`
 	MCPServers json.RawMessage `json:"mcp_servers,omitempty"`

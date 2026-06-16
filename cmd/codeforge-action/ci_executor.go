@@ -17,6 +17,9 @@ import (
 	"github.com/freema/codeforge/internal/tool/runner"
 )
 
+// defaultBranch is the fallback base branch when none is detected from CI context.
+const defaultBranch = "main"
+
 // CIExecutor runs a single CI session — no Redis, no queue, no HTTP server.
 type CIExecutor struct {
 	cfg Config
@@ -219,7 +222,7 @@ func (e *CIExecutor) buildPRReviewPrompt(ciCtx *CIContext) (string, error) {
 	baseBranch := ciCtx.BaseBranch
 
 	if baseBranch == "" {
-		baseBranch = "main"
+		baseBranch = defaultBranch
 	}
 
 	return prompt.RenderPRReviewPrompt(prompt.PRReviewData{
@@ -233,7 +236,7 @@ func (e *CIExecutor) buildPRReviewPrompt(ciCtx *CIContext) (string, error) {
 func (e *CIExecutor) buildCodeReviewPrompt(ciCtx *CIContext) (string, error) {
 	baseBranch := ciCtx.BaseBranch
 	if baseBranch == "" {
-		baseBranch = "main"
+		baseBranch = defaultBranch
 	}
 
 	userPrompt := e.cfg.Prompt

@@ -2,8 +2,10 @@ package tenant
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"fmt"
+	"math/big"
 	"time"
 )
 
@@ -90,8 +92,11 @@ func (s *Store) DeleteTenant(ctx context.Context, id string) error {
 	return nil
 }
 
-// LogUsage records a usage entry.
+// LogUsage records a usage entry. Generates an ID if one is not set.
 func (s *Store) LogUsage(ctx context.Context, log *UsageLog) error {
+	if log.ID == "" {
+		log.ID = generateID()
+	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO usage_logs (id, tenant_id, session_id, cli, model, input_tokens, output_tokens, estimated_cost_usd)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -118,12 +123,14 @@ func (s *Store) GetUsageSummary(ctx context.Context, tenantID string, since time
 	return &summary, nil
 }
 
-// CountDailySessions returns the number of sessions a tenant ran today.
+// CountDailySessions returns the number of DISTINCT sessions a tenant ran today.
+// Counting distinct session_id (not rows) means a multi-turn session — which logs
+// usage once per iteration — counts as a single session against the daily quota.
 func (s *Store) CountDailySessions(ctx context.Context, tenantID string) (int, error) {
 	var count int
 	today := time.Now().UTC().Format("2006-01-02")
 	err := s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM usage_logs
+		SELECT COUNT(DISTINCT session_id) FROM usage_logs
 		WHERE tenant_id = ? AND created_at >= ?`,
 		tenantID, today+"T00:00:00.000",
 	).Scan(&count)
@@ -187,19 +194,66 @@ func (s *Store) DeleteKeyPoolEntry(ctx context.Context, id string) error {
 }
 
 // GetActiveKeyForProvider returns a weighted-random active key for a provider.
+// Selection is proportional to each entry's weight (weight <= 0 is treated as 1),
+// implementing load balancing across the operator's managed keys.
 func (s *Store) GetActiveKeyForProvider(ctx context.Context, provider string) (*KeyPoolEntry, error) {
-	var e KeyPoolEntry
-	var createdAt string
-	err := s.db.QueryRowContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, provider, encrypted_token, weight, active, created_at
-		FROM key_pool WHERE provider = ? AND active = 1
-		ORDER BY RANDOM() LIMIT 1`, provider,
-	).Scan(&e.ID, &e.Provider, &e.EncryptedToken, &e.Weight, &e.Active, &createdAt)
+		FROM key_pool WHERE provider = ? AND active = 1`, provider)
 	if err != nil {
-		return nil, fmt.Errorf("getting active key for provider %s: %w", provider, err)
+		return nil, fmt.Errorf("getting active keys for provider %s: %w", provider, err)
 	}
-	e.CreatedAt, _ = time.Parse("2006-01-02T15:04:05.000", createdAt)
-	return &e, nil
+	defer rows.Close()
+
+	var entries []*KeyPoolEntry
+	totalWeight := 0
+	for rows.Next() {
+		var e KeyPoolEntry
+		var createdAt string
+		if err := rows.Scan(&e.ID, &e.Provider, &e.EncryptedToken, &e.Weight, &e.Active, &createdAt); err != nil {
+			return nil, fmt.Errorf("scanning key pool entry: %w", err)
+		}
+		e.CreatedAt, _ = time.Parse("2006-01-02T15:04:05.000", createdAt)
+		totalWeight += effectiveWeight(e.Weight)
+		entries = append(entries, &e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("no active key for provider %s", provider)
+	}
+
+	// Weighted random pick.
+	r := randIntn(totalWeight)
+	for _, e := range entries {
+		w := effectiveWeight(e.Weight)
+		if r < w {
+			return e, nil
+		}
+		r -= w
+	}
+	return entries[len(entries)-1], nil
+}
+
+func effectiveWeight(w int) int {
+	if w <= 0 {
+		return 1
+	}
+	return w
+}
+
+// randIntn returns a cryptographically-sourced random int in [0, n).
+// Used for key-pool load balancing; falls back to 0 on the (unreachable) error path.
+func randIntn(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	v, err := rand.Int(rand.Reader, big.NewInt(int64(n)))
+	if err != nil {
+		return 0
+	}
+	return int(v.Int64())
 }
 
 func (s *Store) scanTenant(row *sql.Row) (*Tenant, error) {

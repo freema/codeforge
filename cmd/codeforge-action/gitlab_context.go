@@ -33,7 +33,7 @@ func ParseGitLabContext() (*CIContext, error) {
 	}
 
 	ctx.PRBranch = os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_NAME")
-	ctx.BaseBranch = envDefault("CI_MERGE_REQUEST_TARGET_BRANCH_NAME", envDefault("CI_DEFAULT_BRANCH", "main"))
+	ctx.BaseBranch = envDefault("CI_MERGE_REQUEST_TARGET_BRANCH_NAME", envDefault("CI_DEFAULT_BRANCH", defaultBranch))
 
 	if sha := os.Getenv("CI_MERGE_REQUEST_DIFF_BASE_SHA"); sha != "" {
 		// This is the merge base, prefer the commit SHA for head

@@ -104,7 +104,7 @@ func ParseGitHubContext() (*CIContext, error) {
 
 	// Fallback branch detection
 	if ctx.BaseBranch == "" {
-		ctx.BaseBranch = envDefault("GITHUB_BASE_REF", "main")
+		ctx.BaseBranch = envDefault("GITHUB_BASE_REF", defaultBranch)
 	}
 	if ctx.PRBranch == "" {
 		ctx.PRBranch = os.Getenv("GITHUB_HEAD_REF")

@@ -21,6 +21,7 @@ import (
 	"github.com/freema/codeforge/internal/server/handlers"
 	"github.com/freema/codeforge/internal/server/middleware"
 	"github.com/freema/codeforge/internal/session"
+	"github.com/freema/codeforge/internal/tenant"
 	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/tool/runner"
 	"github.com/freema/codeforge/internal/tools"
@@ -35,7 +36,7 @@ type Server struct {
 }
 
 // New creates and configures the HTTP server with all routes and middleware.
-func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, sessionService *session.Service, prService *session.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, toolRegistry tools.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowConfigStore workflow.ConfigStore, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, webhookReceiverHandler *handlers.WebhookReceiverHandler, tenantHandler *handlers.TenantHandler, version string) *Server {
+func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, sessionService *session.Service, prService *session.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, toolRegistry tools.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowConfigStore workflow.ConfigStore, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, webhookReceiverHandler *handlers.WebhookReceiverHandler, tenantHandler *handlers.TenantHandler, tenantService *tenant.Service, version string) *Server {
 	r := chi.NewRouter()
 
 	// Global middleware (timeout applied per-route-group, not globally, for SSE support)
@@ -73,7 +74,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 	}
 
 	// Handlers
-	sessionHandler := handlers.NewSessionHandler(sessionService, prService, canceller, cliRegistry, keyRegistry, cfg.Git.ProviderDomains)
+	sessionHandler := handlers.NewSessionHandler(sessionService, prService, canceller, cliRegistry, keyRegistry, cfg.Git.ProviderDomains, tenantService)
 	cliHandler := handlers.NewCLIHandler(cliRegistry, cliConfigs)
 	streamHandler := handlers.NewStreamHandler(sessionService, redis)
 	keyHandler := handlers.NewKeyHandler(keyRegistry)
@@ -85,21 +86,28 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 	workflowHandler := handlers.NewWorkflowHandler(workflowRegistry, sessionService, keyRegistry)
 	workflowConfigHandler := handlers.NewWorkflowConfigHandler(workflowConfigStore, workflowRegistry, sessionService, keyRegistry)
 
-	// Protected API routes
+	// Protected API routes.
+	// Dual-auth when the subscription model is enabled: operator token OR tenant
+	// API token. Otherwise the original static operator-token auth (unchanged).
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Use(middleware.BearerAuth(cfg.Server.AuthToken))
+		if cfg.Subscription.Enabled && tenantService != nil {
+			r.Use(middleware.TenantAuth(cfg.Server.AuthToken, tenantService.Store()))
+		} else {
+			r.Use(middleware.BearerAuth(cfg.Server.AuthToken))
+		}
 
 		// Auth verification endpoint
 		r.Get("/auth/verify", healthHandler.AuthVerify)
 
 		// SSE stream endpoints — no timeout middleware (long-lived connection)
-		r.Get("/sessions/{sessionID}/stream", streamHandler.Stream)
+		r.With(sessionHandler.OwnershipMiddleware).Get("/sessions/{sessionID}/stream", streamHandler.Stream)
 
 		// All other routes — with timeout
 		r.Group(func(r chi.Router) {
 			r.Use(chimw.Timeout(60 * time.Second))
 
 			r.Route("/sessions", func(r chi.Router) {
+				r.Use(sessionHandler.OwnershipMiddleware) // tenant may touch only its own {sessionID} routes
 				r.Get("/", sessionHandler.List)
 				if rateLimitMw != nil {
 					r.With(rateLimitMw).Post("/", sessionHandler.Create)
@@ -123,62 +131,72 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 				r.Get("/health", cliHandler.Health)
 			})
 
-			r.Route("/keys", func(r chi.Router) {
-				r.Post("/", keyHandler.Create)
-				r.Get("/", keyHandler.List)
-				r.Get("/{name}/verify", keyHandler.Verify)
-				r.Delete("/{name}", keyHandler.Delete)
-			})
+			// Operator-management subsystems — operator token only. Subscription
+			// tenants must NOT manage keys, tools, MCP servers, workspaces, or
+			// workflows. OperatorOnly is a no-op under plain BearerAuth (no tenant
+			// in context), so operator access is unaffected when subscription is off.
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.OperatorOnly)
 
-			r.Route("/mcp/servers", func(r chi.Router) {
-				r.Post("/", mcpHandler.CreateGlobal)
-				r.Get("/", mcpHandler.ListGlobal)
-				r.Delete("/{name}", mcpHandler.DeleteGlobal)
-			})
+				r.Route("/keys", func(r chi.Router) {
+					r.Post("/", keyHandler.Create)
+					r.Get("/", keyHandler.List)
+					r.Get("/{name}/verify", keyHandler.Verify)
+					r.Delete("/{name}", keyHandler.Delete)
+				})
 
-			r.Route("/tools", func(r chi.Router) {
-				r.Post("/", toolHandler.Create)
-				r.Get("/", toolHandler.List)
-				r.Get("/catalog", toolHandler.Catalog)
-				r.Get("/{name}", toolHandler.Get)
-				r.Delete("/{name}", toolHandler.Delete)
-			})
+				r.Route("/mcp/servers", func(r chi.Router) {
+					r.Post("/", mcpHandler.CreateGlobal)
+					r.Get("/", mcpHandler.ListGlobal)
+					r.Delete("/{name}", mcpHandler.DeleteGlobal)
+				})
 
-			r.Route("/workspaces", func(r chi.Router) {
-				r.Get("/", wsHandler.List)
-				r.Delete("/{sessionID}", wsHandler.Delete)
-			})
+				r.Route("/tools", func(r chi.Router) {
+					r.Post("/", toolHandler.Create)
+					r.Get("/", toolHandler.List)
+					r.Get("/catalog", toolHandler.Catalog)
+					r.Get("/{name}", toolHandler.Get)
+					r.Delete("/{name}", toolHandler.Delete)
+				})
 
-			r.Get("/repositories", repoHandler.List)
-			r.Get("/branches", repoHandler.ListBranches)
-			r.Get("/pull-requests", repoHandler.ListPullRequests)
+				r.Route("/workspaces", func(r chi.Router) {
+					r.Get("/", wsHandler.List)
+					r.Delete("/{sessionID}", wsHandler.Delete)
+				})
 
-			r.Route("/sentry", func(r chi.Router) {
-				r.Get("/organizations", sentryHandler.ListOrganizations)
-				r.Get("/projects", sentryHandler.ListProjects)
-				r.Get("/issues", sentryHandler.ListIssues)
-				r.Get("/issues/{issueID}", sentryHandler.GetIssue)
-				r.Get("/issues/{issueID}/latest-event", sentryHandler.GetLatestEvent)
-			})
+				r.Get("/repositories", repoHandler.List)
+				r.Get("/branches", repoHandler.ListBranches)
+				r.Get("/pull-requests", repoHandler.ListPullRequests)
 
-			r.Route("/workflows", func(r chi.Router) {
-				r.Post("/", workflowHandler.CreateWorkflow)
-				r.Get("/", workflowHandler.ListWorkflows)
-				r.Get("/{name}", workflowHandler.GetWorkflow)
-				r.Delete("/{name}", workflowHandler.DeleteWorkflow)
-				r.Post("/{name}/run", workflowHandler.RunWorkflow)
-			})
+				r.Route("/sentry", func(r chi.Router) {
+					r.Get("/organizations", sentryHandler.ListOrganizations)
+					r.Get("/projects", sentryHandler.ListProjects)
+					r.Get("/issues", sentryHandler.ListIssues)
+					r.Get("/issues/{issueID}", sentryHandler.GetIssue)
+					r.Get("/issues/{issueID}/latest-event", sentryHandler.GetLatestEvent)
+				})
 
-			r.Route("/workflow-configs", func(r chi.Router) {
-				r.Post("/", workflowConfigHandler.Create)
-				r.Get("/", workflowConfigHandler.List)
-				r.Get("/{id}", workflowConfigHandler.Get)
-				r.Delete("/{id}", workflowConfigHandler.Delete)
-				r.Post("/{id}/run", workflowConfigHandler.Run)
+				r.Route("/workflows", func(r chi.Router) {
+					r.Post("/", workflowHandler.CreateWorkflow)
+					r.Get("/", workflowHandler.ListWorkflows)
+					r.Get("/{name}", workflowHandler.GetWorkflow)
+					r.Delete("/{name}", workflowHandler.DeleteWorkflow)
+					r.Post("/{name}/run", workflowHandler.RunWorkflow)
+				})
+
+				r.Route("/workflow-configs", func(r chi.Router) {
+					r.Post("/", workflowConfigHandler.Create)
+					r.Get("/", workflowConfigHandler.List)
+					r.Get("/{id}", workflowConfigHandler.Get)
+					r.Delete("/{id}", workflowConfigHandler.Delete)
+					r.Post("/{id}/run", workflowConfigHandler.Run)
+				})
 			})
 
 			if tenantHandler != nil {
+				// Admin routes are operator-only — tenant tokens are rejected.
 				r.Route("/admin/tenants", func(r chi.Router) {
+					r.Use(middleware.OperatorOnly)
 					r.Post("/", tenantHandler.Create)
 					r.Get("/", tenantHandler.List)
 					r.Get("/{tenantID}", tenantHandler.Get)
@@ -188,6 +206,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 				})
 
 				r.Route("/admin/key-pool", func(r chi.Router) {
+					r.Use(middleware.OperatorOnly)
 					r.Post("/", tenantHandler.AddKeyPool)
 					r.Get("/", tenantHandler.ListKeyPool)
 					r.Delete("/{keyID}", tenantHandler.DeleteKeyPool)

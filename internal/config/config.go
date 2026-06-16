@@ -12,19 +12,28 @@ import (
 )
 
 type Config struct {
-	Server     ServerConfig     `koanf:"server"`
-	Redis      RedisConfig      `koanf:"redis"`
-	SQLite     SQLiteConfig     `koanf:"sqlite"`
-	Workers    WorkersConfig    `koanf:"workers"`
-	Sessions   SessionsConfig   `koanf:"sessions"`
-	CLI        CLIConfig        `koanf:"cli"`
-	Git        GitConfig        `koanf:"git"`
-	Encryption EncryptionConfig `koanf:"encryption"`
-	Webhooks   WebhookConfig    `koanf:"webhooks"`
-	RateLimit  RateLimitConfig  `koanf:"rate_limit"`
-	CodeReview CodeReviewConfig `koanf:"code_review"`
-	Tracing    TracingConfig    `koanf:"tracing"`
-	Logging    LoggingConfig    `koanf:"logging"`
+	Server       ServerConfig       `koanf:"server"`
+	Redis        RedisConfig        `koanf:"redis"`
+	SQLite       SQLiteConfig       `koanf:"sqlite"`
+	Workers      WorkersConfig      `koanf:"workers"`
+	Sessions     SessionsConfig     `koanf:"sessions"`
+	CLI          CLIConfig          `koanf:"cli"`
+	Git          GitConfig          `koanf:"git"`
+	Encryption   EncryptionConfig   `koanf:"encryption"`
+	Webhooks     WebhookConfig      `koanf:"webhooks"`
+	RateLimit    RateLimitConfig    `koanf:"rate_limit"`
+	CodeReview   CodeReviewConfig   `koanf:"code_review"`
+	Tracing      TracingConfig      `koanf:"tracing"`
+	Logging      LoggingConfig      `koanf:"logging"`
+	Subscription SubscriptionConfig `koanf:"subscription"`
+}
+
+// SubscriptionConfig controls the optional tenant subscription model.
+// When disabled (default), only the static operator Bearer token is accepted and
+// the existing per-session API-key (BYOK) flow is unchanged. When enabled, tenant
+// API tokens ("cfk_...") are also accepted and resolve to managed keys from the pool.
+type SubscriptionConfig struct {
+	Enabled bool `koanf:"enabled"`
 }
 
 type SQLiteConfig struct {
@@ -93,7 +102,6 @@ type EncryptionConfig struct {
 	Key string `koanf:"key"`
 }
 
-
 type WebhookConfig struct {
 	HMACSecret string        `koanf:"hmac_secret"`
 	RetryCount int           `koanf:"retry_count"`
@@ -114,7 +122,7 @@ type WebhookSecretsConfig struct {
 }
 
 type RateLimitConfig struct {
-	Enabled        bool `koanf:"enabled"`
+	Enabled           bool `koanf:"enabled"`
 	SessionsPerMinute int  `koanf:"sessions_per_minute"`
 }
 
@@ -193,7 +201,7 @@ func Defaults() *Config {
 			RetryDelay: 5 * time.Second,
 		},
 		RateLimit: RateLimitConfig{
-			Enabled:        true,
+			Enabled:           true,
 			SessionsPerMinute: 10,
 		},
 		CodeReview: CodeReviewConfig{

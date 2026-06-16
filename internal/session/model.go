@@ -26,14 +26,14 @@ const (
 
 // Session represents a code session in the system.
 type Session struct {
-	ID          string      `json:"id"`
+	ID          string  `json:"id"`
 	Status      Status  `json:"status"`
-	RepoURL     string      `json:"repo_url"`
-	ProviderKey string      `json:"provider_key,omitempty"`
-	AccessToken string      `json:"-"` // NEVER in API responses
-	Prompt      string      `json:"prompt"`
-	SessionType    string      `json:"session_type,omitempty"`
-	CallbackURL string      `json:"callback_url,omitempty"`
+	RepoURL     string  `json:"repo_url"`
+	ProviderKey string  `json:"provider_key,omitempty"`
+	AccessToken string  `json:"-"` // NEVER in API responses
+	Prompt      string  `json:"prompt"`
+	SessionType string  `json:"session_type,omitempty"`
+	CallbackURL string  `json:"callback_url,omitempty"`
 	Config      *Config `json:"config,omitempty"`
 
 	// Result fields
@@ -64,6 +64,10 @@ type Session struct {
 	// Workflow linkage
 	WorkflowRunID string `json:"workflow_run_id,omitempty"`
 
+	// Subscription tenant that owns this session (empty = operator/BYOK).
+	// Set server-side from the authenticated tenant, never from client input.
+	TenantID string `json:"tenant_id,omitempty"`
+
 	// Observability
 	TraceID string `json:"trace_id,omitempty"`
 
@@ -82,21 +86,23 @@ type UsageInfo struct {
 
 // Config holds per-session configuration overrides.
 type Config struct {
-	TimeoutSeconds  int              `json:"timeout_seconds,omitempty"`
-	CLI             string           `json:"cli,omitempty"`
-	AIModel         string           `json:"ai_model,omitempty"`
-	AIApiKey        string           `json:"-"` // NEVER in responses (custom UnmarshalJSON accepts it)
-	MaxTurns        int              `json:"max_turns,omitempty"`
-	SourceBranch    string           `json:"source_branch,omitempty"` // branch to clone/checkout
-	TargetBranch    string           `json:"target_branch,omitempty"`
-	MaxBudgetUSD    float64          `json:"max_budget_usd,omitempty"`
-	MCPServers      []MCPServer      `json:"mcp_servers,omitempty"`
+	TimeoutSeconds     int                 `json:"timeout_seconds,omitempty"`
+	CLI                string              `json:"cli,omitempty"`
+	AIModel            string              `json:"ai_model,omitempty"`
+	AIApiKey           string              `json:"-"` // NEVER in responses (custom UnmarshalJSON accepts it)
+	MaxTurns           int                 `json:"max_turns,omitempty"`
+	SourceBranch       string              `json:"source_branch,omitempty"` // branch to clone/checkout
+	TargetBranch       string              `json:"target_branch,omitempty"`
+	MaxBudgetUSD       float64             `json:"max_budget_usd,omitempty"`
+	MCPServers         []MCPServer         `json:"mcp_servers,omitempty"`
 	Tools              []tools.SessionTool `json:"tools,omitempty"`
-	WorkspaceSessionID string              `json:"workspace_session_id,omitempty"` // reuse workspace from another session
-	PRNumber           int              `json:"pr_number,omitempty"`            // input PR/MR number to review (for pr_review sessions)
-	OutputMode         string           `json:"output_mode,omitempty"`          // "post_comments" or "api_only" (for pr_review sessions)
-	AutoReviewAfterFix bool             `json:"auto_review_after_fix,omitempty"` // auto-start review after each fix iteration
-	AutoPostReview     bool             `json:"auto_post_review,omitempty"`      // auto-post review result to MR comments
+	WorkspaceSessionID string              `json:"workspace_session_id,omitempty"`  // reuse workspace from another session
+	PRNumber           int                 `json:"pr_number,omitempty"`             // input PR/MR number to review (for pr_review sessions)
+	OutputMode         string              `json:"output_mode,omitempty"`           // "post_comments" or "api_only" (for pr_review sessions)
+	AutoReviewAfterFix bool                `json:"auto_review_after_fix,omitempty"` // auto-start review after each fix iteration
+	AutoPostReview     bool                `json:"auto_post_review,omitempty"`      // auto-post review result to MR comments
+	AutoCreatePR       bool                `json:"auto_create_pr,omitempty"`        // auto-create a PR/MR when the session completes with changes (used by workflows)
+	PRTitle            string              `json:"pr_title,omitempty"`              // explicit PR title for auto-created PRs (empty = AI-generated)
 }
 
 // UnmarshalJSON accepts ai_api_key from JSON input while json:"-" keeps it hidden in output.
@@ -135,7 +141,7 @@ type Iteration struct {
 	Prompt    string                 `json:"prompt"`
 	Result    string                 `json:"result,omitempty"`
 	Error     string                 `json:"error,omitempty"`
-	Status    Status             `json:"status"`
+	Status    Status                 `json:"status"`
 	Changes   *gitpkg.ChangesSummary `json:"changes,omitempty"`
 	Usage     *UsageInfo             `json:"usage,omitempty"`
 	StartedAt time.Time              `json:"started_at"`
