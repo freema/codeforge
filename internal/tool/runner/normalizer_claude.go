@@ -82,8 +82,9 @@ func (n *ClaudeNormalizer) normalizeAssistant(line []byte, raw json.RawMessage) 
 
 	for _, block := range msg.Message.Content {
 		var header struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Thinking string `json:"thinking"`
 		}
 		if err := json.Unmarshal(block, &header); err != nil {
 			continue
@@ -95,9 +96,18 @@ func (n *ClaudeNormalizer) normalizeAssistant(line []byte, raw json.RawMessage) 
 
 		case "thinking":
 			flushText()
+			// Thinking blocks carry their text in the "thinking" field
+			// ("text" stays empty); redacted blocks may carry neither — skip those.
+			content := header.Thinking
+			if content == "" {
+				content = header.Text
+			}
+			if content == "" {
+				continue
+			}
 			events = append(events, &NormalizedEvent{
 				Type:    EventThinking,
-				Content: header.Text,
+				Content: content,
 				CLI:     "claude-code",
 				Raw:     raw,
 			})

@@ -27,12 +27,30 @@ func TestClaudeNormalizer_Normalize(t *testing.T) {
 			wantCLI: "claude-code",
 		},
 		{
-			name:  "assistant thinking",
+			name:  "assistant thinking (real stream format uses the thinking field)",
+			input: `{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"Let me think...","signature":"sig"}]}}`,
+			want: []struct {
+				typ     NormalizedEventType
+				content string
+			}{{EventThinking, "Let me think..."}},
+			wantCLI: "claude-code",
+		},
+		{
+			name:  "assistant thinking legacy text field fallback",
 			input: `{"type":"assistant","message":{"content":[{"type":"thinking","text":"Let me think..."}]}}`,
 			want: []struct {
 				typ     NormalizedEventType
 				content string
 			}{{EventThinking, "Let me think..."}},
+			wantCLI: "claude-code",
+		},
+		{
+			name:  "empty thinking block is skipped, text still emitted",
+			input: `{"type":"assistant","message":{"content":[{"type":"thinking","signature":"sig"},{"type":"text","text":"Answer"}]}}`,
+			want: []struct {
+				typ     NormalizedEventType
+				content string
+			}{{EventText, "Answer"}},
 			wantCLI: "claude-code",
 		},
 		{

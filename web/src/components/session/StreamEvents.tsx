@@ -316,8 +316,10 @@ function TerminalEvent({ event }: { event: StreamEvent }) {
       return <ToolResultBlock content={resultText} />;
     }
 
-    // Thinking — agent's reasoning
+    // Thinking — agent's reasoning. Older events may have empty content
+    // (redacted blocks / pre-fix normalizer) — nothing to show for those.
     if (dataType === "thinking") {
+      if (!content || !content.trim()) return null;
       return <ThinkingBlock ts={ts} content={content} />;
     }
 

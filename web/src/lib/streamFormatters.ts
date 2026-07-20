@@ -58,6 +58,7 @@ const HIDDEN_STREAM_SUBTYPES = new Set([
   "ping",
   "ack",
   "result",
+  "thinking_tokens",
   // Codex-specific internal events
   "thread.started",
   "thread.completed",
