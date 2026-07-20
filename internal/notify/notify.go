@@ -1,6 +1,6 @@
 // Package notify posts terminal-session notifications to chat webhooks
-// (Slack incoming webhooks and Discord webhooks). Best-effort: delivery
-// failures are logged and never affect session processing.
+// (Slack incoming webhooks, Discord webhooks and Microsoft Teams webhooks).
+// Best-effort: delivery failures are logged and never affect session processing.
 package notify
 
 import (
@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -41,6 +42,7 @@ type Event struct {
 type Notifier struct {
 	slackURL   string
 	discordURL string
+	teamsURL   string
 	uiBaseURL  string
 	events     map[string]bool // empty = all events
 	client     *http.Client
@@ -49,7 +51,7 @@ type Notifier struct {
 // New builds a Notifier from config. Returns nil when no webhook URL is
 // configured, so callers can treat notifications as absent.
 func New(cfg config.NotificationsConfig) *Notifier {
-	if cfg.SlackWebhookURL == "" && cfg.DiscordWebhookURL == "" {
+	if cfg.SlackWebhookURL == "" && cfg.DiscordWebhookURL == "" && cfg.TeamsWebhookURL == "" {
 		return nil
 	}
 	// Entries may arrive comma-joined (env var) or as a YAML list — accept both.
@@ -64,6 +66,7 @@ func New(cfg config.NotificationsConfig) *Notifier {
 	return &Notifier{
 		slackURL:   cfg.SlackWebhookURL,
 		discordURL: cfg.DiscordWebhookURL,
+		teamsURL:   cfg.TeamsWebhookURL,
 		uiBaseURL:  strings.TrimRight(cfg.UIBaseURL, "/"),
 		events:     events,
 		client:     &http.Client{Timeout: 10 * time.Second},
@@ -86,6 +89,35 @@ func (n *Notifier) Notify(ctx context.Context, ev Event) {
 	}
 	if n.discordURL != "" {
 		n.post(ctx, n.discordURL, map[string]string{"content": text}, "discord", ev.SessionID)
+	}
+	if n.teamsURL != "" {
+		n.post(ctx, n.teamsURL, teamsPayload(n.teamsURL, text), "teams", ev.SessionID)
+	}
+}
+
+// teamsPayload builds the Teams webhook payload for the given webhook URL.
+// Classic incoming webhooks (hosted on webhook.office.com) accept a plain
+// {"text": ...} message; Power Automate / Teams Workflows endpoints (e.g.
+// *.logic.azure.com) expect an Adaptive Card envelope.
+func teamsPayload(webhookURL, text string) map[string]any {
+	if u, err := url.Parse(webhookURL); err == nil && strings.Contains(u.Host, "webhook.office.com") {
+		return map[string]any{"text": text}
+	}
+	return map[string]any{
+		"type": "message",
+		"attachments": []map[string]any{{
+			"contentType": "application/vnd.microsoft.card.adaptive",
+			"content": map[string]any{
+				"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+				"type":    "AdaptiveCard",
+				"version": "1.4",
+				"body": []map[string]any{{
+					"type": "TextBlock",
+					"text": text,
+					"wrap": true,
+				}},
+			},
+		}},
 	}
 }
 
@@ -132,7 +164,7 @@ func (n *Notifier) format(ev Event) string {
 	return b.String()
 }
 
-func (n *Notifier) post(ctx context.Context, url string, payload map[string]string, target, sessionID string) {
+func (n *Notifier) post(ctx context.Context, webhookURL string, payload any, target, sessionID string) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return
@@ -142,7 +174,7 @@ func (n *Notifier) post(ctx context.Context, url string, payload map[string]stri
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(body))
 	if err != nil {
 		slog.Warn("notification request build failed", "target", target, "session_id", sessionID, "error", err)
 		return

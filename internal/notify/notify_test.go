@@ -66,6 +66,77 @@ func TestNotify_SlackAndDiscordPayloads(t *testing.T) {
 	}
 }
 
+func TestNew_EnabledWithOnlyTeamsURL(t *testing.T) {
+	if n := New(config.NotificationsConfig{TeamsWebhookURL: "https://example.logic.azure.com/workflows/abc"}); n == nil {
+		t.Fatal("expected non-nil notifier when only teams_webhook_url is configured")
+	}
+}
+
+func TestTeamsPayload_FormatByHost(t *testing.T) {
+	// Classic incoming webhook — plain text payload.
+	classic := teamsPayload("https://acme.webhook.office.com/webhookb2/abc/IncomingWebhook/def", "hello")
+	if got, ok := classic["text"]; !ok || got != "hello" {
+		t.Fatalf("classic webhook payload = %v, want {\"text\": \"hello\"}", classic)
+	}
+	if _, ok := classic["attachments"]; ok {
+		t.Fatalf("classic webhook payload must not contain attachments: %v", classic)
+	}
+
+	// Any other host — Adaptive Card envelope.
+	card := teamsPayload("https://prod-01.westeurope.logic.azure.com/workflows/abc/triggers/manual/paths/invoke", "hello")
+	if card["type"] != "message" {
+		t.Fatalf("workflow payload type = %v, want \"message\"", card["type"])
+	}
+	attachments, ok := card["attachments"].([]map[string]any)
+	if !ok || len(attachments) != 1 {
+		t.Fatalf("workflow payload attachments = %v, want one attachment", card["attachments"])
+	}
+	if ct := attachments[0]["contentType"]; ct != "application/vnd.microsoft.card.adaptive" {
+		t.Fatalf("attachment contentType = %v", ct)
+	}
+}
+
+func TestNotify_TeamsAdaptiveCardDelivery(t *testing.T) {
+	var teamsBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&teamsBody)
+	}))
+	defer srv.Close()
+
+	// httptest URLs have a 127.0.0.1 host, so this exercises the default
+	// (Power Automate / Adaptive Card) branch of teamsPayload.
+	n := New(config.NotificationsConfig{TeamsWebhookURL: srv.URL})
+	n.Notify(context.Background(), Event{
+		Type:      EventSessionCompleted,
+		SessionID: "sess-1",
+		RepoURL:   "https://github.com/acme/widget.git",
+	})
+
+	if teamsBody["type"] != "message" {
+		t.Fatalf("teams payload type = %v, want \"message\"", teamsBody["type"])
+	}
+	attachments, ok := teamsBody["attachments"].([]any)
+	if !ok || len(attachments) != 1 {
+		t.Fatalf("teams payload attachments = %v, want one attachment", teamsBody["attachments"])
+	}
+	attachment, _ := attachments[0].(map[string]any)
+	content, _ := attachment["content"].(map[string]any)
+	body, _ := content["body"].([]any)
+	if len(body) != 1 {
+		t.Fatalf("adaptive card body = %v, want one TextBlock", content["body"])
+	}
+	block, _ := body[0].(map[string]any)
+	if block["type"] != "TextBlock" {
+		t.Fatalf("adaptive card body element type = %v, want \"TextBlock\"", block["type"])
+	}
+	text, _ := block["text"].(string)
+	for _, want := range []string{"✅", "acme/widget"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("teams TextBlock missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestNotify_EventFilter(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

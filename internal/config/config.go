@@ -34,6 +34,7 @@ type Config struct {
 type NotificationsConfig struct {
 	SlackWebhookURL   string   `koanf:"slack_webhook_url"`
 	DiscordWebhookURL string   `koanf:"discord_webhook_url"`
+	TeamsWebhookURL   string   `koanf:"teams_webhook_url"`
 	UIBaseURL         string   `koanf:"ui_base_url"` // e.g. https://cf.example.com — appended as a session link
 	Events            []string `koanf:"events"`      // subset of session_completed, session_failed, pr_created, review_completed; empty = all
 }
