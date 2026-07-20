@@ -20,6 +20,7 @@ import (
 	"github.com/freema/codeforge/internal/logger"
 	"github.com/freema/codeforge/internal/notify"
 	"github.com/freema/codeforge/internal/redisclient"
+	"github.com/freema/codeforge/internal/schedule"
 	"github.com/freema/codeforge/internal/server"
 	"github.com/freema/codeforge/internal/server/handlers"
 	"github.com/freema/codeforge/internal/session"
@@ -272,6 +273,11 @@ func run() error {
 		executor.SetUsageLogger(tenantStore)
 	}
 
+	// Scheduled (cron) sessions
+	scheduleStore := schedule.NewStore(sqliteDB.Unwrap())
+	scheduler := schedule.NewScheduler(scheduleStore, sessionService, time.Minute)
+	scheduleHandler := handlers.NewScheduleHandler(scheduleStore, scheduler)
+
 	// Wire chat notifications for terminal session events (nil when unconfigured).
 	if notifier := notify.New(cfg.Notifications); notifier != nil {
 		executor.SetNotifier(notifier)
@@ -280,7 +286,7 @@ func run() error {
 			"discord", cfg.Notifications.DiscordWebhookURL != "")
 	}
 
-	srv := server.New(cfg, rdb, sqliteDB, sessionService, prService, pool, keyRegistry, mcpRegistry, workspaceMgr, workflowRegistry, workflowConfigStore, cliRegistry, cliConfigs, webhookReceiverHandler, tenantHandler, tenantService, version)
+	srv := server.New(cfg, rdb, sqliteDB, sessionService, prService, pool, keyRegistry, mcpRegistry, workspaceMgr, workflowRegistry, workflowConfigStore, cliRegistry, cliConfigs, webhookReceiverHandler, tenantHandler, tenantService, scheduleHandler, version)
 
 	// Start background services
 	appCtx, appCancel := context.WithCancel(context.Background())
@@ -293,6 +299,9 @@ func run() error {
 	// (lost worker: crash, failed requeue, pre-reliability leftovers).
 	stuckAge := time.Duration(cfg.Sessions.MaxTimeout)*time.Second + 30*time.Minute
 	go worker.NewStuckSweeper(sessionService, 10*time.Minute, stuckAge).Start(appCtx)
+
+	// Fire recurring (cron) sessions.
+	go scheduler.Start(appCtx)
 
 	errCh := make(chan error, 1)
 	go func() {

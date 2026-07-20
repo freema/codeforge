@@ -1245,6 +1245,38 @@ Response `201`:
 
 ---
 
+## Schedules — Recurring Sessions (Operator Only)
+
+Cron-driven session templates. The scheduler checks every minute and fires enabled schedules whose expression is due; missed occurrences (server downtime) collapse into a single catch-up run. Created sessions carry `schedule_id` / `schedule_name` in metadata.
+
+```
+POST   /api/v1/schedules              {"name": "...", "cron": "0 3 * * *", "enabled": true, "session_request": {...}}
+GET    /api/v1/schedules
+GET    /api/v1/schedules/{scheduleID}
+PATCH  /api/v1/schedules/{scheduleID} partial: name, cron, enabled, session_request
+DELETE /api/v1/schedules/{scheduleID} (204)
+POST   /api/v1/schedules/{scheduleID}/run   fire immediately → 202 {"schedule_id": "...", "session_id": "..."}
+```
+
+`cron` accepts standard 5-field expressions plus `@daily`/`@weekly`/`@every 2h` descriptors. `session_request` is a stored create-session request (`repo_url` + `prompt` required) used verbatim on each firing. Responses include a computed `next_run_at`; `last_run_at`/`last_session_id` track the previous firing.
+
+Example — nightly dependency update:
+
+```json
+{
+  "name": "nightly-deps",
+  "cron": "0 3 * * *",
+  "session_request": {
+    "repo_url": "https://github.com/acme/widget.git",
+    "provider_key": "github-acme",
+    "prompt": "Update dependencies to their latest compatible versions, run tests, and summarize the changes.",
+    "config": { "cli": "claude-code" }
+  }
+}
+```
+
+---
+
 ## Admin — Tenants & Key Pool (Operator Only)
 
 Management API for the optional subscription model (`subscription.enabled`). Always mounted, accepts only the operator token — tenant tokens are rejected.

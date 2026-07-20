@@ -35,7 +35,7 @@ type Server struct {
 }
 
 // New creates and configures the HTTP server with all routes and middleware.
-func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, sessionService *session.Service, prService *session.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowConfigStore workflow.ConfigStore, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, webhookReceiverHandler *handlers.WebhookReceiverHandler, tenantHandler *handlers.TenantHandler, tenantService *tenant.Service, version string) *Server {
+func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, sessionService *session.Service, prService *session.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowConfigStore workflow.ConfigStore, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, webhookReceiverHandler *handlers.WebhookReceiverHandler, tenantHandler *handlers.TenantHandler, tenantService *tenant.Service, scheduleHandler *handlers.ScheduleHandler, version string) *Server {
 	r := chi.NewRouter()
 
 	// Global middleware (timeout applied per-route-group, not globally, for SSE support)
@@ -195,6 +195,17 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 					r.Delete("/{id}", workflowConfigHandler.Delete)
 					r.Post("/{id}/run", workflowConfigHandler.Run)
 				})
+
+				if scheduleHandler != nil {
+					r.Route("/schedules", func(r chi.Router) {
+						r.Post("/", scheduleHandler.Create)
+						r.Get("/", scheduleHandler.List)
+						r.Get("/{scheduleID}", scheduleHandler.Get)
+						r.Patch("/{scheduleID}", scheduleHandler.Update)
+						r.Delete("/{scheduleID}", scheduleHandler.Delete)
+						r.Post("/{scheduleID}/run", scheduleHandler.Run)
+					})
+				}
 			})
 
 			if tenantHandler != nil {

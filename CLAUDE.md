@@ -72,6 +72,7 @@ internal/
   tracing/             OpenTelemetry setup
   webhook/             HMAC-signed webhook callbacks
   worker/              Worker pool, executor, streaming, normalizer
+  schedule/            Recurring (cron) sessions — store + scheduler
   workflow/            Workflow orchestrator, step executors, templates
   workspace/           Workspace lifecycle, cleanup
 web/                   React UI (Vite + TypeScript + Tailwind CSS 4)

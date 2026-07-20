@@ -1760,6 +1760,144 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /api/v1/schedules:
+    post:
+      summary: Create a recurring (cron) session schedule
+      operationId: createSchedule
+      tags: [Schedules]
+      description: |
+        Operator only. The scheduler fires enabled schedules whose cron
+        expression is due (checked every minute); a backlog of missed
+        occurrences collapses into a single catch-up run.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, cron, session_request]
+              properties:
+                name:
+                  type: string
+                cron:
+                  type: string
+                  description: Standard 5-field cron or @daily/@weekly/@every descriptors
+                  example: "0 3 * * *"
+                enabled:
+                  type: boolean
+                  default: true
+                session_request:
+                  $ref: "#/components/schemas/CreateSessionRequest"
+      responses:
+        "201":
+          description: Schedule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "400":
+          description: Invalid cron expression or session request
+    get:
+      summary: List schedules
+      operationId: listSchedules
+      tags: [Schedules]
+      responses:
+        "200":
+          description: All schedules with computed next_run_at
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schedules:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Schedule"
+
+  /api/v1/schedules/{scheduleID}:
+    parameters:
+      - name: scheduleID
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get a schedule
+      operationId: getSchedule
+      tags: [Schedules]
+      responses:
+        "200":
+          description: Schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "404":
+          description: Not found
+    patch:
+      summary: Update a schedule (partial)
+      operationId: updateSchedule
+      tags: [Schedules]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                cron:
+                  type: string
+                enabled:
+                  type: boolean
+                session_request:
+                  $ref: "#/components/schemas/CreateSessionRequest"
+      responses:
+        "200":
+          description: Updated schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "404":
+          description: Not found
+    delete:
+      summary: Delete a schedule
+      operationId: deleteSchedule
+      tags: [Schedules]
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /api/v1/schedules/{scheduleID}/run:
+    post:
+      summary: Fire a schedule immediately
+      operationId: runSchedule
+      tags: [Schedules]
+      parameters:
+        - name: scheduleID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Session created from the schedule
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schedule_id:
+                    type: string
+                  session_id:
+                    type: string
+        "404":
+          description: Not found
+
   /api/v1/admin/tenants:
     post:
       summary: Create a subscription tenant
@@ -2785,6 +2923,38 @@ components:
           type: string
         suggestion:
           type: string
+
+    Schedule:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        cron:
+          type: string
+          example: "0 3 * * *"
+        enabled:
+          type: boolean
+        session_request:
+          $ref: "#/components/schemas/CreateSessionRequest"
+        last_run_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_session_id:
+          type: string
+        next_run_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Computed from cron on read; absent when disabled
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
 
     Tenant:
       type: object

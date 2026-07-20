@@ -55,6 +55,11 @@ Client (ScopeBot / curl)
 - Stuck sweeper fails sessions stuck in `running`/`cloning` far past the maximum timeout (lost worker)
 - Executor orchestrates: clone -> run CLI -> diff -> report
 
+### Schedules (`internal/schedule/`)
+- Recurring session templates stored in SQLite (`schedules` table) with a cron expression
+- Scheduler goroutine checks every minute and fires due schedules via the session service (one catch-up run for missed backlog)
+- Operator-only CRUD + run-now at `/api/v1/schedules`
+
 ### CLI Runner (`internal/tool/runner/`)
 - `Runner` interface for pluggable AI tools
 - **Claude Code** runner: `--output-format stream-json` parsing, supports MaxTurns and MaxBudgetUSD
