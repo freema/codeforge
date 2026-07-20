@@ -144,6 +144,15 @@ func (s *Service) Create(ctx context.Context, req CreateSessionRequest) (*Sessio
 
 // CountActiveByTenant returns the number of in-flight sessions owned by a tenant.
 // Returns 0 when SQLite is not configured.
+// ListStuck returns IDs of sessions that look actively processing but have
+// not been touched since `before` — candidates for the stuck sweeper.
+func (s *Service) ListStuck(ctx context.Context, before time.Time) ([]string, error) {
+	if s.sqlite == nil {
+		return nil, nil
+	}
+	return s.sqlite.ListStuckSessions(ctx, before)
+}
+
 func (s *Service) CountActiveByTenant(ctx context.Context, tenantID string) (int, error) {
 	if s.sqlite == nil {
 		return 0, nil
@@ -225,7 +234,7 @@ func (s *Service) UpdateStatus(ctx context.Context, sessionID string, newStatus 
 	switch newStatus {
 	case StatusCloning, StatusRunning:
 		fields["started_at"] = now.Format(time.RFC3339Nano)
-	case StatusCompleted, StatusFailed, StatusPRCreated:
+	case StatusCompleted, StatusFailed, StatusPRCreated, StatusCanceled:
 		fields["finished_at"] = now.Format(time.RFC3339Nano)
 	}
 
@@ -257,7 +266,7 @@ func (s *Service) UpdateStatus(ctx context.Context, sessionID string, newStatus 
 	switch newStatus {
 	case StatusCloning, StatusRunning:
 		startedAt = &now
-	case StatusCompleted, StatusFailed, StatusPRCreated:
+	case StatusCompleted, StatusFailed, StatusPRCreated, StatusCanceled:
 		finishedAt = &now
 	}
 	s.persistToSQLite(func() error {

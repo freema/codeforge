@@ -63,7 +63,8 @@ func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 
 	isTerminal := t.Status == session.StatusCompleted ||
 		t.Status == session.StatusFailed ||
-		t.Status == session.StatusPRCreated
+		t.Status == session.StatusPRCreated ||
+		t.Status == session.StatusCanceled
 
 	// Subscribe to live channels BEFORE reading history to avoid missing events.
 	// For terminal tasks we skip subscription entirely.

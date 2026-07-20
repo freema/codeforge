@@ -8,7 +8,8 @@ export type SessionStatus =
   | "reviewing"
   | "creating_pr"
   | "pr_created"
-  | "cancelling";
+  | "cancelling"
+  | "canceled";
 
 export interface ReviewResult {
   verdict: "approve" | "request_changes" | "comment";

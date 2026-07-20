@@ -289,6 +289,11 @@ func run() error {
 	pool.Start(appCtx)
 	go wsCleaner.Start(appCtx)
 
+	// Fail sessions stuck in running/cloning far past any possible timeout
+	// (lost worker: crash, failed requeue, pre-reliability leftovers).
+	stuckAge := time.Duration(cfg.Sessions.MaxTimeout)*time.Second + 30*time.Minute
+	go worker.NewStuckSweeper(sessionService, 10*time.Minute, stuckAge).Start(appCtx)
+
 	errCh := make(chan error, 1)
 	go func() {
 		if err := srv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {

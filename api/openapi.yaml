@@ -267,7 +267,7 @@ paths:
           description: Filter by session status
           schema:
             type: string
-            enum: [pending, cloning, running, reviewing, completed, failed, awaiting_instruction, creating_pr, pr_created]
+            enum: [pending, cloning, running, reviewing, completed, failed, canceled, awaiting_instruction, creating_pr, pr_created]
         - name: limit
           in: query
           description: Max results (default 50)
@@ -2225,7 +2225,7 @@ components:
           format: uuid
         status:
           type: string
-          enum: [pending, cloning, running, reviewing, completed, failed, awaiting_instruction, creating_pr, pr_created]
+          enum: [pending, cloning, running, reviewing, completed, failed, canceled, awaiting_instruction, creating_pr, pr_created]
         repo_url:
           type: string
         provider_key:
@@ -2298,7 +2298,7 @@ components:
           format: uuid
         status:
           type: string
-          enum: [pending, cloning, running, reviewing, completed, failed, awaiting_instruction, creating_pr, pr_created]
+          enum: [pending, cloning, running, reviewing, completed, failed, canceled, awaiting_instruction, creating_pr, pr_created]
         repo_url:
           type: string
         prompt:

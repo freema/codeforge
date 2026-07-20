@@ -147,6 +147,8 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 			baseEnv = filtered
 		}
 	}
+	configureGracefulKill(cmd)
+
 	// Only set ANTHROPIC_API_KEY if provided per-session; otherwise inherit from
 	// process environment (baseEnv) so a global key can be configured via env var.
 	if opts.APIKey != "" {

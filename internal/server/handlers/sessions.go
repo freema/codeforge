@@ -374,6 +374,21 @@ func (h *SessionHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Queued but not yet picked up — cancel directly; the stale queue entry
+	// is skipped by the worker's shouldProcess guard.
+	if t.Status == session.StatusPending {
+		if err := h.service.UpdateStatus(r.Context(), sessionID, session.StatusCanceled); err != nil {
+			writeAppError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{
+			"id":      sessionID,
+			"status":  string(session.StatusCanceled),
+			"message": "queued session canceled",
+		})
+		return
+	}
+
 	if t.Status != session.StatusRunning && t.Status != session.StatusCloning && t.Status != session.StatusReviewing {
 		writeError(w, http.StatusConflict, fmt.Sprintf("session is not running (status: %s)", t.Status))
 		return

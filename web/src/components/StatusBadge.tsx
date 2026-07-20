@@ -85,6 +85,13 @@ const statusConfig: Record<
     border: "border-orange-400/20",
     icon: "cancel",
   },
+  canceled: {
+    label: "CANCELED",
+    color: "text-orange-400",
+    bg: "bg-orange-400/10",
+    border: "border-orange-400/20",
+    icon: "cancel",
+  },
 };
 
 export default function StatusBadge({ status }: { status: SessionStatus }) {

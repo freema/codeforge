@@ -16,7 +16,17 @@ import (
 	"github.com/freema/codeforge/internal/session"
 )
 
+// errCanceledByUser marks a session context canceled via the cancel API,
+// as opposed to a pool-wide shutdown. The executor uses the distinction to
+// pick between the canceled status (user intent) and a restart requeue.
+var errCanceledByUser = errors.New("canceled by user")
+
 // Pool is a worker pool that consumes sessions from a Redis queue.
+//
+// Reliability: sessions are moved atomically from the queue into a processing
+// list (BLMOVE) while being worked on and removed only after the executor
+// returns. Entries left behind by a crash or shutdown are recovered on the
+// next Start — non-terminal sessions are requeued, terminal ones dropped.
 type Pool struct {
 	redis          *redisclient.Client
 	executor       *Executor
@@ -26,7 +36,7 @@ type Pool struct {
 	wg             sync.WaitGroup
 	cancel         context.CancelFunc
 	activeCount    atomic.Int32
-	cancels        map[string]context.CancelFunc
+	cancels        map[string]context.CancelCauseFunc
 	cancelsMu      sync.RWMutex
 }
 
@@ -44,15 +54,25 @@ func NewPool(
 		sessionService: sessionService,
 		queueName:      queueName,
 		concurrency:    concurrency,
-		cancels:        make(map[string]context.CancelFunc),
+		cancels:        make(map[string]context.CancelCauseFunc),
 	}
 }
 
-// Start launches all worker goroutines.
+func (p *Pool) queueKey() string {
+	return p.redis.Key(p.queueName)
+}
+
+func (p *Pool) processingKey() string {
+	return p.redis.Key(p.queueName + ":processing")
+}
+
+// Start recovers sessions orphaned by the previous run, then launches workers.
 func (p *Pool) Start(ctx context.Context) {
 	ctx, p.cancel = context.WithCancel(ctx)
 
 	slog.Info("starting worker pool", "concurrency", p.concurrency, "queue", p.queueName)
+
+	p.recoverProcessing(ctx)
 
 	metrics.WorkersTotal.Set(float64(p.concurrency))
 
@@ -62,7 +82,71 @@ func (p *Pool) Start(ctx context.Context) {
 	}
 }
 
-// Stop signals workers to stop and waits for them to finish.
+// recoverProcessing requeues sessions that were mid-flight when the previous
+// process died (crash or shutdown). Interrupted running/cloning sessions are
+// reset to pending; terminal or unknown entries are dropped from the list.
+func (p *Pool) recoverProcessing(ctx context.Context) {
+	ids, err := p.redis.Unwrap().LRange(ctx, p.processingKey(), 0, -1).Result()
+	if err != nil {
+		slog.Error("queue recovery: reading processing list failed", "error", err)
+		return
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	slog.Info("queue recovery: found in-flight sessions from previous run", "count", len(ids))
+
+	for _, id := range ids {
+		p.recoverOne(ctx, id)
+	}
+}
+
+func (p *Pool) recoverOne(ctx context.Context, sessionID string) {
+	log := slog.With("session_id", sessionID)
+	dropEntry := func() {
+		if err := p.redis.Unwrap().LRem(ctx, p.processingKey(), 1, sessionID).Err(); err != nil {
+			log.Warn("queue recovery: dropping processing entry failed", "error", err)
+		}
+	}
+
+	t, err := p.sessionService.Get(ctx, sessionID)
+	if err != nil {
+		log.Warn("queue recovery: session not found, dropping entry", "error", err)
+		dropEntry()
+		return
+	}
+
+	switch t.Status {
+	case session.StatusRunning, session.StatusCloning:
+		// Interrupted mid-execution — back to pending so shouldProcess accepts it.
+		if err := p.sessionService.UpdateStatus(ctx, sessionID, session.StatusPending); err != nil {
+			log.Error("queue recovery: resetting session to pending failed, dropping", "error", err)
+			dropEntry()
+			return
+		}
+	case session.StatusPending, session.StatusAwaitingInstruction, session.StatusReviewing:
+		// Dequeued but not started (or an interrupted review) — requeue as is.
+	default:
+		// Terminal — nothing to do.
+		dropEntry()
+		return
+	}
+
+	// Move back to the FRONT of the queue so interrupted work resumes first.
+	pipe := p.redis.Unwrap().Pipeline()
+	pipe.LRem(ctx, p.processingKey(), 1, sessionID)
+	pipe.LPush(ctx, p.queueKey(), sessionID)
+	if _, err := pipe.Exec(ctx); err != nil {
+		log.Error("queue recovery: requeue failed", "error", err)
+		return
+	}
+	log.Info("queue recovery: session requeued", "status", t.Status)
+}
+
+// Stop signals workers to stop and waits for them to finish. In-flight
+// sessions are interrupted; the executor resets them to pending and their
+// processing-list entries make the next Start requeue them.
 func (p *Pool) Stop() {
 	slog.Info("stopping worker pool...")
 	if p.cancel != nil {
@@ -72,7 +156,7 @@ func (p *Pool) Stop() {
 	slog.Info("worker pool stopped")
 }
 
-// Cancel cancels a running session by its ID.
+// Cancel cancels a running session by its ID (user-initiated).
 func (p *Pool) Cancel(sessionID string) error {
 	p.cancelsMu.RLock()
 	cancelFn, ok := p.cancels[sessionID]
@@ -80,7 +164,7 @@ func (p *Pool) Cancel(sessionID string) error {
 	if !ok {
 		return fmt.Errorf("session %s is not currently running", sessionID)
 	}
-	cancelFn()
+	cancelFn(errCanceledByUser)
 	return nil
 }
 
@@ -99,11 +183,13 @@ func (p *Pool) worker(ctx context.Context, id int) {
 	log := slog.With("worker", id)
 	log.Info("worker started")
 
-	queueKey := p.redis.Key(p.queueName)
+	queueKey := p.queueKey()
+	processingKey := p.processingKey()
 
 	for {
-		// BLPOP blocks until item available or timeout
-		result, err := p.redis.Unwrap().BLPop(ctx, 5*time.Second, queueKey).Result()
+		// Atomically move the next session into the processing list so it
+		// survives a crash between dequeue and completion.
+		sessionID, err := p.redis.Unwrap().BLMove(ctx, queueKey, processingKey, "LEFT", "RIGHT", 5*time.Second).Result()
 		if err != nil {
 			if errors.Is(err, redis.Nil) {
 				continue // timeout, try again
@@ -117,8 +203,6 @@ func (p *Pool) worker(ctx context.Context, id int) {
 			continue
 		}
 
-		sessionID := result[1] // result[0] = key name
-
 		log.Info("picked up session", "session_id", sessionID)
 		p.activeCount.Add(1)
 		metrics.WorkersActive.Set(float64(p.activeCount.Load()))
@@ -128,40 +212,59 @@ func (p *Pool) worker(ctx context.Context, id int) {
 			metrics.QueueDepth.Set(float64(qLen))
 		}
 
-		// Load session from Redis
-		t, err := p.sessionService.Get(ctx, sessionID)
-		if err != nil {
-			log.Warn("failed to load session, skipping", "session_id", sessionID, "error", err)
-			p.activeCount.Add(-1)
-			continue
-		}
-
-		// Guard against stale/duplicate queue entries — only actionable states proceed
-		if !shouldProcess(t.Status) {
-			log.Warn("skipping stale queue entry", "session_id", sessionID, "status", t.Status)
-			p.activeCount.Add(-1)
-			metrics.WorkersActive.Set(float64(p.activeCount.Load()))
-			continue
-		}
-
-		// Create session-specific cancellable context
-		sessionCtx, sessionCancel := context.WithCancel(ctx)
-
-		// Register cancel func for this session
-		p.cancelsMu.Lock()
-		p.cancels[sessionID] = sessionCancel
-		p.cancelsMu.Unlock()
-
-		// Execute the session
-		p.executor.Execute(sessionCtx, t)
-
-		// Deregister cancel func
-		p.cancelsMu.Lock()
-		delete(p.cancels, sessionID)
-		p.cancelsMu.Unlock()
-		sessionCancel() // clean up context resources
+		p.processOne(ctx, sessionID, log)
 
 		p.activeCount.Add(-1)
 		metrics.WorkersActive.Set(float64(p.activeCount.Load()))
+	}
+}
+
+func (p *Pool) processOne(ctx context.Context, sessionID string, log *slog.Logger) {
+	// Load session from Redis
+	t, err := p.sessionService.Get(ctx, sessionID)
+	if err != nil {
+		log.Warn("failed to load session, skipping", "session_id", sessionID, "error", err)
+		p.finishProcessing(sessionID, log)
+		return
+	}
+
+	// Guard against stale/duplicate queue entries — only actionable states proceed
+	if !shouldProcess(t.Status) {
+		log.Warn("skipping stale queue entry", "session_id", sessionID, "status", t.Status)
+		p.finishProcessing(sessionID, log)
+		return
+	}
+
+	// Session-specific context, cancellable with a cause so the executor can
+	// tell a user cancel apart from a pool shutdown.
+	sessionCtx, sessionCancel := context.WithCancelCause(ctx)
+
+	p.cancelsMu.Lock()
+	p.cancels[sessionID] = sessionCancel
+	p.cancelsMu.Unlock()
+
+	p.executor.Execute(sessionCtx, t)
+
+	p.cancelsMu.Lock()
+	delete(p.cancels, sessionID)
+	p.cancelsMu.Unlock()
+	sessionCancel(nil) // clean up context resources
+
+	if ctx.Err() != nil {
+		// Shutdown interrupted this session: keep the processing-list entry so
+		// the next start requeues it (the executor has reset it to pending).
+		log.Info("session interrupted by shutdown, leaving in processing list", "session_id", sessionID)
+		return
+	}
+	p.finishProcessing(sessionID, log)
+}
+
+// finishProcessing acknowledges a dequeued session by removing it from the
+// processing list. Uses a detached context — this must succeed even mid-shutdown.
+func (p *Pool) finishProcessing(sessionID string, log *slog.Logger) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := p.redis.Unwrap().LRem(ctx, p.processingKey(), 1, sessionID).Err(); err != nil {
+		log.Warn("failed to ack processing entry", "session_id", sessionID, "error", err)
 	}
 }

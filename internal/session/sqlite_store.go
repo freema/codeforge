@@ -355,13 +355,38 @@ func (s *SQLiteStore) CountActiveByTenant(ctx context.Context, tenantID string) 
 	var n int
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM sessions
-		 WHERE tenant_id = ? AND status NOT IN ('completed', 'failed', 'pr_created')`,
+		 WHERE tenant_id = ? AND status NOT IN ('completed', 'failed', 'pr_created', 'canceled')`,
 		tenantID,
 	).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("counting active sessions: %w", err)
 	}
 	return n, nil
+}
+
+// ListStuckSessions returns IDs of sessions that claim to be actively
+// processing (running/cloning) but have not been touched since `before` —
+// i.e. their worker is gone (crash, lost requeue). Used by the stuck sweeper.
+func (s *SQLiteStore) ListStuckSessions(ctx context.Context, before time.Time) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id FROM sessions
+		 WHERE status IN ('running', 'cloning') AND updated_at < ?`,
+		before.UTC().Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing stuck sessions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // FindByPR finds the most recent session for a given repo + PR/MR number.

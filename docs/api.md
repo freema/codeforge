@@ -138,17 +138,20 @@ Valid transitions:
 
 | From | To |
 |------|-----|
-| `pending` | `cloning`, `running`, `failed` |
-| `cloning` | `running`, `failed` |
-| `running` | `completed`, `failed` |
+| `pending` | `cloning`, `running`, `failed`, `canceled` |
+| `cloning` | `running`, `failed`, `canceled`, `pending`¹ |
+| `running` | `completed`, `failed`, `canceled`, `pending`¹ |
 | `completed` | `awaiting_instruction`, `creating_pr`, `reviewing` |
-| `reviewing` | `completed`, `failed` |
-| `awaiting_instruction` | `running`, `reviewing`, `failed` |
+| `reviewing` | `completed`, `failed`, `canceled` |
+| `awaiting_instruction` | `running`, `reviewing`, `failed`, `canceled` |
 | `creating_pr` | `pr_created`, `failed` |
 | `pr_created` | `awaiting_instruction`, `reviewing`, `creating_pr`, `completed` |
 | `failed` | _(terminal)_ |
+| `canceled` | _(terminal)_ |
 
-Only `failed` is truly terminal — `completed` and `pr_created` are idle states that still accept review, instruct, and PR actions.
+¹ Back to `pending` happens when a server shutdown interrupts an in-flight session — it is requeued and re-run after the restart instead of being lost.
+
+Only `failed` and `canceled` are truly terminal — `completed` and `pr_created` are idle states that still accept review, instruct, and PR actions.
 
 ### Create Session
 
@@ -488,7 +491,10 @@ Errors: `400` (no review result / no PR number / token resolution failed), `404`
 POST /api/v1/sessions/{sessionID}/cancel
 ```
 
-Session must be in `cloning` or `running` status.
+Session must be in `pending`, `cloning`, `running`, or `reviewing` status.
+
+- `pending` (queued, not picked up yet) is canceled immediately — response status is `canceled`.
+- In-flight sessions get a cancellation request — response status is `canceling` (transient, not a stored state); the CLI process receives SIGTERM (SIGKILL after 15 s) and the session ends as `canceled`.
 
 Response `200`:
 ```json
@@ -499,9 +505,7 @@ Response `200`:
 }
 ```
 
-Note: `canceling` is a transient response status, not a stored state. Poll `GET /sessions/{id}` — final state will be `failed`.
-
-Errors: `404` (not found), `409` (not running/cloning).
+Errors: `404` (not found), `409` (status not cancellable).
 
 ### Create Pull Request
 

@@ -16,6 +16,7 @@ const PIE_COLORS: Record<string, string> = {
   creating_pr: "#14b8a6",
   pr_created: "#14b8a6",
   cancelling: "#f97316",
+  canceled: "#f97316",
 };
 
 const ACTIVE_STATUSES = new Set([

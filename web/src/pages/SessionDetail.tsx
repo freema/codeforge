@@ -74,6 +74,7 @@ export default function SessionDetail() {
   const isActive = ACTIVE_STATUSES.includes(session.status);
   const isPlan = session.session_type === "plan";
   const canCancel =
+    session.status === "pending" ||
     session.status === "running" ||
     session.status === "cloning" ||
     session.status === "reviewing";

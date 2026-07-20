@@ -82,6 +82,8 @@ func (c *CursorRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 		}
 	}
 
+	configureGracefulKill(cmd)
+
 	if opts.APIKey != "" {
 		cmd.Env = append(baseEnv, "CURSOR_API_KEY="+opts.APIKey)
 	} else {

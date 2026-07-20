@@ -9,14 +9,17 @@ import (
 // validTransitions defines valid state machine transitions.
 // Session is a session — completed and pr_created are NOT terminal.
 // They allow review/fix/instruct loops.
+// cloning/running → pending happens when a shutdown interrupts an in-flight
+// session and it is requeued for the next server start.
 var validTransitions = map[Status][]Status{
-	StatusPending:             {StatusCloning, StatusRunning, StatusFailed},
-	StatusCloning:             {StatusRunning, StatusFailed},
-	StatusRunning:             {StatusCompleted, StatusFailed},
-	StatusReviewing:           {StatusCompleted, StatusFailed},
+	StatusPending:             {StatusCloning, StatusRunning, StatusFailed, StatusCanceled},
+	StatusCloning:             {StatusRunning, StatusFailed, StatusCanceled, StatusPending},
+	StatusRunning:             {StatusCompleted, StatusFailed, StatusCanceled, StatusPending},
+	StatusReviewing:           {StatusCompleted, StatusFailed, StatusCanceled},
 	StatusCompleted:           {StatusAwaitingInstruction, StatusCreatingPR, StatusReviewing},
-	StatusFailed:              {}, // terminal — only truly dead state
-	StatusAwaitingInstruction: {StatusRunning, StatusReviewing, StatusFailed},
+	StatusFailed:              {}, // terminal
+	StatusCanceled:            {}, // terminal — user aborted
+	StatusAwaitingInstruction: {StatusRunning, StatusReviewing, StatusFailed, StatusCanceled},
 	StatusCreatingPR:          {StatusPRCreated, StatusFailed},
 	StatusPRCreated:           {StatusAwaitingInstruction, StatusReviewing, StatusCreatingPR, StatusCompleted},
 }
@@ -46,9 +49,10 @@ func ValidateTransition(current, next Status) error {
 }
 
 // IsFinished returns true if the session has reached a terminal state.
-// Only failed is truly terminal — completed and pr_created allow further interaction.
+// Only failed and canceled are truly terminal — completed and pr_created
+// allow further interaction.
 func IsFinished(s Status) bool {
-	return s == StatusFailed
+	return s == StatusFailed || s == StatusCanceled
 }
 
 // IsIdle returns true if the session is in a resting state (not actively processing)

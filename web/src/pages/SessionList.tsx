@@ -16,6 +16,7 @@ const STATUS_FILTERS: {
   { label: "Running", value: "running", icon: "play_arrow" },
   { label: "Completed", value: "completed", icon: "check_circle" },
   { label: "Failed", value: "failed", icon: "warning" },
+  { label: "Canceled", value: "canceled", icon: "cancel" },
   { label: "Awaiting", value: "awaiting_instruction", icon: "chat_bubble" },
   { label: "PR Created", value: "pr_created", icon: "call_merge" },
 ];

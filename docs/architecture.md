@@ -41,15 +41,18 @@ Client (ScopeBot / curl)
 ### Session Service (`internal/session/`)
 - CRUD operations on session state stored in Redis hashes
 - State machine with validated transitions (see Session Lifecycle below)
-- FIFO session queue via `RPUSH`/`BLPOP`
+- FIFO session queue via `RPUSH`/`BLMOVE` with a processing list (reliable queue)
 - Iteration tracking for multi-turn conversations
 - PR service for commit/push/PR creation flow
 - Review lifecycle methods (`StartReview`, `CompleteReview`)
 
 ### Worker Pool (`internal/worker/`)
 - Configurable concurrency (N goroutines)
-- Each worker polls Redis queue with `BLPOP` (5s timeout)
-- Per-session cancellable contexts for cancel support
+- Each worker moves the next session atomically into a processing list with `BLMOVE` (5s timeout) and acks it after execution — sessions survive a crash between dequeue and completion
+- Startup recovery requeues sessions left in the processing list by the previous run (interrupted `running`/`cloning` reset to `pending`); a shutdown mid-execution requeues the session instead of failing it
+- Per-session cancellable contexts for cancel support — user cancels end as `canceled`, the CLI gets SIGTERM (SIGKILL after 15 s, whole process group)
+- Clone retries with backoff for transient git failures
+- Stuck sweeper fails sessions stuck in `running`/`cloning` far past the maximum timeout (lost worker)
 - Executor orchestrates: clone -> run CLI -> diff -> report
 
 ### CLI Runner (`internal/tool/runner/`)
@@ -81,7 +84,7 @@ Client (ScopeBot / curl)
 - Subscribes to Redis Pub/Sub *before* reading history to avoid missed events
 - Replays full history, then streams live events
 - Named events: `connected`, `done`, `timeout`; keepalive comments every 15s
-- For terminal sessions (completed/failed/pr_created): replays history + sends `done` immediately
+- For terminal sessions (completed/failed/canceled/pr_created): replays history + sends `done` immediately
 - Uses `http.ResponseController` for per-write deadlines (30s) instead of global `WriteTimeout`
 - Auto-closes after 10 minutes
 
@@ -195,7 +198,8 @@ All keys use configurable prefix (default: `codeforge:`).
 | `session:{id}:iterations` | List | Iteration records (JSON) |
 | `session:{id}:result` | String | Raw session result |
 | `sessions:index` | Set | Index of all session IDs |
-| `queue:sessions` | List | FIFO session queue (RPUSH/BLPOP) |
+| `queue:sessions` | List | FIFO session queue (RPUSH/BLMOVE) |
+| `queue:sessions:processing` | List | Sessions being worked on — recovered/requeued on startup |
 | `key:{name}` | Hash | Encrypted access key |
 | `keys:index` | Set | Index of all key names |
 | `mcp:global:{name}` | Hash | Global MCP server config |

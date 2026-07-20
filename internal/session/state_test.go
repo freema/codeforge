@@ -32,6 +32,15 @@ func TestValidTransitions(t *testing.T) {
 		{StatusPRCreated, StatusReviewing},
 		{StatusPRCreated, StatusCreatingPR},
 		{StatusPRCreated, StatusCompleted},
+		// user cancel
+		{StatusPending, StatusCanceled},
+		{StatusCloning, StatusCanceled},
+		{StatusRunning, StatusCanceled},
+		{StatusReviewing, StatusCanceled},
+		{StatusAwaitingInstruction, StatusCanceled},
+		// shutdown requeue
+		{StatusCloning, StatusPending},
+		{StatusRunning, StatusPending},
 	}
 
 	for _, tt := range valid {
@@ -46,17 +55,20 @@ func TestInvalidTransitions(t *testing.T) {
 		from, to Status
 	}{
 		{StatusPending, StatusCompleted},
-		{StatusCloning, StatusPending},
 		{StatusCloning, StatusCompleted},
 		{StatusRunning, StatusCloning},
-		{StatusRunning, StatusPending},
 		{StatusRunning, StatusReviewing},
 		{StatusFailed, StatusPending},
 		{StatusFailed, StatusRunning},
 		{StatusFailed, StatusCompleted},
 		{StatusCompleted, StatusPending},
 		{StatusCompleted, StatusRunning},
+		{StatusCompleted, StatusCanceled},
 		{StatusPRCreated, StatusRunning},
+		{StatusPRCreated, StatusCanceled},
+		{StatusCanceled, StatusPending},
+		{StatusCanceled, StatusRunning},
+		{StatusReviewing, StatusPending},
 	}
 
 	for _, tt := range invalid {

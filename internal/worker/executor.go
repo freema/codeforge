@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -261,7 +262,7 @@ func (e *Executor) setupWorkspace(sessionCtx, parentCtx context.Context, t *sess
 	// First iteration: clone
 	if t.Iteration <= 1 {
 		if err := e.cloneStep(sessionCtx, t, workDir, log); err != nil {
-			e.failSession(parentCtx, t, fmt.Sprintf("clone failed: %v", err), startTime, log)
+			e.terminateOnError(parentCtx, t, fmt.Sprintf("clone failed: %v", err), startTime, log)
 			return "", err
 		}
 		// Re-resolve workDir — cloneStep may have created workspace at a slug-based path
@@ -277,7 +278,7 @@ func (e *Executor) setupWorkspace(sessionCtx, parentCtx context.Context, t *sess
 	if _, err := os.Stat(workDir); os.IsNotExist(err) {
 		log.Warn("workspace missing for iteration, re-cloning", "work_dir", workDir)
 		if err := e.cloneStep(sessionCtx, t, workDir, log); err != nil {
-			e.failSession(parentCtx, t, fmt.Sprintf("re-clone failed: %v", err), startTime, log)
+			e.terminateOnError(parentCtx, t, fmt.Sprintf("re-clone failed: %v", err), startTime, log)
 			return "", err
 		}
 	} else {
@@ -377,14 +378,87 @@ func (e *Executor) handleTimeout(ctx context.Context, t *session.Session, result
 	e.completeSession(finalCtx, t, result, workDir, startTime, true, log)
 }
 
-// handleRunError classifies the CLI run error and calls failSession with the appropriate message.
-func (e *Executor) handleRunError(ctx context.Context, t *session.Session, err error, startTime time.Time, log *slog.Logger) {
-	if ctx.Err() == context.Canceled {
-		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "task_canceled", nil), log, "task_canceled", t.ID)
-		e.failSession(context.Background(), t, "canceled by user", startTime, log)
+// terminateOnError finishes a session whose step failed, routed by cause:
+// user cancel → canceled status, pool shutdown → requeue for the next start,
+// anything else → failed with errMsg.
+func (e *Executor) terminateOnError(ctx context.Context, t *session.Session, errMsg string, startTime time.Time, log *slog.Logger) {
+	if errors.Is(context.Cause(ctx), errCanceledByUser) {
+		e.cancelSession(ctx, t, startTime, log)
 		return
 	}
-	e.failSession(ctx, t, fmt.Sprintf("CLI execution failed: %v", err), startTime, log)
+	if ctx.Err() != nil {
+		e.requeueForRestart(ctx, t, log)
+		return
+	}
+	e.failSession(ctx, t, errMsg, startTime, log)
+}
+
+// cancelSession finalizes a user-canceled session with the canceled status.
+func (e *Executor) cancelSession(ctx context.Context, t *session.Session, startTime time.Time, log *slog.Logger) {
+	log.Info("session canceled by user")
+
+	// Detached context — the session ctx is already canceled.
+	finalCtx := context.WithoutCancel(ctx)
+
+	if err := e.sessionService.UpdateStatus(finalCtx, t.ID, session.StatusCanceled); err != nil {
+		log.Warn("failed to update session status to canceled", "error", err)
+	}
+	metrics.TasksTotal.WithLabelValues(string(session.StatusCanceled)).Inc()
+
+	now := time.Now().UTC()
+	prompt := t.CurrentPrompt
+	if prompt == "" {
+		prompt = t.Prompt
+	}
+	if err := e.sessionService.SaveIteration(finalCtx, t.ID, session.Iteration{
+		Number:    t.Iteration,
+		Prompt:    prompt,
+		Error:     "canceled by user",
+		Status:    session.StatusCanceled,
+		StartedAt: startTime,
+		EndedAt:   &now,
+	}); err != nil {
+		log.Warn("failed to save canceled iteration", "error", err)
+	}
+
+	e.emitOrLog(e.streamer.EmitSystem(finalCtx, t.ID, "task_canceled", nil), log, "task_canceled", t.ID)
+	e.emitOrLog(e.streamer.EmitDone(finalCtx, t.ID, session.StatusCanceled, nil), log, "task_done_canceled", t.ID)
+
+	if t.CallbackURL != "" && e.webhook != nil {
+		if err := e.webhook.Send(finalCtx, t.CallbackURL, webhook.Payload{
+			TaskID:     t.ID,
+			Status:     string(session.StatusCanceled),
+			TraceID:    t.TraceID,
+			FinishedAt: time.Now().UTC(),
+		}); err != nil {
+			log.Warn("failed to send cancellation webhook", "error", err)
+		}
+	}
+}
+
+// requeueForRestart puts a session interrupted by shutdown back into a
+// queueable state. The pool leaves its processing-list entry in place, so the
+// next server start requeues and re-runs it instead of losing the work.
+func (e *Executor) requeueForRestart(ctx context.Context, t *session.Session, log *slog.Logger) {
+	finalCtx := context.WithoutCancel(ctx)
+
+	// Reviews stay in reviewing (already queueable); everything mid-execution
+	// goes back to pending. Invalid transitions mean the status is already
+	// queueable — ignore them.
+	if err := e.sessionService.UpdateStatus(finalCtx, t.ID, session.StatusPending); err != nil {
+		log.Info("requeue: session status left unchanged", "error", err)
+	}
+
+	e.emitOrLog(e.streamer.EmitSystem(finalCtx, t.ID, "session_requeued", map[string]string{
+		"reason": "server restart",
+	}), log, "session_requeued", t.ID)
+	log.Info("session requeued for restart")
+}
+
+// handleRunError classifies the CLI run error and finishes the session
+// accordingly (canceled / requeued / failed).
+func (e *Executor) handleRunError(ctx context.Context, t *session.Session, err error, startTime time.Time, log *slog.Logger) {
+	e.terminateOnError(ctx, t, fmt.Sprintf("CLI execution failed: %v", err), startTime, log)
 }
 
 // completeSession handles post-CLI success: changes, result storage, status transition,
@@ -610,6 +684,37 @@ func buildAutoPRDescription(summary string) string {
 	return body + "\n\n---\n_Created automatically by a CodeForge workflow._"
 }
 
+// cloneWithRetry runs git clone with retries for transient failures (network
+// blips, provider hiccups). The destination is wiped between attempts because
+// git refuses to clone into a non-empty directory.
+func (e *Executor) cloneWithRetry(ctx context.Context, sessionID string, opts gitpkg.CloneOptions, log *slog.Logger) error {
+	backoffs := []time.Duration{0, 2 * time.Second, 5 * time.Second}
+	var err error
+	for attempt, delay := range backoffs {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return err // keep the clone error; the caller inspects ctx for routing
+			case <-time.After(delay):
+			}
+			if rmErr := os.RemoveAll(opts.DestDir); rmErr == nil {
+				_ = os.MkdirAll(opts.DestDir, 0755)
+			}
+			log.Warn("retrying clone", "attempt", attempt+1, "error", err)
+			e.emitOrLog(e.streamer.EmitGit(ctx, sessionID, "clone_retry", map[string]string{
+				"attempt": fmt.Sprintf("%d", attempt+1),
+			}), log, "clone_retry", sessionID)
+		}
+		if err = gitpkg.Clone(ctx, opts); err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return err
+		}
+	}
+	return err
+}
+
 func (e *Executor) cloneStep(ctx context.Context, t *session.Session, workDir string, log *slog.Logger) error {
 	ctx, span := tracing.Tracer().Start(ctx, "task.clone")
 	defer span.End()
@@ -648,13 +753,13 @@ func (e *Executor) cloneStep(ctx context.Context, t *session.Session, workDir st
 			targetBranch = "main"
 		}
 
-		err := gitpkg.Clone(ctx, gitpkg.CloneOptions{
+		err := e.cloneWithRetry(ctx, t.ID, gitpkg.CloneOptions{
 			RepoURL: t.RepoURL,
 			DestDir: workDir,
 			Token:   t.AccessToken,
 			Branch:  targetBranch,
 			Shallow: false, // need full history for diff
-		})
+		}, log)
 		if err != nil {
 			span.SetStatus(codes.Error, "clone failed")
 			return err
@@ -685,13 +790,13 @@ func (e *Executor) cloneStep(ctx context.Context, t *session.Session, workDir st
 			}
 		}
 
-		err := gitpkg.Clone(ctx, gitpkg.CloneOptions{
+		err := e.cloneWithRetry(ctx, t.ID, gitpkg.CloneOptions{
 			RepoURL: t.RepoURL,
 			DestDir: workDir,
 			Token:   t.AccessToken,
 			Branch:  branch,
 			Shallow: false,
-		})
+		}, log)
 		if err != nil {
 			span.SetStatus(codes.Error, "clone failed")
 			return err
@@ -1227,11 +1332,10 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 				"timeout_seconds": timeout,
 			}), log, "review_timeout", t.ID)
 			e.failSession(ctx, t, fmt.Sprintf("review timed out after %ds", timeout), startTime, log)
-		} else if ctx.Err() == context.Canceled {
-			e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "review_canceled", nil), log, "review_canceled", t.ID)
-			e.failSession(context.Background(), t, "review canceled by user", startTime, log)
 		} else {
-			e.failSession(ctx, t, fmt.Sprintf("review CLI execution failed: %v", err), startTime, log)
+			// User cancel → canceled, shutdown → requeued (status stays
+			// reviewing, which is queueable), other errors → failed.
+			e.terminateOnError(ctx, t, fmt.Sprintf("review CLI execution failed: %v", err), startTime, log)
 		}
 		return
 	}

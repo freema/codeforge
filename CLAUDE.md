@@ -111,7 +111,7 @@ tasks/                 Planning documents (not code)
 - **State**: Redis hashes `session:{id}:state`
 - **Persistence**: SQLite for workflows, tools, keys, MCP configs
 - **Worker pool**: configurable concurrency, graceful shutdown
-- **Session lifecycle**: pending → cloning → running → completed (+ reviewing, awaiting_instruction, creating_pr, pr_created, failed)
+- **Session lifecycle**: pending → cloning → running → completed (+ reviewing, awaiting_instruction, creating_pr, pr_created, failed, canceled)
 
 ## Key Flows
 

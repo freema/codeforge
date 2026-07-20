@@ -22,6 +22,7 @@ const (
 	StatusReviewing           Status = "reviewing"
 	StatusCreatingPR          Status = "creating_pr"
 	StatusPRCreated           Status = "pr_created"
+	StatusCanceled            Status = "canceled"
 )
 
 // Session represents a code session in the system.
