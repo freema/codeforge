@@ -18,16 +18,16 @@ import (
 
 // Pool is a worker pool that consumes sessions from a Redis queue.
 type Pool struct {
-	redis       *redisclient.Client
-	executor    *Executor
+	redis          *redisclient.Client
+	executor       *Executor
 	sessionService *session.Service
-	queueName   string
-	concurrency int
-	wg          sync.WaitGroup
-	cancel      context.CancelFunc
-	activeCount atomic.Int32
-	cancels     map[string]context.CancelFunc
-	cancelsMu   sync.RWMutex
+	queueName      string
+	concurrency    int
+	wg             sync.WaitGroup
+	cancel         context.CancelFunc
+	activeCount    atomic.Int32
+	cancels        map[string]context.CancelFunc
+	cancelsMu      sync.RWMutex
 }
 
 // NewPool creates a new worker pool.
@@ -39,12 +39,12 @@ func NewPool(
 	concurrency int,
 ) *Pool {
 	return &Pool{
-		redis:       redis,
-		executor:    executor,
+		redis:          redis,
+		executor:       executor,
 		sessionService: sessionService,
-		queueName:   queueName,
-		concurrency: concurrency,
-		cancels:     make(map[string]context.CancelFunc),
+		queueName:      queueName,
+		concurrency:    concurrency,
+		cancels:        make(map[string]context.CancelFunc),
 	}
 }
 

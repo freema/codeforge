@@ -28,8 +28,8 @@ func (s *Service) Store() *Store {
 
 // CreateTenantResult holds the newly created tenant and its plain-text token (shown once).
 type CreateTenantResult struct {
-	Tenant    *Tenant `json:"tenant"`
-	PlainToken string `json:"api_token"`
+	Tenant     *Tenant `json:"tenant"`
+	PlainToken string  `json:"api_token"`
 }
 
 // CreateTenant creates a new tenant with a generated API token.

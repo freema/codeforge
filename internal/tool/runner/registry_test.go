@@ -27,9 +27,9 @@ func TestRegistry_GetWithMeta(t *testing.T) {
 	})
 
 	tests := []struct {
-		name       string
-		cliName    string
-		wantErr    bool
+		name         string
+		cliName      string
+		wantErr      bool
 		wantProvider string
 	}{
 		{

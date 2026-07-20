@@ -11,9 +11,9 @@ type stubRegistry struct {
 	tokens map[string]string // key: "provider:name" → token
 }
 
-func (s *stubRegistry) Create(_ context.Context, _ Key) error                    { return nil }
-func (s *stubRegistry) List(_ context.Context) ([]Key, error)                    { return nil, nil }
-func (s *stubRegistry) Delete(_ context.Context, _ string) error                 { return nil }
+func (s *stubRegistry) Create(_ context.Context, _ Key) error    { return nil }
+func (s *stubRegistry) List(_ context.Context) ([]Key, error)    { return nil, nil }
+func (s *stubRegistry) Delete(_ context.Context, _ string) error { return nil }
 func (s *stubRegistry) Verify(_ context.Context, _ string) (*VerifyResult, string, error) {
 	return nil, "", fmt.Errorf("not implemented")
 }

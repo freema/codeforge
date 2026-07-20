@@ -8,8 +8,8 @@ func TestClaudeNormalizer_Normalize(t *testing.T) {
 	n := NewClaudeNormalizer()
 
 	tests := []struct {
-		name string
-		input string
+		name    string
+		input   string
 		wantNil bool
 		want    []struct {
 			typ     NormalizedEventType

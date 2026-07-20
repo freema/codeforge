@@ -18,17 +18,17 @@ type CleanerConfig struct {
 
 // Cleaner periodically removes expired workspaces.
 type Cleaner struct {
-	manager     *Manager
+	manager        *Manager
 	sessionService *session.Service
-	cfg         CleanerConfig
+	cfg            CleanerConfig
 }
 
 // NewCleaner creates a new workspace cleaner.
 func NewCleaner(manager *Manager, sessionService *session.Service, cfg CleanerConfig) *Cleaner {
 	return &Cleaner{
-		manager:     manager,
+		manager:        manager,
 		sessionService: sessionService,
-		cfg:         cfg,
+		cfg:            cfg,
 	}
 }
 

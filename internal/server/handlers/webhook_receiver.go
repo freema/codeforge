@@ -21,16 +21,16 @@ import (
 // WebhookReceiverHandler handles incoming webhooks from GitHub/GitLab.
 type WebhookReceiverHandler struct {
 	sessionService *session.Service
-	redis       *redisclient.Client
-	cfg         config.CodeReviewConfig
+	redis          *redisclient.Client
+	cfg            config.CodeReviewConfig
 }
 
 // NewWebhookReceiverHandler creates a new webhook receiver handler.
 func NewWebhookReceiverHandler(sessionService *session.Service, redis *redisclient.Client, cfg config.CodeReviewConfig) *WebhookReceiverHandler {
 	return &WebhookReceiverHandler{
 		sessionService: sessionService,
-		redis:       redis,
-		cfg:         cfg,
+		redis:          redis,
+		cfg:            cfg,
 	}
 }
 
@@ -222,7 +222,7 @@ func (h *WebhookReceiverHandler) handleGitHubPR(w http.ResponseWriter, r *http.R
 		RepoURL:     repoURL,
 		ProviderKey: keyName,
 		Prompt:      fmt.Sprintf("Review pull request #%d", prNumber),
-		SessionType:    "pr_review",
+		SessionType: "pr_review",
 		Config: &session.Config{
 			CLI:          cli,
 			SourceBranch: event.PullRequest.Head.Ref,
@@ -326,7 +326,7 @@ func (h *WebhookReceiverHandler) handleGitHubComment(w http.ResponseWriter, r *h
 			RepoURL:     repoURL,
 			ProviderKey: keyName,
 			Prompt:      fmt.Sprintf("Review pull request #%d", prNumber),
-			SessionType:    "pr_review",
+			SessionType: "pr_review",
 			Config: &session.Config{
 				CLI:            cli,
 				PRNumber:       prNumber,
@@ -474,7 +474,7 @@ func (h *WebhookReceiverHandler) handleGitLabMR(w http.ResponseWriter, r *http.R
 		RepoURL:     repoURL,
 		ProviderKey: keyName,
 		Prompt:      fmt.Sprintf("Review merge request !%d: %s", mrIID, event.ObjectAttributes.Title),
-		SessionType:    "pr_review",
+		SessionType: "pr_review",
 		Config: &session.Config{
 			CLI:          cli,
 			SourceBranch: event.ObjectAttributes.SourceBranch,
@@ -564,7 +564,7 @@ func (h *WebhookReceiverHandler) handleGitLabNote(w http.ResponseWriter, r *http
 			RepoURL:     repoURL,
 			ProviderKey: keyName,
 			Prompt:      fmt.Sprintf("Review merge request !%d", mrIID),
-			SessionType:    "pr_review",
+			SessionType: "pr_review",
 			Config: &session.Config{
 				CLI:            cli,
 				SourceBranch:   event.MergeRequest.SourceBranch,

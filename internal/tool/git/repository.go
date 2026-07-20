@@ -270,13 +270,13 @@ func listGitHubPullRequests(ctx context.Context, token, baseURL, repoFullName st
 	}
 
 	var ghPRs []struct {
-		Number    int       `json:"number"`
-		Title     string    `json:"title"`
-		State     string    `json:"state"`
+		Number    int                    `json:"number"`
+		Title     string                 `json:"title"`
+		State     string                 `json:"state"`
 		User      struct{ Login string } `json:"user"`
-		Head      struct{ Ref string } `json:"head"`
-		Base      struct{ Ref string } `json:"base"`
-		UpdatedAt time.Time `json:"updated_at"`
+		Head      struct{ Ref string }   `json:"head"`
+		Base      struct{ Ref string }   `json:"base"`
+		UpdatedAt time.Time              `json:"updated_at"`
 	}
 	if err := json.Unmarshal(body, &ghPRs); err != nil {
 		return nil, fmt.Errorf("parsing response: %w", err)
@@ -328,13 +328,13 @@ func listGitLabMergeRequests(ctx context.Context, token, baseURL, repoFullName s
 	}
 
 	var glMRs []struct {
-		IID          int       `json:"iid"`
-		Title        string    `json:"title"`
-		State        string    `json:"state"`
+		IID          int                       `json:"iid"`
+		Title        string                    `json:"title"`
+		State        string                    `json:"state"`
 		Author       struct{ Username string } `json:"author"`
-		SourceBranch string    `json:"source_branch"`
-		TargetBranch string    `json:"target_branch"`
-		UpdatedAt    time.Time `json:"updated_at"`
+		SourceBranch string                    `json:"source_branch"`
+		TargetBranch string                    `json:"target_branch"`
+		UpdatedAt    time.Time                 `json:"updated_at"`
 	}
 	if err := json.Unmarshal(body, &glMRs); err != nil {
 		return nil, fmt.Errorf("parsing response: %w", err)

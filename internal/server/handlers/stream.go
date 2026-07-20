@@ -83,7 +83,7 @@ func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	// Send connected event with current session state
 	writeSSE(w, "connected", map[string]interface{}{
 		"session_id": t.ID,
-		"status":  t.Status,
+		"status":     t.Status,
 	})
 	flush()
 
@@ -101,7 +101,7 @@ func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	if isTerminal {
 		writeSSE(w, "done", map[string]interface{}{
 			"session_id": t.ID,
-			"status":  t.Status,
+			"status":     t.Status,
 		})
 		flush()
 		return

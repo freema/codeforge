@@ -25,7 +25,7 @@ type Payload struct {
 	Result         string                 `json:"result,omitempty"`
 	Error          string                 `json:"error,omitempty"`
 	ChangesSummary *gitpkg.ChangesSummary `json:"changes_summary,omitempty"`
-	Usage          *session.UsageInfo        `json:"usage,omitempty"`
+	Usage          *session.UsageInfo     `json:"usage,omitempty"`
 	TraceID        string                 `json:"trace_id,omitempty"`
 	FinishedAt     time.Time              `json:"finished_at"`
 }

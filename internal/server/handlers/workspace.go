@@ -11,7 +11,7 @@ import (
 
 // WorkspaceHandler handles workspace management endpoints.
 type WorkspaceHandler struct {
-	manager     *workspace.Manager
+	manager        *workspace.Manager
 	sessionService *session.Service
 }
 

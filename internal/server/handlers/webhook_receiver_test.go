@@ -146,7 +146,7 @@ func TestGitHubWebhook(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			h := &WebhookReceiverHandler{
 				sessionService: nil,
-				cfg:         tt.cfg,
+				cfg:            tt.cfg,
 			}
 
 			body := []byte(tt.body)
@@ -277,7 +277,7 @@ func TestGitLabWebhook(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			h := &WebhookReceiverHandler{
 				sessionService: nil,
-				cfg:         tt.cfg,
+				cfg:            tt.cfg,
 			}
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/gitlab", strings.NewReader(tt.body))

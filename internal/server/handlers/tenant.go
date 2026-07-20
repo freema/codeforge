@@ -83,13 +83,13 @@ func (h *TenantHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name                  *string  `json:"name"`
-		Tier                  *string  `json:"tier"`
-		MaxSessionsPerDay     *int     `json:"max_sessions_per_day"`
-		MaxConcurrentSessions *int     `json:"max_concurrent_sessions"`
+		Name                   *string  `json:"name"`
+		Tier                   *string  `json:"tier"`
+		MaxSessionsPerDay      *int     `json:"max_sessions_per_day"`
+		MaxConcurrentSessions  *int     `json:"max_concurrent_sessions"`
 		MaxBudgetUSDPerSession *float64 `json:"max_budget_usd_per_session"`
-		AllowedCLIs           *string  `json:"allowed_clis"`
-		AllowedModels         *string  `json:"allowed_models"`
+		AllowedCLIs            *string  `json:"allowed_clis"`
+		AllowedModels          *string  `json:"allowed_models"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})

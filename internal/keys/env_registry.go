@@ -12,10 +12,10 @@ import (
 
 // envKeyMapping maps an environment variable to a provider key.
 type envKeyMapping struct {
-	EnvVar      string
-	URLEnvVar   string // optional: env var for custom base URL
-	Provider    string
-	Name        string
+	EnvVar    string
+	URLEnvVar string // optional: env var for custom base URL
+	Provider  string
+	Name      string
 }
 
 // knownEnvKeys lists all recognized environment variable → provider mappings.

@@ -7,58 +7,58 @@ import (
 
 func TestGenerate(t *testing.T) {
 	tests := []struct {
-		name   string
-		prompt string
+		name      string
+		prompt    string
 		sessionID string
-		want   string
+		want      string
 	}{
 		{
-			name:   "basic prompt",
-			prompt: "Fix the failing auth tests",
+			name:      "basic prompt",
+			prompt:    "Fix the failing auth tests",
 			sessionID: "550e8400-e29b-41d4-a716-446655440000",
-			want:   "fix-the-failing-auth-tests-550e8400",
+			want:      "fix-the-failing-auth-tests-550e8400",
 		},
 		{
-			name:   "empty prompt",
-			prompt: "",
+			name:      "empty prompt",
+			prompt:    "",
 			sessionID: "550e8400-e29b-41d4-a716-446655440000",
-			want:   "session-550e8400",
+			want:      "session-550e8400",
 		},
 		{
-			name:   "unicode accents",
-			prompt: "Opravit chybu v autentizaci",
+			name:      "unicode accents",
+			prompt:    "Opravit chybu v autentizaci",
 			sessionID: "abcdef1234567890",
-			want:   "opravit-chybu-v-autentizaci-abcdef12",
+			want:      "opravit-chybu-v-autentizaci-abcdef12",
 		},
 		{
-			name:   "more than 5 words",
-			prompt: "Fix the very broken auth tests in the login module",
+			name:      "more than 5 words",
+			prompt:    "Fix the very broken auth tests in the login module",
 			sessionID: "12345678abcdefgh",
-			want:   "fix-the-very-broken-auth-12345678",
+			want:      "fix-the-very-broken-auth-12345678",
 		},
 		{
-			name:   "special characters",
-			prompt: "Add @middleware & fix #123 bug!",
+			name:      "special characters",
+			prompt:    "Add @middleware & fix #123 bug!",
 			sessionID: "aabbccdd11223344",
-			want:   "add-middleware-fix-123-bug-aabbccdd",
+			want:      "add-middleware-fix-123-bug-aabbccdd",
 		},
 		{
-			name:   "whitespace only",
-			prompt: "   ",
+			name:      "whitespace only",
+			prompt:    "   ",
 			sessionID: "aabbccdd11223344",
-			want:   "session-aabbccdd",
+			want:      "session-aabbccdd",
 		},
 		{
-			name:   "short session ID",
-			prompt: "Fix bug",
+			name:      "short session ID",
+			prompt:    "Fix bug",
 			sessionID: "abc",
-			want:   "fix-bug-abc",
+			want:      "fix-bug-abc",
 		},
 		{
-			name:   "long single word",
-			prompt: "Superlongwordthatexceedsthelimitofcharacters",
+			name:      "long single word",
+			prompt:    "Superlongwordthatexceedsthelimitofcharacters",
 			sessionID: "12345678abcdefgh",
-			want:   "superlongwordthatexceedsthelimitofcharact-12345678",
+			want:      "superlongwordthatexceedsthelimitofcharact-12345678",
 		},
 	}
 
