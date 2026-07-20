@@ -2,20 +2,20 @@
 
 ## System Overview
 
-CodeForge is a Go HTTP server that orchestrates AI-powered code work over git repositories. A task is a **session over a repo** — not a one-shot job. Each task tracks its workspace, conversation history (multi-turn), review results, and PR state.
+CodeForge is a Go HTTP server that orchestrates AI-powered code work over git repositories. A session is a **stateful work unit over a repo** — not a one-shot job. Each session tracks its workspace, conversation history (multi-turn), review results, and PR state.
 
-The system receives task requests via REST API, clones repositories, runs AI CLI tools against them, streams progress in real time, and supports human-in-the-loop actions: review, instruct, create PR, post review comments. It handles automated PR reviews via webhooks, multiple CLI runners (Claude Code, Codex), and a tool system for extending AI capabilities.
+The system receives session requests via REST API, clones repositories, runs AI CLI tools against them, streams progress in real time, and supports human-in-the-loop actions: review, instruct, create PR, post review comments. It handles automated PR reviews via webhooks, multiple CLI runners (Claude Code, Codex), and a tool system for extending AI capabilities.
 
 ```
 Client (ScopeBot / curl)
     │
-    ├── POST /tasks ──────▶ ┌──────────────┐     ┌──────────────┐
+    ├── POST /sessions ───▶ ┌──────────────┐     ┌──────────────┐
     │                       │  HTTP Server │────▶│  Redis Queue  │
     │                       │  (Chi)       │     │  (BLPOP)      │
     │                       └──────┬───────┘     └──────┬───────┘
     │                              │                     │
     │                              │               ┌─────▼───────┐
-    └── GET /tasks/{id}/stream ──▶ │               │ Worker Pool │
+    └─ GET /sessions/{id}/stream ▶ │               │ Worker Pool │
                                    │               │ (N workers) │
                     ┌──────────────┘               └──────┬──────┘
                     ▼                                      │
@@ -33,14 +33,14 @@ Client (ScopeBot / curl)
 
 ### HTTP Server (`internal/server/`)
 - Chi router with middleware (auth, logging, rate limiting, metrics, tracing)
-- Handlers for tasks, keys, MCP servers, tools, workspaces, workflows, and SSE streams
+- Handlers for sessions, keys, MCP servers, tools, workspaces, workflows, and SSE streams
 - Swagger UI at `/api/docs` with embedded OpenAPI spec
 - Prometheus `/metrics` and health endpoints (no auth required)
 - SSE stream endpoint bypasses `otelhttp` and request timeout middleware (see Streaming below)
 
-### Task Service (`internal/task/`)
-- CRUD operations on task state stored in Redis hashes
-- State machine with validated transitions (see Task Lifecycle below)
+### Session Service (`internal/session/`)
+- CRUD operations on session state stored in Redis hashes
+- State machine with validated transitions (see Session Lifecycle below)
 - FIFO session queue via `RPUSH`/`BLPOP`
 - Iteration tracking for multi-turn conversations
 - PR service for commit/push/PR creation flow
@@ -49,7 +49,7 @@ Client (ScopeBot / curl)
 ### Worker Pool (`internal/worker/`)
 - Configurable concurrency (N goroutines)
 - Each worker polls Redis queue with `BLPOP` (5s timeout)
-- Per-task cancellable contexts for cancel support
+- Per-session cancellable contexts for cancel support
 - Executor orchestrates: clone -> run CLI -> diff -> report
 
 ### CLI Runner (`internal/tool/runner/`)
@@ -57,7 +57,7 @@ Client (ScopeBot / curl)
 - **Claude Code** runner: `--output-format stream-json` parsing, supports MaxTurns and MaxBudgetUSD
 - **Codex** runner: JSONL stream parsing (`--json --sandbox danger-full-access`), `CODEX_API_KEY` env var. Uses `danger-full-access` sandbox because Codex's Landlock sandbox does not work inside Docker (missing kernel support / capabilities). The Docker container itself provides isolation.
 - Registry maps CLI names to Runner implementations
-- Selected per-task via `config.cli` field (default: `claude-code`)
+- Selected per-session via `config.cli` field (default: `claude-code`)
 - Result extraction: prefers the `type: "result"` event text; falls back to the last `type: "assistant"` message text
 
 ### Stream Normalization (`internal/tool/runner/`)
@@ -71,17 +71,17 @@ Client (ScopeBot / curl)
 ### Streaming
 
 **Worker side (`internal/worker/stream.go`):**
-- Events published to Redis Pub/Sub channels (`task:{id}:stream`)
-- Dual-write to history list (`task:{id}:history`) for reconnection
+- Events published to Redis Pub/Sub channels (`session:{id}:stream`)
+- Dual-write to history list (`session:{id}:history`) for reconnection
 - Event types: system, git, cli, stream, result
-- Done signal on separate channel (`task:{id}:done`)
+- Done signal on separate channel (`session:{id}:done`)
 
 **SSE handler (`internal/server/handlers/stream.go`):**
-- `GET /api/v1/tasks/{id}/stream` opens a long-lived SSE connection
+- `GET /api/v1/sessions/{id}/stream` opens a long-lived SSE connection
 - Subscribes to Redis Pub/Sub *before* reading history to avoid missed events
 - Replays full history, then streams live events
 - Named events: `connected`, `done`, `timeout`; keepalive comments every 15s
-- For terminal tasks (completed/failed/pr_created): replays history + sends `done` immediately
+- For terminal sessions (completed/failed/pr_created): replays history + sends `done` immediately
 - Uses `http.ResponseController` for per-write deadlines (30s) instead of global `WriteTimeout`
 - Auto-closes after 10 minutes
 
@@ -91,34 +91,34 @@ Client (ScopeBot / curl)
 - The PrometheusMetrics middleware's `responseWriter` implements `Flush()` (delegates to underlying writer) and `Unwrap()` (for `http.ResponseController` compatibility)
 - Global `http.Server.WriteTimeout` is set to `0` (disabled) — SSE handler manages its own deadlines
 
-### Task Type System (`internal/prompt/`)
-- Four task types: `code` (default), `plan`, `review`, `pr_review` — each with different behavior
+### Session Type System (`internal/prompt/`)
+- Four session types: `code` (default), `plan`, `review`, `pr_review` — each with different behavior
 - **code**: no template wrapping, user prompt passed directly to CLI
 - **plan**: wraps user prompt in `plan.md` template — instructs AI to analyze repo and create implementation plan without modifying files
 - **review**: wraps user prompt in `review.md` template — instructs AI to review code quality with structured JSON output, read-only
 - **pr_review**: wraps user prompt in `pr_review.md` template — instructs AI to review a specific PR/MR diff via `git diff origin/{base}...HEAD`, outputs structured JSON
 - Templates rendered via Go `text/template` with `embed.FS`
-- Template rendering happens in the executor (`buildPrompt()`) at runtime, NOT at task creation time
-- `Task.Prompt` always stores the original user prompt (displayed in FE), template is applied only when running the CLI
-- `GET /api/v1/task-types` endpoint returns available types for FE toggle buttons
+- Template rendering happens in the executor (`buildPrompt()`) at runtime, NOT at session creation time
+- `Session.Prompt` always stores the original user prompt (displayed in FE), template is applied only when running the CLI
+- `GET /api/v1/session-types` endpoint returns available types for FE toggle buttons
 
 ### Review System (`internal/review/`)
-- **User-triggered action**, NOT an automatic step — user calls `POST /tasks/:id/review`
+- **User-triggered action**, NOT an automatic step — user calls `POST /sessions/:id/review`
 - **Async via worker pool**: `POST /review` returns 202, review enqueued to Redis FIFO queue, executed by worker (same path as instruct)
 - Executor's `executeReview()` handles: resolve workspace → build `code_review` prompt → run CLI → parse output → store `ReviewResult`
 - Multi-strategy parser: direct JSON, markdown code block, heuristic brace matching, fallback
-- Review result stored on `Task.ReviewResult` field in Redis
+- Review result stored on `Session.ReviewResult` field in Redis
 - Full SSE streaming during review (events: `review_started`, CLI output, `review_completed`)
 - Cancel support, worker pool concurrency control, configurable timeout — no HTTP timeout dependency
 - Supports different CLI for review (e.g. Codex reviews Claude Code's output)
 
 ### PR Review System
-- `pr_review` is a task type, NOT a separate system — reuses the entire task lifecycle
-- **API trigger**: `POST /api/v1/tasks` with `task_type: "pr_review"`, `config.pr_number`, source/target branches
-- **Webhook trigger**: GitHub/GitLab webhooks auto-create `pr_review` tasks (endpoints outside Bearer auth, verified via webhook secrets)
+- `pr_review` is a session type, NOT a separate system — reuses the entire session lifecycle
+- **API trigger**: `POST /api/v1/sessions` with `session_type: "pr_review"`, `config.pr_number`, source/target branches
+- **Webhook trigger**: GitHub/GitLab webhooks auto-create `pr_review` sessions (endpoints outside Bearer auth, verified via webhook secrets)
 - **Clone strategy**: clones target branch (non-shallow), fetches PR ref via `git fetch origin pull/{N}/head:pr-{N}`, checks out local branch — handles fork PRs automatically
-- **Completion**: executor parses `ReviewResult` from CLI output, stores on task; if `output_mode: "post_comments"`, automatically posts to GitHub/GitLab
-- **Comment posting**: `POST /tasks/:id/post-review` endpoint for manual posting; uses GitHub Pull Request Reviews API (line-level comments, max 20) or GitLab Discussions API (position-based comments)
+- **Completion**: executor parses `ReviewResult` from CLI output, stores on session; if `output_mode: "post_comments"`, automatically posts to GitHub/GitLab
+- **Comment posting**: `POST /sessions/:id/post-review` endpoint for manual posting; uses GitHub Pull Request Reviews API (line-level comments, max 20) or GitLab Discussions API (position-based comments)
 - **Comment formatting**: `internal/review/format.go` — severity labels (CRITICAL, MAJOR, MINOR, SUGGESTION), markdown summary body
 - **GitHub review posting**: `internal/tool/git/github_review.go` — verdict mapping (approve→APPROVE, request_changes→REQUEST_CHANGES)
 - **GitLab review posting**: `internal/tool/git/gitlab_review.go` — MR version SHAs for position-based comments, fallback to summary-only
@@ -136,20 +136,20 @@ Client (ScopeBot / curl)
 - **Catalog** — 5 built-in tools: sentry (HTTP), jira, git, github, playwright (stdio)
 - **Resolver** — lookup chain: project scope -> global scope -> built-in catalog
 - **Bridge** — converts resolved tools to MCP server configs for `.mcp.json` generation
-- **Validator** — checks required config fields before task execution
-- Per-task tool requests via `TaskConfig.Tools` field
+- **Validator** — checks required config fields before session execution
+- Per-session tool requests via `session.Config.Tools` field
 
 ### Workflow System (`internal/workflow/`)
 - Multi-step workflow orchestrator consuming from Redis FIFO queue (`BLPOP queue:workflows`)
 - Three step types:
   - **fetch** — HTTP request to external APIs (e.g., Sentry, GitHub Issues) with JSONPath output extraction
-  - **task** — creates and waits for a CodeForge task (clone + AI CLI run)
+  - **session** — creates and waits for a CodeForge session (clone + AI CLI run)
   - **action** — built-in actions (e.g., `create_pr`, `notify`) that operate on previous step results
 - Go `text/template` engine for step configuration: `{{.Params.key}}`, `{{.Steps.step_name.field}}`
 - Built-in workflows: `sentry-fixer`, `github-issue-fixer`, `gitlab-issue-fixer`, `code-review`, `knowledge-update`
 - Workflow definitions stored in SQLite (user-created + built-in, seeded on startup)
 - Run state tracked in SQLite with per-step status records
-- Streaming via Redis Pub/Sub (`workflow:{runID}:stream`) with history replay, same SSE pattern as tasks
+- Streaming via Redis Pub/Sub (`workflow:{runID}:stream`) with history replay, same SSE pattern as sessions
 
 ```
 Workflow Run Lifecycle:
@@ -188,11 +188,13 @@ All keys use configurable prefix (default: `codeforge:`).
 
 | Key Pattern | Type | Description |
 |-------------|------|-------------|
-| `task:{id}` | Hash | Task state (all fields) |
-| `task:{id}:stream` | Pub/Sub | Live event stream |
-| `task:{id}:history` | List | Event history for reconnection |
-| `task:{id}:done` | Pub/Sub | Completion signal |
-| `task:{id}:iterations` | List | Iteration records (JSON) |
+| `session:{id}:state` | Hash | Session state (all fields) |
+| `session:{id}:stream` | Pub/Sub | Live event stream |
+| `session:{id}:history` | List | Event history for reconnection |
+| `session:{id}:done` | Pub/Sub | Completion signal |
+| `session:{id}:iterations` | List | Iteration records (JSON) |
+| `session:{id}:result` | String | Raw session result |
+| `sessions:index` | Set | Index of all session IDs |
 | `queue:sessions` | List | FIFO session queue (RPUSH/BLPOP) |
 | `key:{name}` | Hash | Encrypted access key |
 | `keys:index` | Set | Index of all key names |
@@ -211,7 +213,7 @@ All keys use configurable prefix (default: `codeforge:`).
 | `workflow:{runID}:done` | Pub/Sub | Workflow run completion signal |
 | `workflow:{runID}:context` | Hash | Step outputs for template interpolation |
 
-## Task Lifecycle
+## Session Lifecycle
 
 ```
 pending ──▶ cloning ──▶ running ──▶ completed ──▶ creating_pr ──▶ pr_created
@@ -230,27 +232,27 @@ pending ──▶ cloning ──▶ running ──▶ completed ──▶ creati
  failed      failed      failed
 ```
 
-### Task Session Lifecycle
+### Session Lifecycle Flow
 
-1. **Create**  → POST /tasks → pending → queue (RPUSH)
+1. **Create**  → POST /sessions → pending → queue (RPUSH)
 2. **Execute** → worker BLPOP → cloning → running → completed
-3. **Review**  → POST /tasks/:id/review → 202 → reviewing → queue → worker → completed (with ReviewResult)
-4. **Instruct** → POST /tasks/:id/instruct → awaiting_instruction → queue → worker → completed
-5. **Create PR** → POST /tasks/:id/create-pr → creating_pr → pr_created
-6. **Cancel**  → POST /tasks/:id/cancel → context cancel → failed
+3. **Review**  → POST /sessions/:id/review → 202 → reviewing → queue → worker → completed (with ReviewResult)
+4. **Instruct** → POST /sessions/:id/instruct → awaiting_instruction → queue → worker → completed
+5. **Create PR** → POST /sessions/:id/create-pr → creating_pr → pr_created
+6. **Cancel**  → POST /sessions/:id/cancel → context cancel → failed
 
 Steps 3-5 are repeatable. All queue operations go through Redis FIFO (RPUSH + BLPOP).
 Review and instruct share the same worker pool — no separate execution path.
 
 ### States
 
-- **pending**: Task created, queued for processing
+- **pending**: Session created, queued for processing
 - **cloning**: Git repository being cloned
 - **running**: AI CLI executing the prompt
 - **completed**: CLI finished, results available — user can now review, instruct, or create PR
-- **reviewing**: Code review in progress (enqueued via `POST /tasks/:id/review`, runs in worker pool)
+- **reviewing**: Code review in progress (enqueued via `POST /sessions/:id/review`, runs in worker pool)
 - **failed**: Terminal state (clone/run/timeout/cancel failure)
-- **awaiting_instruction**: Waiting for follow-up prompt (after `POST /tasks/:id/instruct`)
+- **awaiting_instruction**: Waiting for follow-up prompt (after `POST /sessions/:id/instruct`)
 - **creating_pr**: PR/MR being created
 - **pr_created**: PR/MR created successfully
 
@@ -258,21 +260,21 @@ Review and instruct share the same worker pool — no separate execution path.
 
 | From | To |
 |------|----|
-| pending | cloning, failed |
+| pending | cloning, running, failed |
 | cloning | running, failed |
 | running | completed, failed |
 | completed | awaiting_instruction, creating_pr, reviewing |
 | reviewing | completed, failed |
 | awaiting_instruction | running, reviewing, failed |
 | creating_pr | pr_created, failed |
-| pr_created | awaiting_instruction, completed |
+| pr_created | awaiting_instruction, reviewing, creating_pr, completed |
 
 ## Observability
 
 ### Prometheus Metrics
-- `codeforge_tasks_total` (counter) - tasks by status
+- `codeforge_tasks_total` (counter) - sessions by status
 - `codeforge_tasks_duration_seconds` (histogram) - execution time
-- `codeforge_tasks_in_progress` (gauge) - active tasks
+- `codeforge_tasks_in_progress` (gauge) - active sessions
 - `codeforge_queue_depth` (gauge) - queue size
 - `codeforge_workers_active/total` (gauge) - worker utilization
 - `codeforge_http_requests_total` (counter) - HTTP requests
@@ -282,7 +284,7 @@ Review and instruct share the same worker pool — no separate execution path.
 
 ### OpenTelemetry Tracing
 - Spans: `task.execute`, `task.clone`, `task.run`
-- Trace ID propagated through task lifecycle and webhook headers
+- Trace ID propagated through session lifecycle and webhook headers
 - Configurable sampling rate, OTLP HTTP export
 - HTTP instrumentation via `otelhttp`
 
@@ -298,12 +300,12 @@ internal/
   keys/                 # Access key registry + resolver
   logger/               # Structured logging (slog)
   metrics/              # Prometheus metric definitions
-  prompt/               # Prompt templates (embed FS, task types: code, plan, review, pr_review)
+  prompt/               # Prompt templates (embed FS, session types: code, plan, review, pr_review)
   redisclient/          # Redis client wrapper
   review/               # Code review types, output parser, comment formatting
   server/               # HTTP server + handlers + middleware
-    handlers/           # Request handlers (tasks, webhook receiver, stream, etc.)
-  task/                 # Task model, service, state machine
+    handlers/           # Request handlers (sessions, webhook receiver, stream, etc.)
+  session/              # Session model, service, state machine
   tool/                 # Tool subsystem namespace (low-level)
     git/                # Git operations (clone, branch, PR, review posting)
     runner/             # CLI runner interface + implementations (Claude, Codex)

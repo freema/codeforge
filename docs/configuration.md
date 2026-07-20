@@ -56,11 +56,15 @@ Set `CODEFORGE_CONFIG` to specify a YAML config file path, or use environment va
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CODEFORGE_CLI__DEFAULT` | `claude-code` | Default CLI tool (`claude-code` or `codex`) |
+| `CODEFORGE_CLI__DEFAULT` | `claude-code` | Default CLI tool (`claude-code`, `codex`, or `cursor`) |
 | `CODEFORGE_CLI__CLAUDE_CODE__PATH` | `claude` | Claude Code binary path |
-| `CODEFORGE_CLI__CLAUDE_CODE__DEFAULT_MODEL` | `claude-sonnet-4-20250514` | Default AI model for Claude Code |
+| `CODEFORGE_CLI__CLAUDE_CODE__DEFAULT_MODEL` | *(empty)* | Default AI model for Claude Code (empty = use CLI built-in default) |
 | `CODEFORGE_CLI__CODEX__PATH` | `codex` | Codex CLI binary path |
 | `CODEFORGE_CLI__CODEX__DEFAULT_MODEL` | *(empty)* | Default AI model for Codex (empty = use Codex built-in default) |
+| `CODEFORGE_CLI__CURSOR__PATH` | `cursor-agent` | Cursor CLI binary path |
+| `CODEFORGE_CLI__CURSOR__DEFAULT_MODEL` | *(empty)* | Default AI model for Cursor (empty = use Cursor built-in default) |
+
+Each CLI also has a `models` list (selectable models offered to the UI) — set it via YAML (see below). Defaults: Claude Code ships with the current Sonnet/Opus models, Codex with `gpt-5.2`, `gpt-5.1`, `gpt-5`, `gpt-4.1`, `o3`, `o4-mini`, Cursor with `composer-2`.
 
 ### Git
 
@@ -86,6 +90,12 @@ Set `CODEFORGE_CONFIG` to specify a YAML config file path, or use environment va
 | `CODEFORGE_RATE_LIMIT__ENABLED` | `true` | Enable rate limiting |
 | `CODEFORGE_RATE_LIMIT__SESSIONS_PER_MINUTE` | `10` | Rate limit per token |
 
+### Subscription
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CODEFORGE_SUBSCRIPTION__ENABLED` | `false` | Enable the tenant subscription model. When disabled, only the static operator Bearer token is accepted and the per-session API-key (BYOK) flow is unchanged. When enabled, tenant API tokens (`cfk_...`) are also accepted and resolve to managed keys from the key pool. |
+
 ### Workflow
 
 | Variable | Default | Description |
@@ -109,7 +119,6 @@ Set `CODEFORGE_CONFIG` to specify a YAML config file path, or use environment va
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CODEFORGE_TRACING__ENABLED` | `false` | Enable OpenTelemetry tracing |
-| `CODEFORGE_TRACING__EXPORTER` | `otlp` | Trace exporter type |
 | `CODEFORGE_TRACING__ENDPOINT` | | OTLP collector endpoint |
 | `CODEFORGE_TRACING__SAMPLING_RATE` | `0.1` | Trace sampling rate (0-1) |
 
@@ -151,10 +160,21 @@ cli:
   default: "claude-code"
   claude_code:
     path: "claude"
-    default_model: "claude-sonnet-4-20250514"
+    default_model: ""   # empty = use Claude Code's built-in default
+    models:             # selectable models offered to the UI
+      - "claude-sonnet-4-6-20250627"
+      - "claude-opus-4-6-20250625"
   codex:
     path: "codex"
     default_model: ""   # empty = use Codex CLI's built-in default
+    models:
+      - "gpt-5.2"
+      - "o3"
+  cursor:
+    path: "cursor-agent"
+    default_model: ""   # empty = use Cursor's built-in default
+    models:
+      - "composer-2"
 
 git:
   branch_prefix: "codeforge/"
@@ -173,6 +193,9 @@ code_review:
   webhook_secrets:
     github: "your-github-webhook-secret"
     gitlab: "your-gitlab-webhook-secret"
+
+subscription:
+  enabled: false   # tenant subscription model (tenant API tokens + managed key pool)
 
 logging:
   level: "info"

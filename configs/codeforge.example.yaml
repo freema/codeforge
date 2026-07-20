@@ -47,6 +47,11 @@ cli:
       - "gpt-4.1"
       - "o3"
       - "o4-mini"
+  cursor:
+    path: "cursor-agent"
+    default_model: ""
+    models:
+      - "composer-2"
 
 git:
   branch_prefix: "codeforge/"
@@ -62,10 +67,6 @@ webhooks:
   retry_count: 3
   retry_delay: 5s
 
-workflow:
-  context_ttl_hours: 24     # TTL for workflow context in Redis
-  max_run_duration_sec: 7200 # 2 hours max per workflow run
-
 code_review:
   review_drafts: false           # review draft PRs/MRs from webhooks
   default_cli: "claude-code"     # CLI for webhook-triggered reviews
@@ -78,6 +79,9 @@ code_review:
 rate_limit:
   enabled: true
   sessions_per_minute: 10
+
+subscription:
+  enabled: false             # tenant API tokens (cfk_...) + managed key pool
 
 tracing:
   enabled: false

@@ -82,7 +82,7 @@ jobs:
           fetch-depth: 0
       - uses: freema/codeforge@v1
         with:
-          task_type: knowledge_update
+          session_type: knowledge_update
           api_key: ${{ secrets.ANTHROPIC_API_KEY }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -106,7 +106,7 @@ code-review:
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `task_type` | `pr_review` | `pr_review`, `code_review`, `knowledge_update`, `custom` |
+| `session_type` | `pr_review` | `pr_review`, `code_review`, `knowledge_update`, `custom` |
 | `prompt` | | Custom prompt (required for `custom`, optional for reviews) |
 | `cli` | `claude-code` | AI CLI: `claude-code` or `codex` |
 | `model` | | AI model override |
@@ -192,7 +192,7 @@ The CI Action reads configuration from `INPUT_*` environment variables (set auto
 
 | Variable | Maps to |
 |----------|---------|
-| `INPUT_TASK_TYPE` | `task_type` input |
+| `INPUT_SESSION_TYPE` (legacy: `INPUT_TASK_TYPE`) | `session_type` input |
 | `INPUT_CLI` or `CODEFORGE_CLI` | `cli` input |
 | `INPUT_PROMPT` | `prompt` input |
 | `ANTHROPIC_API_KEY` | Claude Code API key |

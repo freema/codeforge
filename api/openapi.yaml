@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: CodeForge API
-  description: Remote AI code task runner. Submit code tasks, monitor progress via SSE, and create pull requests.
+  description: Remote AI code session runner. Submit code sessions, monitor progress via SSE, and create pull requests.
   version: 1.0.0
   contact:
     name: CodeForge
@@ -99,20 +99,54 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /api/v1/tasks:
+  /api/v1/health:
+    get:
+      summary: Health check (authenticated API alias)
+      operationId: apiHealth
+      tags: [System]
+      description: |
+        Alias of the root /health endpoint for API clients that only reach the
+        server through the /api prefix. Unlike /health, requires Bearer auth.
+      responses:
+        "200":
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  redis:
+                    type: string
+                    example: connected
+                  sqlite:
+                    type: string
+                    example: connected
+                  workspace_disk_usage_mb:
+                    type: number
+                    example: 123.45
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/sessions:
     post:
-      summary: Create a new task
-      operationId: createTask
-      tags: [Tasks]
+      summary: Create a new session
+      operationId: createSession
+      tags: [Sessions]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateTaskRequest"
+              $ref: "#/components/schemas/CreateSessionRequest"
       responses:
         "201":
-          description: Task created
+          description: Session created
           content:
             application/json:
               schema:
@@ -133,14 +167,54 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "429":
           $ref: "#/components/responses/RateLimited"
-
-  /api/v1/tasks/{taskID}:
     get:
-      summary: Get task status and result
-      operationId: getTask
-      tags: [Tasks]
+      summary: List sessions
+      operationId: listSessions
+      tags: [Sessions]
+      description: |
+        Returns lightweight session summaries, newest first.
+        Supports optional status filter and limit/offset pagination.
       parameters:
-        - name: taskID
+        - name: status
+          in: query
+          description: Filter by session status
+          schema:
+            type: string
+            enum: [pending, cloning, running, reviewing, completed, failed, awaiting_instruction, creating_pr, pr_created]
+        - name: limit
+          in: query
+          description: Max results (default 50)
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          description: Pagination offset
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Session summaries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SessionSummary"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/sessions/{sessionID}:
+    get:
+      summary: Get session status and result
+      operationId: getSession
+      tags: [Sessions]
+      parameters:
+        - name: sessionID
           in: path
           required: true
           schema:
@@ -154,21 +228,21 @@ paths:
             enum: [iterations]
       responses:
         "200":
-          description: Task details
+          description: Session details
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Task"
+                $ref: "#/components/schemas/Session"
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/tasks/{taskID}/instruct:
+  /api/v1/sessions/{sessionID}/instruct:
     post:
-      summary: Send follow-up instruction to a completed task
-      operationId: instructTask
-      tags: [Tasks]
+      summary: Send follow-up instruction to a completed session
+      operationId: instructSession
+      tags: [Sessions]
       parameters:
-        - name: taskID
+        - name: sessionID
           in: path
           required: true
           schema:
@@ -206,18 +280,18 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
-  /api/v1/tasks/{taskID}/cancel:
+  /api/v1/sessions/{sessionID}/cancel:
     post:
-      summary: Cancel a running task
-      operationId: cancelTask
+      summary: Cancel a running session
+      operationId: cancelSession
       description: |
-        Requests cancellation of a running or cloning task. Returns a transient
-        "canceling" status indicating the request was accepted. The task will
-        transition to "failed" once cancellation completes. Poll GET /tasks/{taskID}
-        to observe the final state.
-      tags: [Tasks]
+        Requests cancellation of a running, cloning, or reviewing session. Returns a
+        transient "canceling" status indicating the request was accepted. The session
+        will transition to "failed" once cancellation completes. Poll GET
+        /sessions/{sessionID} to observe the final state.
+      tags: [Sessions]
       parameters:
-        - name: taskID
+        - name: sessionID
           in: path
           required: true
           schema:
@@ -235,13 +309,13 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
-  /api/v1/tasks/{taskID}/create-pr:
+  /api/v1/sessions/{sessionID}/create-pr:
     post:
-      summary: Create a pull request from task changes
+      summary: Create a pull request from session changes
       operationId: createPR
-      tags: [Tasks]
+      tags: [Sessions]
       parameters:
-        - name: taskID
+        - name: sessionID
           in: path
           required: true
           schema:
@@ -266,19 +340,84 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
-  /api/v1/tasks/{taskID}/review:
+  /api/v1/sessions/{sessionID}/push:
     post:
-      summary: Run code review on a completed task
-      operationId: reviewTask
-      tags: [Tasks]
+      summary: Push new changes to the session's existing PR
+      operationId: pushToPR
+      tags: [Sessions]
       description: |
-        Enqueues a code review of the task's workspace for async worker execution.
-        The task must be in completed or awaiting_instruction status.
+        Commits and pushes new workspace changes to the session's existing PR branch
+        without creating a new PR/MR. The existing PR/MR auto-updates when the branch
+        gets new commits. The session must be in completed or pr_created status and
+        must already have a PR branch (use create-pr first).
+      parameters:
+        - name: sessionID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Changes pushed to the existing PR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushToPRResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/sessions/{sessionID}/pr-status:
+    get:
+      summary: Get the provider status of the session's PR/MR
+      operationId: getPRStatus
+      tags: [Sessions]
+      description: |
+        Fetches the current state of the session's PR/MR from GitHub/GitLab.
+        When the PR is merged or closed, the session transitions from pr_created
+        back to completed. The session must have a PR (created via create-pr).
+      parameters:
+        - name: sessionID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Current PR/MR status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PRStatus"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          description: Provider API error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/sessions/{sessionID}/review:
+    post:
+      summary: Run code review on a completed session
+      operationId: reviewSession
+      tags: [Sessions]
+      description: |
+        Enqueues a code review of the session's workspace for async worker execution.
+        The session must be in completed or awaiting_instruction status.
         Returns 202 immediately — review runs in the worker pool with SSE streaming.
         Transitions: completed/awaiting_instruction → reviewing → completed (with review_result).
-        Monitor progress via GET /tasks/{taskID}/stream (SSE events: review_started, review_completed).
+        Monitor progress via GET /sessions/{sessionID}/stream (SSE events: review_started, review_completed).
       parameters:
-        - name: taskID
+        - name: sessionID
           in: path
           required: true
           schema:
@@ -317,17 +456,17 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
-  /api/v1/tasks/{taskID}/post-review:
+  /api/v1/sessions/{sessionID}/post-review:
     post:
       summary: Post review comments to PR/MR
       operationId: postReviewComments
-      tags: [Tasks]
+      tags: [Sessions]
       description: |
-        Posts the task's ReviewResult as comments to the associated GitHub PR or GitLab MR.
-        Task must have a review_result (run a review first).
-        Token is resolved from the task's provider_key or access_token.
+        Posts the session's ReviewResult as comments to the associated GitHub PR or GitLab MR.
+        Session must have a review_result (run a review first).
+        Token is resolved from the session's provider_key or access_token.
       parameters:
-        - name: taskID
+        - name: sessionID
           in: path
           required: true
           schema:
@@ -341,7 +480,7 @@ paths:
               properties:
                 pr_number:
                   type: integer
-                  description: Override PR/MR number (defaults to task config or task field)
+                  description: Override PR/MR number (defaults to session config or session field)
       responses:
         "200":
           description: Review comments posted
@@ -371,7 +510,7 @@ paths:
       security: []
       tags: [Webhooks]
       description: |
-        Receives GitHub pull_request webhook events and automatically creates pr_review tasks.
+        Receives GitHub pull_request webhook events and automatically creates pr_review sessions.
         Verified via HMAC-SHA256 signature (X-Hub-Signature-256 header).
         Handles actions: opened, synchronize, reopened. Skips drafts unless configured.
       requestBody:
@@ -383,7 +522,7 @@ paths:
               description: GitHub pull_request webhook payload
       responses:
         "201":
-          description: Review task created
+          description: Review session created
           content:
             application/json:
               schema:
@@ -395,6 +534,7 @@ paths:
                   task_id:
                     type: string
                     format: uuid
+                    description: ID of the created review session (legacy field name)
         "200":
           description: Event ignored (not a handled action or draft)
         "401":
@@ -407,7 +547,7 @@ paths:
       security: []
       tags: [Webhooks]
       description: |
-        Receives GitLab Merge Request Hook events and automatically creates pr_review tasks.
+        Receives GitLab Merge Request Hook events and automatically creates pr_review sessions.
         Verified via X-Gitlab-Token header constant-time comparison.
         Handles actions: open, update, reopen. Skips draft/WIP unless configured.
       requestBody:
@@ -419,7 +559,7 @@ paths:
               description: GitLab merge_request webhook payload
       responses:
         "201":
-          description: Review task created
+          description: Review session created
           content:
             application/json:
               schema:
@@ -431,38 +571,39 @@ paths:
                   task_id:
                     type: string
                     format: uuid
+                    description: ID of the created review session (legacy field name)
         "200":
           description: Event ignored (not a handled action or draft/WIP)
         "401":
           description: Invalid webhook token
 
-  /api/v1/tasks/{taskID}/stream:
+  /api/v1/sessions/{sessionID}/stream:
     get:
-      summary: Stream task events via SSE
-      operationId: streamTask
-      tags: [Tasks]
+      summary: Stream session events via SSE
+      operationId: streamSession
+      tags: [Sessions]
       description: |
-        Opens a Server-Sent Events (SSE) connection to stream real-time task progress.
+        Opens a Server-Sent Events (SSE) connection to stream real-time session progress.
 
         **Event types:**
-        - `connected` — Initial event with task ID and current status.
+        - `connected` — Initial event with session ID and current status.
         - `data` (unnamed) — Stream events from Redis history and live Pub/Sub.
           Each event is a JSON object: `{ type, event, data, ts }`.
           Types: `system`, `git`, `cli`, `stream`, `result`.
-        - `done` — Task finished (completed/failed). Connection closes after this.
+        - `done` — Session finished (completed/failed). Connection closes after this.
         - `timeout` — Connection closed after 10 minutes.
 
         **Behavior:**
         1. Replays all historical events from Redis.
         2. Subscribes to live events via Redis Pub/Sub.
         3. Sends keepalive comments (`: keepalive`) every 15 seconds.
-        4. For terminal tasks (completed/failed/pr_created), sends history + done immediately.
+        4. For terminal sessions (completed/failed/pr_created), sends history + done immediately.
 
         **Client example (fetch + ReadableStream):**
         ```javascript
         // Browser EventSource does NOT support custom headers.
         // Use fetch with a ReadableStream instead:
-        const resp = await fetch('/api/v1/tasks/abc/stream', {
+        const resp = await fetch('/api/v1/sessions/abc/stream', {
           headers: { Authorization: 'Bearer TOKEN' },
         });
         const reader = resp.body.getReader();
@@ -483,12 +624,12 @@ paths:
         **Alternative — token via query parameter:**
         ```javascript
         // If the server supports ?token= auth, EventSource works:
-        const es = new EventSource('/api/v1/tasks/abc/stream?token=TOKEN');
+        const es = new EventSource('/api/v1/sessions/abc/stream?token=TOKEN');
         es.onmessage = (e) => console.log(JSON.parse(e.data));
         es.addEventListener('done', () => es.close());
         ```
       parameters:
-        - name: taskID
+        - name: sessionID
           in: path
           required: true
           schema:
@@ -811,6 +952,94 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /api/v1/branches:
+    get:
+      summary: List branches for a repository
+      operationId: listBranches
+      tags: [Repositories]
+      description: |
+        Lists branches from GitHub or GitLab using a stored provider key.
+        Use this to populate branch selectors in the UI.
+      parameters:
+        - name: provider_key
+          in: query
+          required: true
+          description: Name of a registered key to use
+          schema:
+            type: string
+        - name: repo
+          in: query
+          required: true
+          description: Repository full name (owner/repo)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Branch list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  branches:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Branch"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          description: Provider API error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/pull-requests:
+    get:
+      summary: List open pull requests / merge requests for a repository
+      operationId: listPullRequests
+      tags: [Repositories]
+      description: |
+        Lists open pull requests (GitHub) or merge requests (GitLab) using a stored
+        provider key. Use this to populate PR selectors for pr_review sessions.
+      parameters:
+        - name: provider_key
+          in: query
+          required: true
+          description: Name of a registered key to use
+          schema:
+            type: string
+        - name: repo
+          in: query
+          required: true
+          description: Repository full name (owner/repo)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pull request list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pull_requests:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PullRequest"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          description: Provider API error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /api/v1/sentry/organizations:
     get:
       summary: List Sentry organizations
@@ -1117,6 +1346,9 @@ paths:
       summary: Run a workflow
       operationId: runWorkflow
       tags: [Workflows]
+      description: |
+        Builds a session request from the workflow definition and the given
+        parameters, then creates the session directly.
       parameters:
         - name: name
           in: path
@@ -1130,116 +1362,190 @@ paths:
               $ref: "#/components/schemas/RunWorkflowRequest"
       responses:
         "201":
-          description: Workflow run created
+          description: Session created from the workflow
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  run_id:
+                  session_id:
                     type: string
                     format: uuid
                   workflow_name:
                     type: string
-                  status:
-                    type: string
-                    example: pending
-                  created_at:
-                    type: string
-                    format: date-time
         "400":
           $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/workflow-runs:
-    get:
-      summary: List workflow runs
-      operationId: listWorkflowRuns
+  /api/v1/workflow-configs:
+    post:
+      summary: Create a saved workflow configuration
+      operationId: createWorkflowConfig
       tags: [Workflows]
-      parameters:
-        - name: workflow
-          in: query
-          description: Filter by workflow name
-          schema:
-            type: string
-      responses:
-        "200":
-          description: List of runs
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  runs:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/WorkflowRun"
-
-  /api/v1/workflow-runs/{runID}:
-    get:
-      summary: Get workflow run details
-      operationId: getWorkflowRun
-      tags: [Workflows]
-      parameters:
-        - name: runID
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "200":
-          description: Workflow run with steps
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/WorkflowRun"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /api/v1/workflow-runs/{runID}/stream:
-    get:
-      summary: Stream workflow run events via SSE
-      operationId: streamWorkflowRun
-      tags: [Workflows]
-      parameters:
-        - name: runID
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "200":
-          description: SSE event stream
-          content:
-            text/event-stream:
-              schema:
-                type: string
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /api/v1/task-types:
-    get:
-      summary: List available task types
-      operationId: listTaskTypes
-      tags: [Tasks]
       description: |
-        Returns the list of available task types with their descriptions.
-        Use this to populate task type selectors in the UI.
+        Saves a named workflow configuration (workflow template + parameters) that
+        can be run later via POST /workflow-configs/{id}/run.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, workflow]
+              properties:
+                name:
+                  type: string
+                  description: Unique config name (alphanumeric, hyphens, underscores)
+                  example: sentry-fixer-prod
+                workflow:
+                  type: string
+                  description: Workflow template name to run
+                  example: sentry-fixer
+                params:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: Workflow input parameters
+                timeout_seconds:
+                  type: integer
+                  description: Session timeout override (0 = use default)
       responses:
-        "200":
-          description: List of task types
+        "201":
+          description: Workflow config created
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  task_types:
+                  id:
+                    type: integer
+                  name:
+                    type: string
+                  message:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    get:
+      summary: List saved workflow configurations
+      operationId: listWorkflowConfigs
+      tags: [Workflows]
+      responses:
+        "200":
+          description: List of workflow configs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configs:
                     type: array
                     items:
-                      $ref: "#/components/schemas/TaskTypeInfo"
+                      $ref: "#/components/schemas/WorkflowConfig"
+
+  /api/v1/workflow-configs/{id}:
+    get:
+      summary: Get a saved workflow configuration
+      operationId: getWorkflowConfig
+      tags: [Workflows]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Workflow config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowConfig"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      summary: Delete a saved workflow configuration
+      operationId: deleteWorkflowConfig
+      tags: [Workflows]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Workflow config deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/workflow-configs/{id}/run:
+    post:
+      summary: Run a saved workflow configuration
+      operationId: runWorkflowConfig
+      tags: [Workflows]
+      description: |
+        Looks up the saved config, builds a session request from its workflow
+        definition and stored parameters, and creates a session directly.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "201":
+          description: Session created from the workflow config
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    format: uuid
+                  config_id:
+                    type: integer
+                  config_name:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/session-types:
+    get:
+      summary: List available session types
+      operationId: listSessionTypes
+      tags: [Sessions]
+      description: |
+        Returns the list of available session types with their descriptions.
+        Use this to populate session type selectors in the UI.
+      responses:
+        "200":
+          description: List of session types
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_types:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SessionTypeInfo"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -1300,50 +1606,6 @@ paths:
                   message:
                     type: string
 
-  /api/v1/tools:
-    post:
-      summary: Register a tool definition
-      operationId: createTool
-      tags: [Tools]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateToolRequest"
-      responses:
-        "201":
-          description: Tool registered
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  name:
-                    type: string
-                  message:
-                    type: string
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "409":
-          $ref: "#/components/responses/Conflict"
-    get:
-      summary: List all registered tools
-      operationId: listTools
-      tags: [Tools]
-      responses:
-        "200":
-          description: List of tools
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  tools:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/ToolDefinition"
-
   /api/v1/tools/catalog:
     get:
       summary: List built-in tool catalog
@@ -1361,49 +1623,6 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/ToolDefinition"
-
-  /api/v1/tools/{name}:
-    get:
-      summary: Get a tool by name
-      operationId: getTool
-      tags: [Tools]
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Tool definition
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ToolDefinition"
-        "404":
-          $ref: "#/components/responses/NotFound"
-    delete:
-      summary: Delete a tool
-      operationId: deleteTool
-      tags: [Tools]
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Tool deleted
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-        "404":
-          $ref: "#/components/responses/NotFound"
 
   /api/v1/workspaces:
     get:
@@ -1427,13 +1646,13 @@ paths:
                   total_count:
                     type: integer
 
-  /api/v1/workspaces/{taskID}:
+  /api/v1/workspaces/{sessionID}:
     delete:
       summary: Delete a workspace
       operationId: deleteWorkspace
       tags: [Workspaces]
       parameters:
-        - name: taskID
+        - name: sessionID
           in: path
           required: true
           schema:
@@ -1453,6 +1672,248 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+
+  /api/v1/admin/tenants:
+    post:
+      summary: Create a subscription tenant
+      operationId: createTenant
+      tags: [Admin]
+      description: |
+        Creates a tenant with a generated API token. The plain-text token is
+        returned once and never again. Requires the operator token — tenant API
+        tokens are rejected. Available only when the subscription model is enabled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, slug, tier]
+              properties:
+                name:
+                  type: string
+                slug:
+                  type: string
+                tier:
+                  type: string
+                  enum: [free, pro, enterprise]
+      responses:
+        "201":
+          description: Tenant created (api_token shown once)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant:
+                    $ref: "#/components/schemas/Tenant"
+                  api_token:
+                    type: string
+                    description: Plain-text tenant API token (shown only in this response)
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    get:
+      summary: List tenants
+      operationId: listTenants
+      tags: [Admin]
+      description: Requires the operator token.
+      responses:
+        "200":
+          description: List of tenants
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenants:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Tenant"
+
+  /api/v1/admin/tenants/{tenantID}:
+    get:
+      summary: Get a tenant
+      operationId: getTenant
+      tags: [Admin]
+      description: Requires the operator token.
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tenant details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      summary: Update a tenant
+      operationId: updateTenant
+      tags: [Admin]
+      description: |
+        Updates a tenant's mutable fields. Only fields present in the request body
+        are changed. Requires the operator token.
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                tier:
+                  type: string
+                max_sessions_per_day:
+                  type: integer
+                  description: Daily session quota (-1 = unlimited)
+                max_concurrent_sessions:
+                  type: integer
+                max_budget_usd_per_session:
+                  type: number
+                allowed_clis:
+                  type: string
+                  description: JSON array of allowed CLI names, e.g. '["claude-code","codex"]' (empty = no restriction)
+                allowed_models:
+                  type: string
+                  description: JSON array of allowed model names (null = no restriction)
+      responses:
+        "200":
+          description: Updated tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      summary: Delete a tenant
+      operationId: deleteTenant
+      tags: [Admin]
+      description: Requires the operator token.
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Tenant deleted
+
+  /api/v1/admin/tenants/{tenantID}/usage:
+    get:
+      summary: Get aggregated usage statistics for a tenant
+      operationId: getTenantUsage
+      tags: [Admin]
+      description: Requires the operator token.
+      parameters:
+        - name: tenantID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: period
+          in: query
+          description: Time window (default 7 days)
+          schema:
+            type: string
+            enum: [24h, 30d]
+      responses:
+        "200":
+          description: Usage summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageSummary"
+
+  /api/v1/admin/key-pool:
+    post:
+      summary: Add a managed API key to the operator key pool
+      operationId: addKeyPoolEntry
+      tags: [Admin]
+      description: |
+        Adds a managed AI provider key that gets assigned to subscription tenant
+        sessions without a BYOK key. The token is stored encrypted. Requires the
+        operator token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, token]
+              properties:
+                provider:
+                  type: string
+                  description: AI provider (e.g. anthropic, openai)
+                token:
+                  type: string
+                  description: API key (stored encrypted)
+                weight:
+                  type: integer
+                  description: Selection weight (default 1)
+      responses:
+        "201":
+          description: Key pool entry created (token redacted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyPoolEntry"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    get:
+      summary: List managed keys in the operator key pool
+      operationId: listKeyPool
+      tags: [Admin]
+      description: Requires the operator token. Tokens are redacted.
+      parameters:
+        - name: provider
+          in: query
+          description: Filter by AI provider
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Key pool entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/KeyPoolEntry"
+
+  /api/v1/admin/key-pool/{keyID}:
+    delete:
+      summary: Remove a managed key from the operator key pool
+      operationId: deleteKeyPoolEntry
+      tags: [Admin]
+      description: Requires the operator token.
+      parameters:
+        - name: keyID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Key pool entry deleted
 
 components:
   securitySchemes:
@@ -1510,9 +1971,9 @@ components:
           additionalProperties:
             type: string
 
-    CreateTaskRequest:
+    CreateSessionRequest:
       type: object
-      required: [repo_url, prompt]
+      required: [repo_url]
       properties:
         repo_url:
           type: string
@@ -1527,12 +1988,12 @@ components:
           description: Inline access token for git auth
         prompt:
           type: string
-          description: Task instruction for the AI
+          description: Session instruction for the AI
           maxLength: 102400
           example: "Fix the failing tests in the auth module"
-        task_type:
+        session_type:
           type: string
-          description: "Type of task: code (default), plan, or review"
+          description: "Type of session: code (default), plan, review, or pr_review"
           enum: [code, plan, review, pr_review]
           default: code
         callback_url:
@@ -1540,14 +2001,22 @@ components:
           format: uri
           description: Webhook URL for completion notification
         config:
-          $ref: "#/components/schemas/TaskConfig"
+          $ref: "#/components/schemas/SessionConfig"
+        workflow_run_id:
+          type: string
+          description: Workflow run this session belongs to (set by the workflow layer)
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional key-value metadata (sentry URL, ticket link, etc.)
 
-    TaskConfig:
+    SessionConfig:
       type: object
       properties:
         timeout_seconds:
           type: integer
-          description: Task timeout in seconds
+          description: Session timeout in seconds
         cli:
           type: string
           description: CLI tool to use (e.g., "claude-code")
@@ -1557,7 +2026,7 @@ components:
           description: AI model override
         ai_api_key:
           type: string
-          description: API key for the AI provider
+          description: API key for the AI provider (accepted on input, never returned)
         max_turns:
           type: integer
           description: Maximum conversation turns
@@ -1570,16 +2039,16 @@ components:
         max_budget_usd:
           type: number
           description: Maximum spend in USD
-        workspace_task_id:
+        workspace_session_id:
           type: string
-          description: Reuse workspace from another task
+          description: Reuse workspace from another session
         mcp_servers:
           type: array
           items:
-            $ref: "#/components/schemas/TaskMCPServer"
+            $ref: "#/components/schemas/SessionMCPServer"
         tools:
           type: array
-          description: Per-task tool requests
+          description: Per-session tool requests
           items:
             type: object
             required: [name]
@@ -1592,14 +2061,26 @@ components:
                   type: string
         pr_number:
           type: integer
-          description: PR/MR number (required for pr_review tasks)
+          description: PR/MR number (required for pr_review sessions)
         output_mode:
           type: string
-          description: Output mode for pr_review tasks
+          description: Output mode for pr_review sessions
           enum: [api_only, post_comments]
           default: api_only
+        auto_review_after_fix:
+          type: boolean
+          description: Auto-start review after each fix iteration
+        auto_post_review:
+          type: boolean
+          description: Auto-post review result to PR/MR comments
+        auto_create_pr:
+          type: boolean
+          description: Auto-create a PR/MR when the session completes with changes (used by workflows)
+        pr_title:
+          type: string
+          description: Explicit PR title for auto-created PRs (empty = AI-generated)
 
-    TaskMCPServer:
+    SessionMCPServer:
       type: object
       required: [name]
       properties:
@@ -1633,12 +2114,12 @@ components:
             type: string
           description: HTTP headers — http transport
 
-    TaskTypeInfo:
+    SessionTypeInfo:
       type: object
       properties:
         name:
           type: string
-          description: Task type identifier
+          description: Session type identifier
           example: plan
         label:
           type: string
@@ -1646,10 +2127,10 @@ components:
           example: Plan
         description:
           type: string
-          description: What this task type does
+          description: What this session type does
           example: "Analyze the codebase and create an implementation plan without modifying files"
 
-    Task:
+    Session:
       type: object
       properties:
         id:
@@ -1665,14 +2146,14 @@ components:
           description: Name of the registered key used for git auth
         prompt:
           type: string
-        task_type:
+        session_type:
           type: string
-          description: "Type of task: code, plan, or review"
+          description: "Type of session: code, plan, review, or pr_review"
           enum: [code, plan, review, pr_review]
         callback_url:
           type: string
         config:
-          $ref: "#/components/schemas/TaskConfig"
+          $ref: "#/components/schemas/SessionConfig"
         result:
           type: string
         error:
@@ -1697,9 +2178,59 @@ components:
           type: integer
         pr_url:
           type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional key-value metadata (sentry URL, ticket link, etc.)
+        workflow_run_id:
+          type: string
+          description: Workflow run this session belongs to
+        tenant_id:
+          type: string
+          description: Subscription tenant that owns this session (empty = operator/BYOK)
         trace_id:
           type: string
           description: OpenTelemetry trace ID for distributed tracing
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+
+    SessionSummary:
+      type: object
+      description: Lightweight session view returned by the list endpoint
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, cloning, running, reviewing, completed, failed, awaiting_instruction, creating_pr, pr_created]
+        repo_url:
+          type: string
+        prompt:
+          type: string
+        session_type:
+          type: string
+          enum: [code, plan, review, pr_review]
+        iteration:
+          type: integer
+        error:
+          type: string
+        branch:
+          type: string
+        pr_url:
+          type: string
+        workflow_run_id:
+          type: string
+        changes_summary:
+          $ref: "#/components/schemas/ChangesSummary"
         created_at:
           type: string
           format: date-time
@@ -1785,6 +2316,31 @@ components:
         branch:
           type: string
 
+    PushToPRResponse:
+      type: object
+      properties:
+        pr_url:
+          type: string
+        branch:
+          type: string
+        message:
+          type: string
+          example: Changes pushed to existing PR
+
+    PRStatus:
+      type: object
+      description: State of a PR/MR on the provider
+      properties:
+        state:
+          type: string
+          enum: [open, merged, closed]
+        title:
+          type: string
+        merged:
+          type: boolean
+        merged_by:
+          type: string
+
     MCPServer:
       type: object
       properties:
@@ -1815,7 +2371,7 @@ components:
 
     StreamEvent:
       type: object
-      description: A single event from the task's real-time stream
+      description: A single event from the session's real-time stream
       properties:
         type:
           type: string
@@ -1840,13 +2396,13 @@ components:
         status:
           type: string
           description: >
-            Transient response status "canceling" — NOT a stored TaskStatus
+            Transient response status "canceling" — NOT a stored SessionStatus
             enum value. It indicates the cancellation request was accepted.
-            Poll GET /tasks/{id} to observe the final state (will be "failed").
+            Poll GET /sessions/{id} to observe the final state (will be "failed").
           example: canceling
         message:
           type: string
-          example: cancellation requested
+          example: session cancellation requested
 
     KeyVerifyResponse:
       type: object
@@ -1898,10 +2454,42 @@ components:
           type: string
           format: date-time
 
+    Branch:
+      type: object
+      properties:
+        name:
+          type: string
+          example: main
+        default:
+          type: boolean
+          description: Whether this is the repository's default branch
+
+    PullRequest:
+      type: object
+      description: An open pull request / merge request from a provider
+      properties:
+        number:
+          type: integer
+        title:
+          type: string
+        state:
+          type: string
+        author:
+          type: string
+        source_branch:
+          type: string
+        target_branch:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+
     WorkspaceInfo:
       type: object
       properties:
-        task_id:
+        session_id:
+          type: string
+        path:
           type: string
         size_mb:
           type: number
@@ -1911,7 +2499,7 @@ components:
         expires_at:
           type: string
           format: date-time
-        task_status:
+        session_status:
           type: string
 
     WorkflowDefinition:
@@ -1945,7 +2533,7 @@ components:
           type: string
         type:
           type: string
-          enum: [fetch, task, action]
+          enum: [session]
         config:
           type: object
           description: Step-type-specific configuration
@@ -1970,62 +2558,27 @@ components:
             type: string
           description: Workflow input parameters
 
-    WorkflowRun:
+    WorkflowConfig:
       type: object
+      description: A saved workflow configuration that can be run later
       properties:
         id:
+          type: integer
+        name:
           type: string
-          format: uuid
-        workflow_name:
+          example: sentry-fixer-prod
+        workflow:
           type: string
-        status:
-          type: string
-          enum: [pending, running, completed, failed]
+          description: Workflow template name
+          example: sentry-fixer
         params:
           type: object
           additionalProperties:
             type: string
-        error:
-          type: string
-        steps:
-          type: array
-          items:
-            $ref: "#/components/schemas/WorkflowRunStep"
+        timeout_seconds:
+          type: integer
+          description: Session timeout override (0 = use default)
         created_at:
-          type: string
-          format: date-time
-        started_at:
-          type: string
-          format: date-time
-        finished_at:
-          type: string
-          format: date-time
-
-    WorkflowRunStep:
-      type: object
-      properties:
-        run_id:
-          type: string
-        step_name:
-          type: string
-        step_type:
-          type: string
-          enum: [fetch, task, action]
-        status:
-          type: string
-          enum: [pending, running, completed, failed, skipped]
-        result:
-          type: object
-          additionalProperties:
-            type: string
-        task_id:
-          type: string
-        error:
-          type: string
-        started_at:
-          type: string
-          format: date-time
-        finished_at:
           type: string
           format: date-time
 
@@ -2106,48 +2659,6 @@ components:
         sensitive:
           type: boolean
 
-    CreateToolRequest:
-      type: object
-      required: [name, type]
-      properties:
-        name:
-          type: string
-        type:
-          type: string
-          enum: [mcp, builtin, custom]
-        description:
-          type: string
-        version:
-          type: string
-        mcp_transport:
-          type: string
-          enum: [stdio, http]
-          description: Transport type (default stdio)
-        mcp_url:
-          type: string
-          format: uri
-          description: URL for http transport
-        mcp_package:
-          type: string
-        mcp_command:
-          type: string
-        mcp_args:
-          type: array
-          items:
-            type: string
-        required_config:
-          type: array
-          items:
-            $ref: "#/components/schemas/ConfigField"
-        optional_config:
-          type: array
-          items:
-            $ref: "#/components/schemas/ConfigField"
-        capabilities:
-          type: array
-          items:
-            type: string
-
     ReviewResult:
       type: object
       description: Structured output from code review
@@ -2187,3 +2698,66 @@ components:
           type: string
         suggestion:
           type: string
+
+    Tenant:
+      type: object
+      description: A registered organization with subscription-based access
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        tier:
+          type: string
+          enum: [free, pro, enterprise]
+        max_sessions_per_day:
+          type: integer
+          description: Daily session quota (-1 = unlimited)
+        max_concurrent_sessions:
+          type: integer
+        max_budget_usd_per_session:
+          type: number
+        allowed_clis:
+          type: string
+          description: JSON array of allowed CLI names as a string (empty = no restriction)
+        allowed_models:
+          type: string
+          description: JSON array of allowed model names as a string (absent = no restriction)
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    KeyPoolEntry:
+      type: object
+      description: A managed API key in the operator's key pool (token never returned)
+      properties:
+        id:
+          type: string
+        provider:
+          type: string
+          example: anthropic
+        weight:
+          type: integer
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    UsageSummary:
+      type: object
+      description: Aggregated usage stats for a tenant
+      properties:
+        total_sessions:
+          type: integer
+        total_input_tokens:
+          type: integer
+        total_output_tokens:
+          type: integer
+        total_cost_usd:
+          type: number

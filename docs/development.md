@@ -67,7 +67,7 @@ task test:integration
 
 ### E2E Tests
 
-E2E tests exercise the full task lifecycle (create -> clone -> run -> complete) using a mock CLI that simulates Claude Code output:
+E2E tests exercise the full session lifecycle (create -> clone -> run -> complete) using a mock CLI that simulates Claude Code output:
 
 ```bash
 # Build mock CLI + start server with it
@@ -95,13 +95,13 @@ internal/
   keys/                 Access key registry + 3-tier resolver
   logger/               Structured logging (slog)
   metrics/              Prometheus metric definitions
-  prompt/               Prompt templates (embed FS, task types + code/PR review)
+  prompt/               Prompt templates (embed FS, session types + code/PR review)
   redisclient/          Redis client wrapper
   review/               Code review types, output parser, comment formatting
   server/               HTTP server + handlers + middleware
-    handlers/           Request handlers (tasks, webhook receiver, keys, tools, workflows, stream, etc.)
+    handlers/           Request handlers (sessions, webhook receiver, keys, tools, workflows, stream, etc.)
     middleware/         Auth, logging, recovery, rate limit, metrics, tracing
-  task/                 Task model, service, state machine, PR service
+  session/              Session model, service, state machine, PR service
   tool/                 Tool subsystem namespace (low-level)
     git/                Git operations (clone, branch, PR creation, review posting)
     runner/             CLI runner interface + implementations (Claude Code, Codex)
@@ -117,7 +117,7 @@ configs/                Example configuration files
 deployments/            Docker, docker-compose files, .env
 tests/
   integration/          Integration tests (HTTP API)
-  e2e/                  E2E tests (full task lifecycle)
+  e2e/                  E2E tests (full session lifecycle)
   mockcli/              Mock Claude Code CLI for testing
 docs/                   Documentation
 tasks/                  Planning documents (not code)
@@ -132,7 +132,7 @@ tasks/                  Planning documents (not code)
 - **No shell injection**: all CLI invocations via `exec.Command` with explicit args
 - **Git auth**: `GIT_ASKPASS` helper, never URL-embedded tokens
 - **Sensitive fields**: encrypted in Redis (AES-256-GCM), never in API responses (`json:"-"`)
-- **Multi-CLI**: tasks can specify `cli: "claude-code"` or `cli: "codex"` — registry resolves to runner
-- **Task types**: `code` (default), `plan`, `review`, `pr_review` — each wraps the user prompt with a template in the executor. New types: add template in `internal/prompt/templates/`, register in `prompt.go`
+- **Multi-CLI**: sessions can specify `cli: "claude-code"` or `cli: "codex"` — registry resolves to runner
+- **Session types**: `code` (default), `plan`, `review`, `pr_review` — each wraps the user prompt with a template in the executor. New types: add template in `internal/prompt/templates/`, register in `prompt.go`
 - **Stream normalizers**: each CLI has its own normalizer (`normalizer_claude.go`, `normalizer_codex.go`) mapping raw events to `NormalizedEvent`. New CLIs need a corresponding normalizer
 - **Review as action**: code review is triggered by user via endpoint, not automatic in executor

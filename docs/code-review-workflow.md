@@ -2,27 +2,27 @@
 
 CodeForge supports three kinds of code review:
 
-1. **Task review** (`POST /tasks/:id/review`) — user-triggered review of a specific task's changes
-2. **PR review** (`task_type: "pr_review"`) — automated review of a pull request / merge request diff
-3. **Webhook review** — GitHub/GitLab webhooks auto-create PR review tasks on PR open/update
+1. **Session review** (`POST /sessions/:id/review`) — user-triggered review of a specific session's changes
+2. **PR review** (`session_type: "pr_review"`) — automated review of a pull request / merge request diff
+3. **Webhook review** — GitHub/GitLab webhooks auto-create PR review sessions on PR open/update
 
-All three store a structured `ReviewResult` on the task and optionally post comments to the PR/MR.
+All three store a structured `ReviewResult` on the session and optionally post comments to the PR/MR.
 
-## 1. Task Review (User-Triggered)
+## 1. Session Review (User-Triggered)
 
-CodeForge supports code review as a **user-triggered action** on completed tasks. The user decides when to review, which CLI to use, and what to do with the results.
+CodeForge supports code review as a **user-triggered action** on completed sessions. The user decides when to review, which CLI to use, and what to do with the results.
 
 ## How It Works
 
-Code review is an action the user triggers via `POST /tasks/:id/review` — it is NOT automatic. The task must be in `completed` or `awaiting_instruction` status. The review is **enqueued for async worker execution** (returns 202 immediately) — the same queue/worker model as regular tasks. Monitor progress via SSE stream. See [Task Session Lifecycle](architecture.md#task-session-lifecycle) for the full flow.
+Code review is an action the user triggers via `POST /sessions/:id/review` — it is NOT automatic. The session must be in `completed`, `awaiting_instruction`, or `pr_created` status. The review is **enqueued for async worker execution** (returns 202 immediately) — the same queue/worker model as regular sessions. Monitor progress via SSE stream. See [Session Lifecycle](architecture.md#session-lifecycle-flow) for the full flow.
 
 ```
-1. POST /tasks                → pending → cloning → running → completed
-2. POST /tasks/:id/review     → 202 Accepted, reviewing (async via worker pool)
-3. GET  /tasks/:id/stream     → SSE: review_started, cli output, review_completed
-4. GET  /tasks/:id            → completed (with review_result)
-5. POST /tasks/:id/instruct   → fix issues   (optional)
-6. POST /tasks/:id/create-pr  → create PR    (optional)
+1. POST /sessions                → pending → cloning → running → completed
+2. POST /sessions/:id/review     → 202 Accepted, reviewing (async via worker pool)
+3. GET  /sessions/:id/stream     → SSE: review_started, cli output, review_completed
+4. GET  /sessions/:id            → completed (with review_result)
+5. POST /sessions/:id/instruct   → fix issues   (optional)
+6. POST /sessions/:id/create-pr  → create PR    (optional)
 ```
 
 Steps 2-4 are optional and repeatable. The user can:
@@ -36,7 +36,7 @@ Steps 2-4 are optional and repeatable. The user can:
 ### Start a Review
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/tasks/$TASK_ID/review \
+curl -X POST http://localhost:8080/api/v1/sessions/$SESSION_ID/review \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -46,13 +46,13 @@ curl -X POST http://localhost:8080/api/v1/tasks/$TASK_ID/review \
 ```
 
 Both `cli` and `model` are optional. Defaults:
-- `cli` — task's original CLI, or server default (`claude-code`)
+- `cli` — session's original CLI, or server default (`claude-code`)
 - `model` — configured default model for the selected CLI
 
 **Response (202 Accepted):**
 ```json
 {
-  "id": "task-abc",
+  "id": "session-abc",
   "status": "reviewing"
 }
 ```
@@ -63,15 +63,17 @@ Both `cli` and `model` are optional. Defaults:
 |---|---|---|
 | `completed` | `reviewing` | `completed` (with `review_result`) |
 | `awaiting_instruction` | `reviewing` | `completed` (with `review_result`) |
-| `running` / `cloning` / `failed` | **409 Conflict** | — |
+| `pr_created` | `reviewing` | `completed` (with `review_result`) |
+| `running` / `cloning` / `creating_pr` / `reviewing` | **409 Conflict** | — |
+| `failed` | **400** (create a new session instead) | — |
 
-### ReviewResult on Task
+### ReviewResult on Session
 
-After review, the `ReviewResult` is stored on the task and returned in `GET /tasks/:id`:
+After review, the `ReviewResult` is stored on the session and returned in `GET /sessions/:id`:
 
 ```json
 {
-  "id": "task-abc",
+  "id": "session-abc",
   "status": "completed",
   "result": "...",
   "review_result": {
@@ -104,7 +106,7 @@ After review, the `ReviewResult` is stored on the task and returned in `GET /tas
 
 ## Workflow-Based Review (Alternative)
 
-CodeForge also has a built-in `code-review` workflow that chains task execution + review in a single workflow run:
+CodeForge also has a built-in `code-review` workflow that chains session execution + review in a single workflow run:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/workflows/code-review/run \
@@ -120,7 +122,7 @@ curl -X POST http://localhost:8080/api/v1/workflows/code-review/run \
   }'
 ```
 
-This creates two tasks sequentially — the review task reuses the first task's workspace via `WorkspaceTaskID`. The workflow approach is useful for automation, while the direct `POST /review` endpoint is better for interactive use.
+This creates two sessions sequentially — the review session reuses the first session's workspace via `WorkspaceSessionID`. The workflow approach is useful for automation, while the direct `POST /review` endpoint is better for interactive use.
 
 ## Internal Architecture
 
@@ -133,12 +135,12 @@ internal/review/
   format.go      # PR/MR comment formatting (summary body, issue comments)
 ```
 
-The review package provides types and parsing — execution is handled by the worker executor (`executeReview` for `/review` endpoint, `handlePRReviewCompletion` for task_type=review/pr_review).
+The review package provides types and parsing — execution is handled by the worker executor (`executeReview` for `/review` endpoint, `handlePRReviewCompletion` for session_type=review/pr_review).
 
 ### Key Types
 
 ```go
-// ReviewResult is stored on Task.ReviewResult
+// ReviewResult is stored on Session.ReviewResult
 type ReviewResult struct {
     Verdict         Verdict       `json:"verdict"`
     Score           int           `json:"score"`
@@ -169,16 +171,16 @@ Templates are embedded via `//go:embed templates/*.md` and rendered with Go `tex
 
 ## 2. PR Review (Automated)
 
-The `pr_review` task type creates a review task for a specific pull request / merge request. It is triggered via the standard `POST /api/v1/tasks` endpoint or automatically via webhooks.
+The `pr_review` session type creates a review session for a specific pull request / merge request. It is triggered via the standard `POST /api/v1/sessions` endpoint or automatically via webhooks.
 
 ### How It Works
 
 ```
-1. POST /api/v1/tasks {task_type: "pr_review", config: {pr_number: 42, ...}}
+1. POST /api/v1/sessions {session_type: "pr_review", config: {pr_number: 42, ...}}
 2. pending → cloning (target branch, non-shallow)
 3. git fetch origin pull/{N}/head:pr-{N} → checkout pr-{N}
 4. running (AI CLI reviews diff via git diff origin/{base}...HEAD)
-5. completed (ReviewResult stored on task)
+5. completed (ReviewResult stored on session)
 6. (if output_mode: "post_comments") → comments posted to PR/MR
 ```
 
@@ -194,14 +196,14 @@ This works for both same-repo and cross-fork PRs on GitHub. GitLab uses merge re
 ### API Usage
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/tasks \
+curl -X POST http://localhost:8080/api/v1/sessions \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "repo_url": "https://github.com/user/repo.git",
     "provider_key": "my-github-key",
     "prompt": "Review PR #42",
-    "task_type": "pr_review",
+    "session_type": "pr_review",
     "config": {
       "pr_number": 42,
       "source_branch": "feature/login",
@@ -213,14 +215,14 @@ curl -X POST http://localhost:8080/api/v1/tasks \
 
 | `output_mode` | Behavior |
 |---------------|----------|
-| `api_only` (default) | ReviewResult stored on task, available via `GET /tasks/{id}` |
+| `api_only` (default) | ReviewResult stored on session, available via `GET /sessions/{id}` |
 | `post_comments` | ReviewResult posted as PR/MR comments automatically on completion |
 
 ### Post Comments Manually
 
 ```bash
 # Post an existing ReviewResult to the PR
-curl -X POST http://localhost:8080/api/v1/tasks/$TASK_ID/post-review \
+curl -X POST http://localhost:8080/api/v1/sessions/$SESSION_ID/post-review \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -244,7 +246,7 @@ curl -X POST http://localhost:8080/api/v1/tasks/$TASK_ID/post-review \
 
 ## 3. Webhook-Triggered PR Review
 
-GitHub/GitLab can send webhooks to CodeForge when PRs/MRs are opened or updated. CodeForge automatically creates a `pr_review` task with `output_mode: "post_comments"`.
+GitHub/GitLab can send webhooks to CodeForge when PRs/MRs are opened or updated. CodeForge automatically creates a `pr_review` session with `output_mode: "post_comments"`.
 
 ### Setup
 
