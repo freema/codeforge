@@ -18,6 +18,7 @@ import (
 	"github.com/freema/codeforge/internal/database"
 	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/logger"
+	"github.com/freema/codeforge/internal/notify"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/server"
 	"github.com/freema/codeforge/internal/server/handlers"
@@ -269,6 +270,14 @@ func run() error {
 	// model is enabled, so a stray client-supplied tenant_id can never trigger logging.
 	if cfg.Subscription.Enabled {
 		executor.SetUsageLogger(tenantStore)
+	}
+
+	// Wire chat notifications for terminal session events (nil when unconfigured).
+	if notifier := notify.New(cfg.Notifications); notifier != nil {
+		executor.SetNotifier(notifier)
+		slog.Info("notifications enabled",
+			"slack", cfg.Notifications.SlackWebhookURL != "",
+			"discord", cfg.Notifications.DiscordWebhookURL != "")
 	}
 
 	srv := server.New(cfg, rdb, sqliteDB, sessionService, prService, pool, keyRegistry, mcpRegistry, workspaceMgr, workflowRegistry, workflowConfigStore, cliRegistry, cliConfigs, webhookReceiverHandler, tenantHandler, tenantService, version)

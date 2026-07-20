@@ -12,20 +12,30 @@ import (
 )
 
 type Config struct {
-	Server       ServerConfig       `koanf:"server"`
-	Redis        RedisConfig        `koanf:"redis"`
-	SQLite       SQLiteConfig       `koanf:"sqlite"`
-	Workers      WorkersConfig      `koanf:"workers"`
-	Sessions     SessionsConfig     `koanf:"sessions"`
-	CLI          CLIConfig          `koanf:"cli"`
-	Git          GitConfig          `koanf:"git"`
-	Encryption   EncryptionConfig   `koanf:"encryption"`
-	Webhooks     WebhookConfig      `koanf:"webhooks"`
-	RateLimit    RateLimitConfig    `koanf:"rate_limit"`
-	CodeReview   CodeReviewConfig   `koanf:"code_review"`
-	Tracing      TracingConfig      `koanf:"tracing"`
-	Logging      LoggingConfig      `koanf:"logging"`
-	Subscription SubscriptionConfig `koanf:"subscription"`
+	Server        ServerConfig        `koanf:"server"`
+	Redis         RedisConfig         `koanf:"redis"`
+	SQLite        SQLiteConfig        `koanf:"sqlite"`
+	Workers       WorkersConfig       `koanf:"workers"`
+	Sessions      SessionsConfig      `koanf:"sessions"`
+	CLI           CLIConfig           `koanf:"cli"`
+	Git           GitConfig           `koanf:"git"`
+	Encryption    EncryptionConfig    `koanf:"encryption"`
+	Webhooks      WebhookConfig       `koanf:"webhooks"`
+	RateLimit     RateLimitConfig     `koanf:"rate_limit"`
+	CodeReview    CodeReviewConfig    `koanf:"code_review"`
+	Tracing       TracingConfig       `koanf:"tracing"`
+	Logging       LoggingConfig       `koanf:"logging"`
+	Subscription  SubscriptionConfig  `koanf:"subscription"`
+	Notifications NotificationsConfig `koanf:"notifications"`
+}
+
+// NotificationsConfig controls outbound chat notifications for terminal session
+// events. Disabled unless at least one webhook URL is set.
+type NotificationsConfig struct {
+	SlackWebhookURL   string   `koanf:"slack_webhook_url"`
+	DiscordWebhookURL string   `koanf:"discord_webhook_url"`
+	UIBaseURL         string   `koanf:"ui_base_url"` // e.g. https://cf.example.com — appended as a session link
+	Events            []string `koanf:"events"`      // subset of session_completed, session_failed, pr_created, review_completed; empty = all
 }
 
 // SubscriptionConfig controls the optional tenant subscription model.

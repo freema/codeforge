@@ -96,6 +96,17 @@ Each CLI also has a `models` list (selectable models offered to the UI) — set 
 |----------|---------|-------------|
 | `CODEFORGE_SUBSCRIPTION__ENABLED` | `false` | Enable the tenant subscription model. When disabled, only the static operator Bearer token is accepted and the per-session API-key (BYOK) flow is unchanged. When enabled, tenant API tokens (`cfk_...`) are also accepted and resolve to managed keys from the key pool. |
 
+### Notifications
+
+Chat notifications for terminal session events. Disabled unless at least one webhook URL is set.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CODEFORGE_NOTIFICATIONS__SLACK_WEBHOOK_URL` | *(empty)* | Slack incoming webhook URL |
+| `CODEFORGE_NOTIFICATIONS__DISCORD_WEBHOOK_URL` | *(empty)* | Discord webhook URL (both may be set at once) |
+| `CODEFORGE_NOTIFICATIONS__UI_BASE_URL` | *(empty)* | Public UI base URL — adds a session link to messages |
+| `CODEFORGE_NOTIFICATIONS__EVENTS` | *(empty = all)* | Comma-separated subset of `session_completed`, `session_failed`, `pr_created`, `review_completed` |
+
 ### Workflow
 
 | Variable | Default | Description |
@@ -196,6 +207,12 @@ code_review:
 
 subscription:
   enabled: false   # tenant subscription model (tenant API tokens + managed key pool)
+
+notifications:
+  slack_webhook_url: ""      # Slack incoming webhook for session done/failed/PR/review messages
+  discord_webhook_url: ""    # Discord webhook (both may be set at once)
+  ui_base_url: ""            # e.g. https://cf.example.com — adds a session link to messages
+  events: []                 # empty = all; subset of session_completed, session_failed, pr_created, review_completed
 
 logging:
   level: "info"

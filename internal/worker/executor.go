@@ -19,6 +19,7 @@ import (
 
 	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/metrics"
+	"github.com/freema/codeforge/internal/notify"
 	"github.com/freema/codeforge/internal/prompt"
 	"github.com/freema/codeforge/internal/review"
 	"github.com/freema/codeforge/internal/session"
@@ -59,6 +60,12 @@ type UsageLogger interface {
 	LogUsage(ctx context.Context, log *tenant.UsageLog) error
 }
 
+// SessionNotifier posts chat notifications for terminal session events.
+// Implemented by *notify.Notifier; optional (nil = notifications disabled).
+type SessionNotifier interface {
+	Notify(ctx context.Context, ev notify.Event)
+}
+
 // Executor orchestrates the full session lifecycle: clone → run CLI → diff → report.
 type Executor struct {
 	sessionService *session.Service
@@ -69,8 +76,9 @@ type Executor struct {
 	mcpInstaller   *mcp.Installer
 	toolResolver   *tools.Resolver
 	workspaceMgr   *workspace.Manager
-	prCreator      PRCreator   // optional, nil = auto-PR disabled
-	usageLogger    UsageLogger // optional, nil = no per-tenant usage tracking
+	prCreator      PRCreator       // optional, nil = auto-PR disabled
+	usageLogger    UsageLogger     // optional, nil = no per-tenant usage tracking
+	notifier       SessionNotifier // optional, nil = notifications disabled
 	cfg            ExecutorConfig
 }
 
@@ -84,6 +92,23 @@ func (e *Executor) SetPRCreator(pc PRCreator) {
 // subscription usage is not recorded.
 func (e *Executor) SetUsageLogger(ul UsageLogger) {
 	e.usageLogger = ul
+}
+
+// SetNotifier wires chat notifications for terminal session events.
+// Optional — when unset, no notifications are sent.
+func (e *Executor) SetNotifier(n SessionNotifier) {
+	e.notifier = n
+}
+
+// maybeNotify fills session identity into the event and delivers it (best-effort).
+func (e *Executor) maybeNotify(ctx context.Context, t *session.Session, ev notify.Event) {
+	if e.notifier == nil {
+		return
+	}
+	ev.SessionID = t.ID
+	ev.SessionType = t.SessionType
+	ev.RepoURL = t.RepoURL
+	e.notifier.Notify(ctx, ev)
 }
 
 // NewExecutor creates a new session executor.
@@ -450,6 +475,17 @@ func (e *Executor) completeSession(ctx context.Context, t *session.Session, resu
 	}
 
 	e.emitOrLog(e.streamer.EmitDone(ctx, t.ID, finalStatus, changes), log, "task_done", t.ID)
+
+	evType := notify.EventSessionCompleted
+	if finalStatus == session.StatusPRCreated {
+		evType = notify.EventPRCreated
+	}
+	e.maybeNotify(ctx, t, notify.Event{
+		Type:            evType,
+		DurationSeconds: usage.DurationSeconds,
+		InputTokens:     usage.InputTokens,
+		OutputTokens:    usage.OutputTokens,
+	})
 
 	if t.CallbackURL != "" && e.webhook != nil {
 		e.sendWebhook(ctx, t, result.Output, changes, usage, log)
@@ -905,6 +941,12 @@ func (e *Executor) failSession(ctx context.Context, t *session.Session, errMsg s
 	}), log, "task_failed", t.ID)
 	e.emitOrLog(e.streamer.EmitDone(finalCtx, t.ID, session.StatusFailed, nil), log, "task_done_failed", t.ID)
 
+	e.maybeNotify(finalCtx, t, notify.Event{
+		Type:            notify.EventSessionFailed,
+		Error:           errMsg,
+		DurationSeconds: int(time.Since(startTime).Seconds()),
+	})
+
 	if t.CallbackURL != "" && e.webhook != nil {
 		if err := e.webhook.Send(finalCtx, t.CallbackURL, webhook.Payload{
 			TaskID:     t.ID,
@@ -1251,6 +1293,14 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 	}
 
 	e.emitOrLog(e.streamer.EmitDone(ctx, t.ID, session.StatusCompleted, nil), log, "review_done", t.ID)
+
+	e.maybeNotify(ctx, t, notify.Event{
+		Type:            notify.EventReviewCompleted,
+		ReviewScore:     reviewResult.Score,
+		DurationSeconds: usage.DurationSeconds,
+		InputTokens:     usage.InputTokens,
+		OutputTokens:    usage.OutputTokens,
+	})
 
 	if t.CallbackURL != "" && e.webhook != nil {
 		if err := e.webhook.Send(ctx, t.CallbackURL, webhook.Payload{
