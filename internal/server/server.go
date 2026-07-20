@@ -24,7 +24,6 @@ import (
 	"github.com/freema/codeforge/internal/tenant"
 	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/tool/runner"
-	"github.com/freema/codeforge/internal/tools"
 	"github.com/freema/codeforge/internal/workflow"
 	"github.com/freema/codeforge/internal/workspace"
 )
@@ -36,7 +35,7 @@ type Server struct {
 }
 
 // New creates and configures the HTTP server with all routes and middleware.
-func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, sessionService *session.Service, prService *session.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, toolRegistry tools.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowConfigStore workflow.ConfigStore, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, webhookReceiverHandler *handlers.WebhookReceiverHandler, tenantHandler *handlers.TenantHandler, tenantService *tenant.Service, version string) *Server {
+func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, sessionService *session.Service, prService *session.PRService, canceller handlers.Canceller, keyRegistry keys.Registry, mcpRegistry mcp.Registry, workspaceMgr *workspace.Manager, workflowRegistry workflow.Registry, workflowConfigStore workflow.ConfigStore, cliRegistry *runner.Registry, cliConfigs map[string]handlers.CLIInfo, webhookReceiverHandler *handlers.WebhookReceiverHandler, tenantHandler *handlers.TenantHandler, tenantService *tenant.Service, version string) *Server {
 	r := chi.NewRouter()
 
 	// Global middleware (timeout applied per-route-group, not globally, for SSE support)
@@ -79,7 +78,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 	streamHandler := handlers.NewStreamHandler(sessionService, redis)
 	keyHandler := handlers.NewKeyHandler(keyRegistry)
 	mcpHandler := handlers.NewMCPHandler(mcpRegistry)
-	toolHandler := handlers.NewToolHandler(toolRegistry)
+	toolHandler := handlers.NewToolHandler()
 	wsHandler := handlers.NewWorkspaceHandler(workspaceMgr, sessionService)
 	repoHandler := handlers.NewRepoHandler(keyRegistry)
 	sentryHandler := handlers.NewSentryHandler(keyRegistry)
@@ -98,6 +97,10 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 
 		// Auth verification endpoint
 		r.Get("/auth/verify", healthHandler.AuthVerify)
+
+		// Alias of the root /health for API clients (the UI reaches the server
+		// only through the /api prefix, so the root endpoint is out of its reach)
+		r.Get("/health", healthHandler.Health)
 
 		// SSE stream endpoints — no timeout middleware (long-lived connection)
 		r.With(sessionHandler.OwnershipMiddleware).Get("/sessions/{sessionID}/stream", streamHandler.Stream)
@@ -151,13 +154,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 					r.Delete("/{name}", mcpHandler.DeleteGlobal)
 				})
 
-				r.Route("/tools", func(r chi.Router) {
-					r.Post("/", toolHandler.Create)
-					r.Get("/", toolHandler.List)
-					r.Get("/catalog", toolHandler.Catalog)
-					r.Get("/{name}", toolHandler.Get)
-					r.Delete("/{name}", toolHandler.Delete)
-				})
+				r.Get("/tools/catalog", toolHandler.Catalog)
 
 				r.Route("/workspaces", func(r chi.Router) {
 					r.Get("/", wsHandler.List)

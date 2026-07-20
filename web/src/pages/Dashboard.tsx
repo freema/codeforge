@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useSessions } from "../hooks/useSessions";
 import StatusBadge from "../components/StatusBadge";
+import { formatTimeAgo } from "../lib/formatters";
 
 const PIE_COLORS: Record<string, string> = {
   completed: "#00ff40",
@@ -262,18 +263,6 @@ export default function Dashboard() {
       </div>
     </div>
   );
-}
-
-function formatTimeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return "now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  return `${days}d`;
 }
 
 function extractRepoName(repoUrl: string): string {

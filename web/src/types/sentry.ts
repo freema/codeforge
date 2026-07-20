@@ -20,20 +20,6 @@ export interface SentryIssue {
   metadata: { type?: string; value?: string };
 }
 
-export interface SentryEvent {
-  id: string;
-  eventID: string;
-  title: string;
-  entries: SentryEventEntry[];
-  tags: { key: string; value: string }[];
-  user?: { id?: string; email?: string; ip_address?: string };
-}
-
-export interface SentryEventEntry {
-  type: "exception" | "breadcrumbs" | "request" | "message";
-  data: unknown;
-}
-
 export interface SentryProject {
   id: string;
   slug: string;

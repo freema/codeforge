@@ -62,24 +62,3 @@ type ParameterDefinition struct {
 	Required bool   `json:"required"`
 	Default  string `json:"default,omitempty"`
 }
-
-// MarshalMapJSON serializes a map to a JSON string.
-func MarshalMapJSON(m map[string]string) string {
-	if m == nil {
-		return "{}"
-	}
-	b, _ := json.Marshal(m)
-	return string(b)
-}
-
-// UnmarshalMapJSON deserializes a JSON string to a map.
-func UnmarshalMapJSON(data string) map[string]string {
-	if data == "" || data == "{}" {
-		return nil
-	}
-	var m map[string]string
-	if err := json.Unmarshal([]byte(data), &m); err != nil {
-		return nil
-	}
-	return m
-}

@@ -21,13 +21,6 @@ export interface WorkflowDefinition {
   created_at: string;
 }
 
-export interface CreateWorkflowRequest {
-  name: string;
-  description?: string;
-  steps: StepDefinition[];
-  parameters?: ParameterDefinition[];
-}
-
 export interface RunWorkflowRequest {
   params?: Record<string, string>;
 }

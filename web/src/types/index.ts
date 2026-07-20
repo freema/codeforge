@@ -28,7 +28,6 @@ export type {
   ParameterDefinition,
   StepDefinition,
   WorkflowDefinition,
-  CreateWorkflowRequest,
   RunWorkflowRequest,
   WorkflowConfig,
   CreateWorkflowConfigRequest,
@@ -36,8 +35,16 @@ export type {
 export type {
   SentryOrganization,
   SentryIssue,
-  SentryEvent,
-  SentryEventEntry,
   SentryProject,
   SentryConfig,
 } from "./sentry";
+export type {
+  TenantTier,
+  Tenant,
+  CreateTenantRequest,
+  CreateTenantResult,
+  UpdateTenantRequest,
+  TenantUsageSummary,
+  KeyPoolEntry,
+  AddKeyPoolRequest,
+} from "./tenant";

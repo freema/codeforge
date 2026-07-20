@@ -17,10 +17,15 @@ import type {
   PullRequest,
 } from "../types";
 
-
 const SESSION_TYPE_CONFIG: Record<
   string,
-  { icon: string; label: string; desc: string; submit: string; submitIcon: string }
+  {
+    icon: string;
+    label: string;
+    desc: string;
+    submit: string;
+    submitIcon: string;
+  }
 > = {
   code: {
     icon: "code",
@@ -66,11 +71,11 @@ export default function NewSession() {
   );
   const hasAnthropicKey = useMemo(
     () => allKeys?.some((k) => k.provider === "anthropic") ?? false,
-    [allKeys]
+    [allKeys],
   );
   const hasOpenAIKey = useMemo(
     () => allKeys?.some((k) => k.provider === "openai") ?? false,
-    [allKeys]
+    [allKeys],
   );
   const { data: mcpServers } = useMCPServers();
   const { data: clis } = useCLIs();
@@ -440,7 +445,9 @@ export default function NewSession() {
 
         {/* 4b. Non-PR-Review: Branches */}
         {showBranches && (
-          <div className={`grid gap-4 ${showTargetBranch ? "grid-cols-2" : "grid-cols-1"}`}>
+          <div
+            className={`grid gap-4 ${showTargetBranch ? "grid-cols-2" : "grid-cols-1"}`}
+          >
             <div>
               <label className="mb-2 block text-xs font-medium text-fg-3">
                 Source Branch
@@ -546,20 +553,35 @@ export default function NewSession() {
 
         {selectedCli === "claude-code" && !hasAnthropicKey && (
           <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-            <span className="material-symbols-outlined mt-0.5 text-sm text-amber-400">warning</span>
+            <span className="material-symbols-outlined mt-0.5 text-sm text-amber-400">
+              warning
+            </span>
             <p className="text-xs text-amber-400/80">
               No Anthropic API key configured.{" "}
-              <a href="/settings?tab=ai" className="underline hover:text-amber-300">Add one in Settings</a>{" "}
-              or set <code className="font-mono">ANTHROPIC_API_KEY</code> env var.
+              <a
+                href="/settings?tab=ai"
+                className="underline hover:text-amber-300"
+              >
+                Add one in Settings
+              </a>{" "}
+              or set <code className="font-mono">ANTHROPIC_API_KEY</code> env
+              var.
             </p>
           </div>
         )}
         {selectedCli === "codex" && !hasOpenAIKey && (
           <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-            <span className="material-symbols-outlined mt-0.5 text-sm text-amber-400">warning</span>
+            <span className="material-symbols-outlined mt-0.5 text-sm text-amber-400">
+              warning
+            </span>
             <p className="text-xs text-amber-400/80">
               No OpenAI API key configured.{" "}
-              <a href="/settings?tab=ai" className="underline hover:text-amber-300">Add one in Settings</a>{" "}
+              <a
+                href="/settings?tab=ai"
+                className="underline hover:text-amber-300"
+              >
+                Add one in Settings
+              </a>{" "}
               or set <code className="font-mono">OPENAI_API_KEY</code> env var.
             </p>
           </div>
@@ -751,9 +773,7 @@ function PRSelector({
     }
   }
 
-  const selectedPR = pullRequests.find(
-    (pr) => String(pr.number) === selected,
-  );
+  const selectedPR = pullRequests.find((pr) => String(pr.number) === selected);
 
   return (
     <div className="space-y-3">

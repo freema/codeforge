@@ -67,7 +67,7 @@ export default function SentryFixerRunForm() {
     orgRegion ||
     (orgs?.length === 1
       ? orgs[0]!.region
-      : orgs?.find((o) => o.slug === orgSlug)?.region ?? "");
+      : (orgs?.find((o) => o.slug === orgSlug)?.region ?? ""));
 
   // ── Projects ──
   const { data: sentryProjects, isLoading: projectsLoading } =
@@ -344,7 +344,8 @@ export default function SentryFixerRunForm() {
             </span>
           </div>
           <p className="mt-1 text-[10px] text-fg-4">
-            Claude will process the top {maxIssues} most critical issues by severity and frequency.
+            Claude will process the top {maxIssues} most critical issues by
+            severity and frequency.
           </p>
         </div>
       )}

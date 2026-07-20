@@ -92,9 +92,7 @@ export default function WorkflowList() {
           <span className="material-symbols-outlined mb-4 text-5xl text-slate-700">
             account_tree
           </span>
-          <p className="mb-1 text-lg font-medium text-fg-3">
-            No workflows yet
-          </p>
+          <p className="mb-1 text-lg font-medium text-fg-3">No workflows yet</p>
           <p className="mb-4 text-sm text-fg-4">
             Create your first workflow by picking a template and configuring it.
           </p>
@@ -143,14 +141,20 @@ export default function WorkflowList() {
                             </span>
                           ))}
                         {Object.keys(cfg.params).length > 3 && (
-                          <span>+{Object.keys(cfg.params).length - 3} more</span>
+                          <span>
+                            +{Object.keys(cfg.params).length - 3} more
+                          </span>
                         )}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button
-                      onClick={() => setExpandedConfig(expandedConfig === cfg.id ? null : cfg.id)}
+                      onClick={() =>
+                        setExpandedConfig(
+                          expandedConfig === cfg.id ? null : cfg.id,
+                        )
+                      }
                       className={`flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
                         expandedConfig === cfg.id
                           ? "border-accent/30 text-accent"
@@ -158,7 +162,9 @@ export default function WorkflowList() {
                       }`}
                     >
                       <span className="material-symbols-outlined text-sm">
-                        {expandedConfig === cfg.id ? "expand_less" : "expand_more"}
+                        {expandedConfig === cfg.id
+                          ? "expand_less"
+                          : "expand_more"}
                       </span>
                       Detail
                     </button>
@@ -219,21 +225,40 @@ export default function WorkflowList() {
                       {Object.entries(cfg.params)
                         .filter(([, v]) => v)
                         .map(([k, v]) => (
-                          <div key={k} className="flex items-baseline gap-2 text-xs">
+                          <div
+                            key={k}
+                            className="flex items-baseline gap-2 text-xs"
+                          >
                             <span className="font-medium text-fg-3">{k}</span>
-                            <span className="font-mono text-fg truncate" title={v}>
+                            <span
+                              className="font-mono text-fg truncate"
+                              title={v}
+                            >
                               {v}
                             </span>
                           </div>
                         ))}
                     </div>
                     <div className="mt-2 text-[10px] text-fg-4">
-                      Template: <span className="font-mono text-fg-3">{cfg.workflow}</span>
+                      Template:{" "}
+                      <span className="font-mono text-fg-3">
+                        {cfg.workflow}
+                      </span>
                       {cfg.timeout_seconds ? (
-                        <> &middot; Timeout: <span className="font-mono text-fg-3">{Math.round(cfg.timeout_seconds / 60)}min</span></>
+                        <>
+                          {" "}
+                          &middot; Timeout:{" "}
+                          <span className="font-mono text-fg-3">
+                            {Math.round(cfg.timeout_seconds / 60)}min
+                          </span>
+                        </>
                       ) : null}
                       {cfg.created_at && (
-                        <> &middot; Created: {new Date(cfg.created_at).toLocaleDateString()}</>
+                        <>
+                          {" "}
+                          &middot; Created:{" "}
+                          {new Date(cfg.created_at).toLocaleDateString()}
+                        </>
                       )}
                     </div>
                   </div>

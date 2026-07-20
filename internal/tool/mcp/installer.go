@@ -48,12 +48,6 @@ func ConfigPath(workDir, cli string) string {
 	return filepath.Join(workDir, configRelPath(cli))
 }
 
-// WriteMCPConfig writes the standard .mcp.json (Claude Code / Codex format).
-// Kept for backward compatibility; new callers should prefer WriteMCPConfigForCLI.
-func WriteMCPConfig(workDir string, servers []Server) error {
-	return writeConfigFile(workDir, ".mcp.json", servers)
-}
-
 // WriteMCPConfigForCLI writes the MCP config in the location the given CLI expects.
 func WriteMCPConfigForCLI(workDir, cli string, servers []Server) error {
 	return writeConfigFile(workDir, configRelPath(cli), servers)

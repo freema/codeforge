@@ -89,7 +89,7 @@ func (s *Streamer) EmitResult(ctx context.Context, sessionID, event string, data
 // EmitDone publishes completion signal on the done channel and sets history TTL.
 func (s *Streamer) EmitDone(ctx context.Context, sessionID string, status session.Status, summary *gitpkg.ChangesSummary) error {
 	data, _ := json.Marshal(map[string]interface{}{
-		"task_id":         sessionID,
+		"session_id":      sessionID,
 		"status":          status,
 		"changes_summary": summary,
 	})

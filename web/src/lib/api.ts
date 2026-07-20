@@ -11,7 +11,6 @@ import type {
   CreateMCPServerRequest,
   Workspace,
   WorkflowDefinition,
-  CreateWorkflowRequest,
   RunWorkflowRequest,
   WorkflowConfig,
   CreateWorkflowConfigRequest,
@@ -22,7 +21,13 @@ import type {
   SentryOrganization,
   SentryProject,
   SentryIssue,
-  SentryEvent,
+  Tenant,
+  CreateTenantRequest,
+  CreateTenantResult,
+  UpdateTenantRequest,
+  TenantUsageSummary,
+  KeyPoolEntry,
+  AddKeyPoolRequest,
 } from "../types";
 
 export class ApiError extends Error {
@@ -63,26 +68,6 @@ async function request<T>(
   return res.json() as Promise<T>;
 }
 
-async function requestText(
-  serverUrl: string,
-  path: string,
-  token: string,
-): Promise<string> {
-  const url = `${serverUrl}/api/v1${path}`;
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new ApiError(res.status, body || res.statusText);
-  }
-
-  return res.text();
-}
-
 export function createApiClient(serverUrl: string, token: string) {
   const get = <T>(path: string) => request<T>(serverUrl, path, token);
   const post = <T>(path: string, body?: unknown) =>
@@ -92,6 +77,11 @@ export function createApiClient(serverUrl: string, token: string) {
     });
   const del = <T>(path: string) =>
     request<T>(serverUrl, path, token, { method: "DELETE" });
+  const patch = <T>(path: string, body?: unknown) =>
+    request<T>(serverUrl, path, token, {
+      method: "PATCH",
+      body: body ? JSON.stringify(body) : undefined,
+    });
 
   return {
     // Sessions
@@ -143,8 +133,6 @@ export function createApiClient(serverUrl: string, token: string) {
     // Tools
     listToolsCatalog: () =>
       get<{ tools: ToolDefinition[] }>("/tools/catalog").then((r) => r.tools),
-    getTool: (name: string) =>
-      get<ToolDefinition>(`/tools/${encodeURIComponent(name)}`),
 
     // CLI
     listCLIs: () => get<{ cli: CLIEntry[] }>("/cli").then((r) => r.cli),
@@ -175,8 +163,6 @@ export function createApiClient(serverUrl: string, token: string) {
       ),
     getWorkflow: (name: string) =>
       get<WorkflowDefinition>(`/workflows/${encodeURIComponent(name)}`),
-    createWorkflow: (req: CreateWorkflowRequest) =>
-      post<WorkflowDefinition>("/workflows", req),
     deleteWorkflow: (name: string) =>
       del<void>(`/workflows/${encodeURIComponent(name)}`),
 
@@ -192,12 +178,9 @@ export function createApiClient(serverUrl: string, token: string) {
       get<{ configs: WorkflowConfig[] }>("/workflow-configs").then(
         (r) => r.configs,
       ),
-    getWorkflowConfig: (id: number) =>
-      get<WorkflowConfig>(`/workflow-configs/${id}`),
     createWorkflowConfig: (req: CreateWorkflowConfigRequest) =>
       post<{ id: number; name: string }>("/workflow-configs", req),
-    deleteWorkflowConfig: (id: number) =>
-      del<void>(`/workflow-configs/${id}`),
+    deleteWorkflowConfig: (id: number) => del<void>(`/workflow-configs/${id}`),
     runWorkflowConfig: (id: number) =>
       post<{ session_id: string; config_id: number; config_name: string }>(
         `/workflow-configs/${id}/run`,
@@ -234,19 +217,29 @@ export function createApiClient(serverUrl: string, token: string) {
       ).then((r) => r.issues);
     },
 
-    getSentryIssue: (keyName: string, issueId: string) =>
-      get<SentryIssue>(
-        `/sentry/issues/${encodeURIComponent(issueId)}?key_name=${encodeURIComponent(keyName)}`,
+    // Admin: Tenants
+    listTenants: () =>
+      get<{ tenants: Tenant[] }>("/admin/tenants/").then((r) => r.tenants),
+    createTenant: (req: CreateTenantRequest) =>
+      post<CreateTenantResult>("/admin/tenants/", req),
+    getTenant: (id: string) => get<Tenant>(`/admin/tenants/${id}`),
+    updateTenant: (id: string, req: UpdateTenantRequest) =>
+      patch<Tenant>(`/admin/tenants/${id}`, req),
+    deleteTenant: (id: string) => del<void>(`/admin/tenants/${id}`),
+    getTenantUsage: (id: string, period?: string) =>
+      get<TenantUsageSummary>(
+        `/admin/tenants/${id}/usage${period ? `?period=${encodeURIComponent(period)}` : ""}`,
       ),
 
-    getSentryLatestEvent: (keyName: string, issueId: string) =>
-      get<SentryEvent>(
-        `/sentry/issues/${encodeURIComponent(issueId)}/latest-event?key_name=${encodeURIComponent(keyName)}`,
-      ),
+    // Admin: Key Pool
+    listKeyPool: () =>
+      get<{ keys: KeyPoolEntry[] }>("/admin/key-pool/").then((r) => r.keys),
+    addKeyPoolEntry: (req: AddKeyPoolRequest) =>
+      post<KeyPoolEntry>("/admin/key-pool/", req),
+    deleteKeyPoolEntry: (id: string) => del<void>(`/admin/key-pool/${id}`),
 
-    // Health & Metrics
+    // Health
     getHealth: () => get<HealthResponse>("/health"),
-    getMetrics: () => requestText(serverUrl, "/metrics", token),
   };
 }
 

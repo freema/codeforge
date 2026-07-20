@@ -7,6 +7,7 @@ import {
   useDeleteKey,
   useVerifyKey,
 } from "../hooks/useKeys";
+import { formatTimeAgo } from "../lib/formatters";
 import type { KeyVerifyResult, MCPServer } from "../types";
 import type { ToolDefinition } from "../types/session";
 import {
@@ -134,10 +135,18 @@ const AI_PROVIDERS = [
   },
 ] as const;
 
-function AIProviderIcon({ provider, className = "" }: { provider: string; className?: string }) {
+function AIProviderIcon({
+  provider,
+  className = "",
+}: {
+  provider: string;
+  className?: string;
+}) {
   if (provider === "anthropic") return <AnthropicLogo className={className} />;
   if (provider === "openai") return <OpenAILogo className={className} />;
-  return <span className={`material-symbols-outlined ${className}`}>smart_toy</span>;
+  return (
+    <span className={`material-symbols-outlined ${className}`}>smart_toy</span>
+  );
 }
 
 function KeysTab() {
@@ -512,8 +521,11 @@ function AIProvidersTab() {
   const verifyKey = useVerifyKey();
 
   const aiKeys = useMemo(
-    () => allKeys?.filter((k) => k.provider === "anthropic" || k.provider === "openai") ?? [],
-    [allKeys]
+    () =>
+      allKeys?.filter(
+        (k) => k.provider === "anthropic" || k.provider === "openai",
+      ) ?? [],
+    [allKeys],
   );
 
   const [formMode, setFormMode] = useState<"select" | "form">("select");
@@ -522,7 +534,9 @@ function AIProvidersTab() {
   const [token, setToken] = useState("");
   const [validationError, setValidationError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [verifyResults, setVerifyResults] = useState<Record<string, KeyVerifyResult>>({});
+  const [verifyResults, setVerifyResults] = useState<
+    Record<string, KeyVerifyResult>
+  >({});
   const [verifying, setVerifying] = useState<string | null>(null);
 
   function selectProvider(value: string) {
@@ -571,7 +585,12 @@ function AIProvidersTab() {
     } catch {
       setVerifyResults((prev) => ({
         ...prev,
-        [keyName]: { name: keyName, provider: "", valid: false, error: "Connection failed" },
+        [keyName]: {
+          name: keyName,
+          provider: "",
+          valid: false,
+          error: "Connection failed",
+        },
       }));
     } finally {
       setVerifying(null);
@@ -588,12 +607,23 @@ function AIProvidersTab() {
       {/* Warning if no AI keys */}
       {!isLoading && aiKeys.length === 0 && (
         <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
-          <span className="material-symbols-outlined mt-0.5 text-amber-400">warning</span>
+          <span className="material-symbols-outlined mt-0.5 text-amber-400">
+            warning
+          </span>
           <div>
-            <p className="text-sm font-medium text-amber-300">No AI provider keys configured</p>
+            <p className="text-sm font-medium text-amber-300">
+              No AI provider keys configured
+            </p>
             <p className="mt-1 text-xs text-amber-400/80">
-              Sessions will fail unless <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">ANTHROPIC_API_KEY</code> or{" "}
-              <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">OPENAI_API_KEY</code> is set as an environment variable on the server.
+              Sessions will fail unless{" "}
+              <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">
+                ANTHROPIC_API_KEY
+              </code>{" "}
+              or{" "}
+              <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">
+                OPENAI_API_KEY
+              </code>{" "}
+              is set as an environment variable on the server.
             </p>
           </div>
         </div>
@@ -632,11 +662,16 @@ function AIProvidersTab() {
                       }`}
                     >
                       {vr ? (
-                        <span className={`material-symbols-outlined ${vr.valid ? "text-accent" : "text-red-400"}`}>
+                        <span
+                          className={`material-symbols-outlined ${vr.valid ? "text-accent" : "text-red-400"}`}
+                        >
                           {vr.valid ? "verified" : "gpp_bad"}
                         </span>
                       ) : (
-                        <AIProviderIcon provider={k.provider} className={`h-5 w-5 text-fg-3`} />
+                        <AIProviderIcon
+                          provider={k.provider}
+                          className={`h-5 w-5 text-fg-3`}
+                        />
                       )}
                     </div>
                     <div className="min-w-0">
@@ -652,16 +687,23 @@ function AIProvidersTab() {
                         )}
                       </div>
                       <p className="mt-0.5 text-xs text-fg-4">
-                        Used by: <span className="font-mono text-fg-3">{cliName}</span>
+                        Used by:{" "}
+                        <span className="font-mono text-fg-3">{cliName}</span>
                       </p>
                       {vr && vr.valid && (
                         <div className="mt-1 flex items-center gap-2 text-xs text-fg-3">
-                          <span className="material-symbols-outlined text-sm text-accent">check_circle</span>
-                          <span className="font-medium text-fg-2">{vr.scopes || "Valid"}</span>
+                          <span className="material-symbols-outlined text-sm text-accent">
+                            check_circle
+                          </span>
+                          <span className="font-medium text-fg-2">
+                            {vr.scopes || "Valid"}
+                          </span>
                         </div>
                       )}
                       {vr && !vr.valid && (
-                        <p className="mt-1 text-xs text-red-400">{vr.error || "Token is invalid or expired"}</p>
+                        <p className="mt-1 text-xs text-red-400">
+                          {vr.error || "Token is invalid or expired"}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -673,27 +715,50 @@ function AIProvidersTab() {
                       className="flex items-center gap-1.5 rounded-lg border border-edge px-3 py-2 text-xs font-medium text-fg-3 transition-colors hover:border-accent/30 hover:text-accent disabled:opacity-50"
                     >
                       {isVerifying ? (
-                        <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                        <span className="material-symbols-outlined animate-spin text-sm">
+                          progress_activity
+                        </span>
                       ) : (
-                        <span className="material-symbols-outlined text-sm">verified</span>
+                        <span className="material-symbols-outlined text-sm">
+                          verified
+                        </span>
                       )}
                       {isVerifying ? "Checking" : vr ? "Re-check" : "Verify"}
                     </button>
 
                     {k.source === "env" ? (
-                      <span className="rounded-md border border-edge p-1.5 text-fg-4 opacity-30 cursor-not-allowed" title="Environment keys cannot be deleted">
-                        <span className="material-symbols-outlined text-base">lock</span>
+                      <span
+                        className="rounded-md border border-edge p-1.5 text-fg-4 opacity-30 cursor-not-allowed"
+                        title="Environment keys cannot be deleted"
+                      >
+                        <span className="material-symbols-outlined text-base">
+                          lock
+                        </span>
                       </span>
                     ) : confirmDelete === k.name ? (
                       <span className="flex items-center gap-2">
-                        <button onClick={() => void handleDelete(k.name)} disabled={deleteKey.isPending} className="rounded-lg border border-red-900/50 bg-red-900/20 px-3 py-2 text-xs font-medium text-red-400">
+                        <button
+                          onClick={() => void handleDelete(k.name)}
+                          disabled={deleteKey.isPending}
+                          className="rounded-lg border border-red-900/50 bg-red-900/20 px-3 py-2 text-xs font-medium text-red-400"
+                        >
                           Confirm
                         </button>
-                        <button onClick={() => setConfirmDelete(null)} className="text-xs text-fg-3">Cancel</button>
+                        <button
+                          onClick={() => setConfirmDelete(null)}
+                          className="text-xs text-fg-3"
+                        >
+                          Cancel
+                        </button>
                       </span>
                     ) : (
-                      <button onClick={() => setConfirmDelete(k.name)} className="rounded-md border border-edge p-1.5 text-fg-4 transition-colors hover:border-red-900/50 hover:text-red-400">
-                        <span className="material-symbols-outlined text-base">delete</span>
+                      <button
+                        onClick={() => setConfirmDelete(k.name)}
+                        className="rounded-md border border-edge p-1.5 text-fg-4 transition-colors hover:border-red-900/50 hover:text-red-400"
+                      >
+                        <span className="material-symbols-outlined text-base">
+                          delete
+                        </span>
                       </button>
                     )}
                   </div>
@@ -708,7 +773,9 @@ function AIProvidersTab() {
       {formMode === "select" && (
         <div className="rounded-xl border border-edge bg-surface/50 p-5">
           <h3 className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-            <span className="material-symbols-outlined text-accent text-base">add_circle</span>
+            <span className="material-symbols-outlined text-accent text-base">
+              add_circle
+            </span>
             Add AI Provider Key
           </h3>
           <div className="grid grid-cols-2 gap-3">
@@ -727,8 +794,15 @@ function AIProvidersTab() {
                   }`}
                 >
                   <div className="flex w-full items-center justify-between">
-                    <AIProviderIcon provider={p.value} className={`h-5 w-5 ${alreadyHas ? "text-accent" : "text-fg-3 group-hover:text-accent"}`} />
-                    {alreadyHas && <span className="material-symbols-outlined text-sm text-accent">check_circle</span>}
+                    <AIProviderIcon
+                      provider={p.value}
+                      className={`h-5 w-5 ${alreadyHas ? "text-accent" : "text-fg-3 group-hover:text-accent"}`}
+                    />
+                    {alreadyHas && (
+                      <span className="material-symbols-outlined text-sm text-accent">
+                        check_circle
+                      </span>
+                    )}
                   </div>
                   <div>
                     <p className="text-sm font-medium text-fg">{p.label}</p>
@@ -744,14 +818,26 @@ function AIProvidersTab() {
 
       {/* Key form */}
       {formMode === "form" && (
-        <form onSubmit={(e) => void handleAdd(e)} className="rounded-xl border border-edge bg-surface/50 p-5">
+        <form
+          onSubmit={(e) => void handleAdd(e)}
+          className="rounded-xl border border-edge bg-surface/50 p-5"
+        >
           <div className="mb-4 flex items-center justify-between">
             <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-              <AIProviderIcon provider={provider} className="h-4 w-4 text-accent" />
+              <AIProviderIcon
+                provider={provider}
+                className="h-4 w-4 text-accent"
+              />
               {AI_PROVIDERS.find((p) => p.value === provider)?.label}
             </h3>
-            <button type="button" onClick={goBack} className="flex items-center gap-1 text-xs text-fg-3 transition-colors hover:text-accent">
-              <span className="material-symbols-outlined text-sm">arrow_back</span>
+            <button
+              type="button"
+              onClick={goBack}
+              className="flex items-center gap-1 text-xs text-fg-3 transition-colors hover:text-accent"
+            >
+              <span className="material-symbols-outlined text-sm">
+                arrow_back
+              </span>
               Back
             </button>
           </div>
@@ -769,13 +855,18 @@ function AIProvidersTab() {
               type="password"
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              placeholder={AI_PROVIDERS.find((p) => p.value === provider)?.placeholder ?? "API Key"}
+              placeholder={
+                AI_PROVIDERS.find((p) => p.value === provider)?.placeholder ??
+                "API Key"
+              }
               required
               className={inputCls}
             />
           </div>
 
-          {validationError && <p className="mt-3 text-xs text-red-400">{validationError}</p>}
+          {validationError && (
+            <p className="mt-3 text-xs text-red-400">{validationError}</p>
+          )}
 
           <button
             type="submit"
@@ -783,7 +874,9 @@ function AIProvidersTab() {
             className="mt-4 flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-bold text-page transition-all hover:bg-accent-hover disabled:opacity-50"
           >
             {createKey.isPending ? (
-              <span className="material-symbols-outlined animate-spin text-base">progress_activity</span>
+              <span className="material-symbols-outlined animate-spin text-base">
+                progress_activity
+              </span>
             ) : (
               <span className="material-symbols-outlined text-lg">add</span>
             )}
@@ -796,17 +889,6 @@ function AIProvidersTab() {
 }
 
 const NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
-
-function relativeTime(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
 
 function MCPServerCard({
   server,
@@ -877,7 +959,7 @@ function MCPServerCard({
               )}
               {server.created_at && (
                 <span className="text-[10px] text-fg-4">
-                  {relativeTime(server.created_at)}
+                  {formatTimeAgo(server.created_at)}
                 </span>
               )}
             </div>
@@ -1217,16 +1299,23 @@ function MCPTab() {
       {!isLoading && !catalogLoading && readyTools.length > 0 && (
         <div>
           <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-            <span className="material-symbols-outlined text-accent text-base">check_circle</span>
+            <span className="material-symbols-outlined text-accent text-base">
+              check_circle
+            </span>
             Ready to Use
           </h3>
           <div className="flex flex-col gap-3">
             {readyTools.map((tool) => {
               const providerKeys = getToolProviderKeys(tool);
-              const matchingKey = allKeys?.find((k) => providerKeys.includes(k.provider));
+              const matchingKey = allKeys?.find((k) =>
+                providerKeys.includes(k.provider),
+              );
               const hasKey = !!matchingKey;
               return (
-                <div key={tool.name} className="rounded-xl border border-accent/20 bg-accent/5 p-4">
+                <div
+                  key={tool.name}
+                  className="rounded-xl border border-accent/20 bg-accent/5 p-4"
+                >
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-accent/30 bg-accent/10">
                       <span className="material-symbols-outlined text-accent">
@@ -1235,18 +1324,26 @@ function MCPTab() {
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-fg capitalize">{tool.name}</span>
-                        <span className="material-symbols-outlined text-sm text-accent">check_circle</span>
+                        <span className="font-medium text-fg capitalize">
+                          {tool.name}
+                        </span>
+                        <span className="material-symbols-outlined text-sm text-accent">
+                          check_circle
+                        </span>
                         {matchingKey?.source === "env" && (
                           <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">
                             ENV
                           </span>
                         )}
                       </div>
-                      <p className="mt-0.5 text-xs text-fg-4">{tool.description}</p>
+                      <p className="mt-0.5 text-xs text-fg-4">
+                        {tool.description}
+                      </p>
                       {hasKey && (
                         <p className="mt-1 flex items-center gap-1 text-[10px] text-accent/80">
-                          <span className="material-symbols-outlined text-xs">vpn_key</span>
+                          <span className="material-symbols-outlined text-xs">
+                            vpn_key
+                          </span>
                           {matchingKey.source === "env"
                             ? `Using ${matchingKey.scope} environment variable`
                             : `Using key "${matchingKey.name}" from Provider Keys`}
@@ -1267,7 +1364,9 @@ function MCPTab() {
       ) : servers && servers.length > 0 ? (
         <div>
           <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-            <span className="material-symbols-outlined text-fg-3 text-base">dns</span>
+            <span className="material-symbols-outlined text-fg-3 text-base">
+              dns
+            </span>
             Custom Servers
           </h3>
           <div className="flex flex-col gap-3">
@@ -1305,12 +1404,16 @@ function MCPTab() {
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {mcpTools.map((tool) => {
-                const alreadyReady = readyTools.some((r) => r.name === tool.name);
+                const alreadyReady = readyTools.some(
+                  (r) => r.name === tool.name,
+                );
                 const alreadyAdded = serverNames.has(tool.name);
                 const isDisabled = alreadyAdded || alreadyReady;
                 const needsConfig = (tool.required_config?.length ?? 0) > 0;
                 const providerKeys = getToolProviderKeys(tool);
-                const hasKey = providerKeys.some((p) => configuredProviders.has(p));
+                const hasKey = providerKeys.some((p) =>
+                  configuredProviders.has(p),
+                );
                 return (
                   <button
                     key={tool.name}

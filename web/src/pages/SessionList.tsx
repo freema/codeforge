@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useSessions } from "../hooks/useSessions";
 import StatusBadge from "../components/StatusBadge";
+import { formatTimeAgo } from "../lib/formatters";
 import type { Session, SessionStatus } from "../types";
 
 const STATUS_FILTERS: {
@@ -358,15 +359,4 @@ function EmptyState({ onNew }: { onNew: () => void }) {
       </button>
     </div>
   );
-}
-
-function formatTimeAgo(dateStr: string): string {
-  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
 }

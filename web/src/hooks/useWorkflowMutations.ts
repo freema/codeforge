@@ -1,16 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApi } from "./useApi";
-import type { CreateWorkflowRequest, RunWorkflowRequest } from "../types";
-
-export function useCreateWorkflow() {
-  const api = useApi();
-  const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: (req: CreateWorkflowRequest) => api.createWorkflow(req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["workflows"] }),
-  });
-}
+import type { RunWorkflowRequest } from "../types";
 
 export function useDeleteWorkflow() {
   const api = useApi();
@@ -30,4 +20,3 @@ export function useRunWorkflow() {
       api.runWorkflow(name, req),
   });
 }
-

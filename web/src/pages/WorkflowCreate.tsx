@@ -4,10 +4,7 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import { useWorkflows } from "../hooks/useWorkflows";
 import { useKeys } from "../hooks/useKeys";
 import { useRepositories } from "../hooks/useRepositories";
-import {
-  useSentryOrganizations,
-  useSentryProjects,
-} from "../hooks/useSentry";
+import { useSentryOrganizations, useSentryProjects } from "../hooks/useSentry";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApi } from "../hooks/useApi";
 import { useToast } from "../context/ToastContext";
@@ -61,10 +58,15 @@ export default function WorkflowCreate() {
     () => allKeys?.filter((k) => k.provider === "sentry") ?? [],
     [allKeys],
   );
-  const effectiveSentryKey = params.key_name || (sentryKeys.length === 1 ? sentryKeys[0]!.name : "");
-  const { data: sentryOrgs } = useSentryOrganizations(effectiveSentryKey || undefined);
-  const effectiveSentryOrg = params.sentry_org || (sentryOrgs?.length === 1 ? sentryOrgs[0]!.slug : "");
-  const sentryOrgRegion = sentryOrgs?.find((o) => o.slug === effectiveSentryOrg)?.region ?? "";
+  const effectiveSentryKey =
+    params.key_name || (sentryKeys.length === 1 ? sentryKeys[0]!.name : "");
+  const { data: sentryOrgs } = useSentryOrganizations(
+    effectiveSentryKey || undefined,
+  );
+  const effectiveSentryOrg =
+    params.sentry_org || (sentryOrgs?.length === 1 ? sentryOrgs[0]!.slug : "");
+  const sentryOrgRegion =
+    sentryOrgs?.find((o) => o.slug === effectiveSentryOrg)?.region ?? "";
   const { data: sentryProjects } = useSentryProjects(
     effectiveSentryKey || undefined,
     effectiveSentryOrg || undefined,
@@ -73,8 +75,12 @@ export default function WorkflowCreate() {
   const isSentryFixer = selectedTemplate === "sentry-fixer";
 
   const createConfig = useMutation({
-    mutationFn: (req: { name: string; workflow: string; params: Record<string, string>; timeout_seconds?: number }) =>
-      api.createWorkflowConfig(req),
+    mutationFn: (req: {
+      name: string;
+      workflow: string;
+      params: Record<string, string>;
+      timeout_seconds?: number;
+    }) => api.createWorkflowConfig(req),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["workflowConfigs"] });
       toast("success", "Workflow created");
@@ -94,8 +100,7 @@ export default function WorkflowCreate() {
     else if (params.repo_url) {
       const match = params.repo_url.match(/\/([^/]+?)(?:\.git)?$/);
       if (match?.[1]) parts.push(match[1]);
-    }
-    else if (params.issue_number) parts.push(`issue-${params.issue_number}`);
+    } else if (params.issue_number) parts.push(`issue-${params.issue_number}`);
     return parts.join("-");
   }
 
@@ -136,7 +141,9 @@ export default function WorkflowCreate() {
         timeout_seconds: timeoutMinutes * 60,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create workflow");
+      setError(
+        err instanceof Error ? err.message : "Failed to create workflow",
+      );
     }
   }
 
@@ -149,7 +156,9 @@ export default function WorkflowCreate() {
             onClick={() => void navigate("/workflows")}
             className="flex items-center rounded-lg border border-edge p-2 text-fg-3 transition-colors hover:border-accent/30 hover:text-accent"
           >
-            <span className="material-symbols-outlined text-lg">arrow_back</span>
+            <span className="material-symbols-outlined text-lg">
+              arrow_back
+            </span>
           </button>
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-fg">
@@ -194,7 +203,8 @@ export default function WorkflowCreate() {
                       {t.steps.length} steps
                     </span>
                     <span className="rounded-full border border-edge px-2 py-0.5 text-[10px] font-bold text-fg-4">
-                      {t.parameters.filter((p) => p.required).length} required params
+                      {t.parameters.filter((p) => p.required).length} required
+                      params
                     </span>
                   </div>
                 </div>
@@ -238,7 +248,9 @@ export default function WorkflowCreate() {
         {/* Name (optional override) */}
         <section className="rounded-xl border border-edge bg-surface/50 p-6 space-y-4">
           <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-            <span className="material-symbols-outlined text-accent text-base">label</span>
+            <span className="material-symbols-outlined text-accent text-base">
+              label
+            </span>
             Name
           </h3>
           <input
@@ -256,7 +268,9 @@ export default function WorkflowCreate() {
         {/* Parameters */}
         <section className="rounded-xl border border-edge bg-surface/50 p-6 space-y-4">
           <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-            <span className="material-symbols-outlined text-accent text-base">tune</span>
+            <span className="material-symbols-outlined text-accent text-base">
+              tune
+            </span>
             Parameters
           </h3>
 
@@ -271,101 +285,113 @@ export default function WorkflowCreate() {
               gitKeys={gitKeys}
               repos={repos}
             />
-          ) : template?.parameters.map((p) => {
-            // Smart: provider_key with git keys selector
-            if (p.name === "provider_key" && gitKeys.length > 0) {
-              return (
-                <div key={p.name}>
-                  <label className="mb-1.5 block text-xs text-fg-3">
-                    Provider Key
-                    {p.required && <span className="ml-1 text-red-400">*</span>}
-                  </label>
-                  <div className="flex gap-2">
-                    {gitKeys.map((k) => (
-                      <button
-                        key={k.name}
-                        type="button"
-                        onClick={() => updateParam("provider_key", k.name)}
-                        className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${
-                          params.provider_key === k.name
-                            ? "border-accent bg-accent/10 text-accent"
-                            : "border-edge text-fg-3 hover:border-fg-4"
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-lg">code</span>
-                        {k.name}
-                      </button>
-                    ))}
+          ) : (
+            template?.parameters.map((p) => {
+              // Smart: provider_key with git keys selector
+              if (p.name === "provider_key" && gitKeys.length > 0) {
+                return (
+                  <div key={p.name}>
+                    <label className="mb-1.5 block text-xs text-fg-3">
+                      Provider Key
+                      {p.required && (
+                        <span className="ml-1 text-red-400">*</span>
+                      )}
+                    </label>
+                    <div className="flex gap-2">
+                      {gitKeys.map((k) => (
+                        <button
+                          key={k.name}
+                          type="button"
+                          onClick={() => updateParam("provider_key", k.name)}
+                          className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${
+                            params.provider_key === k.name
+                              ? "border-accent bg-accent/10 text-accent"
+                              : "border-edge text-fg-3 hover:border-fg-4"
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-lg">
+                            code
+                          </span>
+                          {k.name}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              );
-            }
+                );
+              }
 
-            // Smart: repo_url with repo selector
-            if (p.name === "repo_url" && repos && repos.length > 0) {
+              // Smart: repo_url with repo selector
+              if (p.name === "repo_url" && repos && repos.length > 0) {
+                return (
+                  <div key={p.name}>
+                    <label className="mb-1.5 block text-xs text-fg-3">
+                      Repository
+                      {p.required && (
+                        <span className="ml-1 text-red-400">*</span>
+                      )}
+                    </label>
+                    <Select
+                      value={params.repo_url || ""}
+                      onChange={(v) => updateParam("repo_url", v)}
+                      placeholder="Select repository..."
+                      options={repos.map((r) => ({
+                        value: r.clone_url,
+                        label: r.full_name,
+                      }))}
+                    />
+                  </div>
+                );
+              }
+
+              // Smart: key_name for sentry/provider keys
+              if (p.name === "key_name" && allKeys && allKeys.length > 0) {
+                return (
+                  <div key={p.name}>
+                    <label className="mb-1.5 block text-xs text-fg-3">
+                      Auth Key
+                      {p.required && (
+                        <span className="ml-1 text-red-400">*</span>
+                      )}
+                    </label>
+                    <Select
+                      value={params.key_name || ""}
+                      onChange={(v) => updateParam("key_name", v)}
+                      placeholder="Select key..."
+                      options={allKeys.map((k) => ({
+                        value: k.name,
+                        label: `${k.name} (${k.provider})`,
+                      }))}
+                    />
+                  </div>
+                );
+              }
+
+              // Default: text input
               return (
                 <div key={p.name}>
                   <label className="mb-1.5 block text-xs text-fg-3">
-                    Repository
+                    {p.name.replace(/_/g, " ")}
                     {p.required && <span className="ml-1 text-red-400">*</span>}
                   </label>
-                  <Select
-                    value={params.repo_url || ""}
-                    onChange={(v) => updateParam("repo_url", v)}
-                    placeholder="Select repository..."
-                    options={repos.map((r) => ({
-                      value: r.clone_url,
-                      label: r.full_name,
-                    }))}
+                  <input
+                    type="text"
+                    value={params[p.name] ?? p.default ?? ""}
+                    onChange={(e) => updateParam(p.name, e.target.value)}
+                    placeholder={p.default ?? `Enter ${p.name}...`}
+                    className={inputCls}
                   />
                 </div>
               );
-            }
-
-            // Smart: key_name for sentry/provider keys
-            if (p.name === "key_name" && allKeys && allKeys.length > 0) {
-              return (
-                <div key={p.name}>
-                  <label className="mb-1.5 block text-xs text-fg-3">
-                    Auth Key
-                    {p.required && <span className="ml-1 text-red-400">*</span>}
-                  </label>
-                  <Select
-                    value={params.key_name || ""}
-                    onChange={(v) => updateParam("key_name", v)}
-                    placeholder="Select key..."
-                    options={allKeys.map((k) => ({
-                      value: k.name,
-                      label: `${k.name} (${k.provider})`,
-                    }))}
-                  />
-                </div>
-              );
-            }
-
-            // Default: text input
-            return (
-              <div key={p.name}>
-                <label className="mb-1.5 block text-xs text-fg-3">
-                  {p.name.replace(/_/g, " ")}
-                  {p.required && <span className="ml-1 text-red-400">*</span>}
-                </label>
-                <input
-                  type="text"
-                  value={params[p.name] ?? p.default ?? ""}
-                  onChange={(e) => updateParam(p.name, e.target.value)}
-                  placeholder={p.default ?? `Enter ${p.name}...`}
-                  className={inputCls}
-                />
-              </div>
-            );
-          })}
+            })
+          )}
         </section>
 
         {/* Timeout */}
         <section className="rounded-xl border border-edge bg-surface/50 p-6 space-y-4">
           <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-            <span className="material-symbols-outlined text-accent text-base">timer</span>
+            <span className="material-symbols-outlined text-accent text-base">
+              timer
+            </span>
             Timeout
           </h3>
           <div className="flex items-center gap-4">
@@ -383,7 +409,8 @@ export default function WorkflowCreate() {
             </span>
           </div>
           <p className="text-[10px] text-fg-4">
-            If the session exceeds this limit it will complete gracefully — you can still create a PR or continue with a follow-up instruction.
+            If the session exceeds this limit it will complete gracefully — you
+            can still create a PR or continue with a follow-up instruction.
           </p>
         </section>
 
@@ -402,7 +429,9 @@ export default function WorkflowCreate() {
             className="flex items-center gap-2 rounded-lg bg-accent px-6 py-2.5 text-sm font-bold text-page shadow-[0_0_15px_rgba(0,255,64,0.3)] transition-all hover:bg-accent-hover disabled:opacity-50"
           >
             {createConfig.isPending ? (
-              <span className="material-symbols-outlined animate-spin text-base">progress_activity</span>
+              <span className="material-symbols-outlined animate-spin text-base">
+                progress_activity
+              </span>
             ) : (
               <span className="material-symbols-outlined text-lg">save</span>
             )}
@@ -423,7 +452,12 @@ export default function WorkflowCreate() {
 
 // ── Sentry Fixer specific parameter form with cascade selectors ──
 
-import type { ProviderKey, Repository, SentryOrganization, SentryProject } from "../types";
+import type {
+  ProviderKey,
+  Repository,
+  SentryOrganization,
+  SentryProject,
+} from "../types";
 
 function SentryFixerParams({
   params,
@@ -448,7 +482,9 @@ function SentryFixerParams({
     <>
       {/* Sentry Key */}
       <div>
-        <label className="mb-1.5 block text-xs font-medium text-fg-3">Sentry Key</label>
+        <label className="mb-1.5 block text-xs font-medium text-fg-3">
+          Sentry Key
+        </label>
         {sentryKeys.length === 1 ? (
           <div className="flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5 text-sm font-mono text-accent">
             <span className="material-symbols-outlined text-base">vpn_key</span>
@@ -466,24 +502,34 @@ function SentryFixerParams({
             options={sentryKeys.map((k) => ({ value: k.name, label: k.name }))}
           />
         ) : (
-          <p className="py-2 text-xs text-fg-4">No Sentry keys configured. Add one in Settings.</p>
+          <p className="py-2 text-xs text-fg-4">
+            No Sentry keys configured. Add one in Settings.
+          </p>
         )}
       </div>
 
       {/* Organization */}
       {effectiveSentryKey && (
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-fg-3">Organization</label>
+          <label className="mb-1.5 block text-xs font-medium text-fg-3">
+            Organization
+          </label>
           {!sentryOrgs ? (
             <div className="flex items-center gap-2 py-2.5 text-xs text-fg-4">
-              <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+              <span className="material-symbols-outlined animate-spin text-sm">
+                progress_activity
+              </span>
               Loading organizations...
             </div>
           ) : sentryOrgs.length === 1 ? (
             <div className="flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5 text-sm font-mono text-accent">
-              <span className="material-symbols-outlined text-base">corporate_fare</span>
+              <span className="material-symbols-outlined text-base">
+                corporate_fare
+              </span>
               {sentryOrgs[0]!.name}
-              <span className="text-accent/50 text-xs">({sentryOrgs[0]!.slug})</span>
+              <span className="text-accent/50 text-xs">
+                ({sentryOrgs[0]!.slug})
+              </span>
             </div>
           ) : sentryOrgs.length > 1 ? (
             <Select
@@ -505,12 +551,16 @@ function SentryFixerParams({
       )}
 
       {/* Project */}
-      {(params.sentry_org || (sentryOrgs?.length === 1)) && (
+      {(params.sentry_org || sentryOrgs?.length === 1) && (
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-fg-3">Project</label>
+          <label className="mb-1.5 block text-xs font-medium text-fg-3">
+            Project
+          </label>
           {!sentryProjects ? (
             <div className="flex items-center gap-2 py-2.5 text-xs text-fg-4">
-              <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+              <span className="material-symbols-outlined animate-spin text-sm">
+                progress_activity
+              </span>
               Loading projects...
             </div>
           ) : sentryProjects.length > 0 ? (
@@ -532,7 +582,9 @@ function SentryFixerParams({
       {/* Git Provider */}
       {gitKeys.length > 0 && (
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-fg-3">Git Provider</label>
+          <label className="mb-1.5 block text-xs font-medium text-fg-3">
+            Git Provider
+          </label>
           <div className="flex gap-2">
             {gitKeys.map((k) => (
               <button
@@ -559,19 +611,26 @@ function SentryFixerParams({
       {/* Repository */}
       {repos && repos.length > 0 && (
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-fg-3">Repository</label>
+          <label className="mb-1.5 block text-xs font-medium text-fg-3">
+            Repository
+          </label>
           <Select
             value={params.repo_url || ""}
             onChange={(v) => updateParam("repo_url", v)}
             placeholder="Select repository..."
-            options={repos.map((r) => ({ value: r.clone_url, label: r.full_name }))}
+            options={repos.map((r) => ({
+              value: r.clone_url,
+              label: r.full_name,
+            }))}
           />
         </div>
       )}
 
       {/* Max issues */}
       <div>
-        <label className="mb-1.5 block text-xs font-medium text-fg-3">Max issues to fix</label>
+        <label className="mb-1.5 block text-xs font-medium text-fg-3">
+          Max issues to fix
+        </label>
         <div className="flex items-center gap-4">
           <input
             type="range"

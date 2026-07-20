@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { useApi } from "./useApi";
-import { useRunWorkflow } from "./useWorkflowMutations";
 
 export function useSentryOrganizations(keyName: string | undefined) {
   const api = useApi();
@@ -56,34 +55,4 @@ export function useSentryIssues(
     enabled: !!keyName && !!org && !!project,
     refetchInterval: 30_000,
   });
-}
-
-export function useSentryIssue(
-  keyName: string | undefined,
-  issueId: string | undefined,
-) {
-  const api = useApi();
-
-  return useQuery({
-    queryKey: ["sentryIssue", keyName, issueId],
-    queryFn: () => api.getSentryIssue(keyName!, issueId!),
-    enabled: !!keyName && !!issueId,
-  });
-}
-
-export function useSentryLatestEvent(
-  keyName: string | undefined,
-  issueId: string | undefined,
-) {
-  const api = useApi();
-
-  return useQuery({
-    queryKey: ["sentryLatestEvent", keyName, issueId],
-    queryFn: () => api.getSentryLatestEvent(keyName!, issueId!),
-    enabled: !!keyName && !!issueId,
-  });
-}
-
-export function useFixSentryIssue() {
-  return useRunWorkflow();
 }

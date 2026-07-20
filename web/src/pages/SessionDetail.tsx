@@ -78,21 +78,24 @@ export default function SessionDetail() {
     session.status === "cloning" ||
     session.status === "reviewing";
   const canInstruct =
-    session.status === "completed" || session.status === "awaiting_instruction" || session.status === "pr_created";
+    session.status === "completed" ||
+    session.status === "awaiting_instruction" ||
+    session.status === "pr_created";
   const hasChanges =
     session.changes_summary &&
     (session.changes_summary.files_modified > 0 ||
       session.changes_summary.files_created > 0 ||
       session.changes_summary.files_deleted > 0);
   const canCreatePR =
-    (session.status === "completed" || session.status === "pr_created") && !isPlan && hasChanges;
+    (session.status === "completed" || session.status === "pr_created") &&
+    !isPlan &&
+    hasChanges;
   const isPrReview = session.session_type === "pr_review";
   const isReview = session.session_type === "review";
-  const canReview = session.status === "completed" && !isPlan && !isPrReview && !isReview;
+  const canReview =
+    session.status === "completed" && !isPlan && !isPrReview && !isReview;
   const canPostComments =
-    isPrReview &&
-    session.status === "completed" &&
-    !!session.review_result;
+    isPrReview && session.status === "completed" && !!session.review_result;
 
   const repoShort = session.repo_url
     .replace(/^https?:\/\//, "")
@@ -432,55 +435,71 @@ export default function SessionDetail() {
                 {createPR.isPending ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <span className="material-symbols-outlined text-sm">call_merge</span>
+                  <span className="material-symbols-outlined text-sm">
+                    call_merge
+                  </span>
                 )}
                 {createPR.isPending ? "Creating..." : "Create PR"}
               </button>
             )}
-            {session.pr_url && hasChanges && !pushed && (!prStatus || prStatus.state === "open") && (
-              <button
-                onClick={() => void handlePushToPR()}
-                disabled={pushToPR.isPending}
-                className="flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-50"
-              >
-                {pushToPR.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <span className="material-symbols-outlined text-sm">upload</span>
-                )}
-                {pushToPR.isPending ? "Pushing..." : "Push to PR"}
-              </button>
-            )}
-            {session.pr_url && hasChanges && prStatus && (prStatus.state === "merged" || prStatus.state === "closed") && (
-              <button
-                onClick={() => void handleCreatePR()}
-                disabled={createPR.isPending}
-                className="flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-50"
-              >
-                {createPR.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <span className="material-symbols-outlined text-sm">call_merge</span>
-                )}
-                {createPR.isPending ? "Creating..." : "Create New PR"}
-              </button>
-            )}
+            {session.pr_url &&
+              hasChanges &&
+              !pushed &&
+              (!prStatus || prStatus.state === "open") && (
+                <button
+                  onClick={() => void handlePushToPR()}
+                  disabled={pushToPR.isPending}
+                  className="flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-50"
+                >
+                  {pushToPR.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <span className="material-symbols-outlined text-sm">
+                      upload
+                    </span>
+                  )}
+                  {pushToPR.isPending ? "Pushing..." : "Push to PR"}
+                </button>
+              )}
+            {session.pr_url &&
+              hasChanges &&
+              prStatus &&
+              (prStatus.state === "merged" || prStatus.state === "closed") && (
+                <button
+                  onClick={() => void handleCreatePR()}
+                  disabled={createPR.isPending}
+                  className="flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-50"
+                >
+                  {createPR.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <span className="material-symbols-outlined text-sm">
+                      call_merge
+                    </span>
+                  )}
+                  {createPR.isPending ? "Creating..." : "Create New PR"}
+                </button>
+              )}
             {session.pr_url && (
               <Link
                 to={session.pr_url}
                 target="_blank"
                 className="flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-3 py-1.5 text-xs font-medium text-fg-3 transition-colors hover:border-accent/30 hover:text-accent"
               >
-                <span className="material-symbols-outlined text-sm">open_in_new</span>
+                <span className="material-symbols-outlined text-sm">
+                  open_in_new
+                </span>
                 View PR
                 {prStatus && (
-                  <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase ${
-                    prStatus.state === "merged"
-                      ? "bg-purple-500/20 text-purple-400"
-                      : prStatus.state === "closed"
-                        ? "bg-red-500/20 text-red-400"
-                        : "bg-accent/20 text-accent"
-                  }`}>
+                  <span
+                    className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                      prStatus.state === "merged"
+                        ? "bg-purple-500/20 text-purple-400"
+                        : prStatus.state === "closed"
+                          ? "bg-red-500/20 text-red-400"
+                          : "bg-accent/20 text-accent"
+                    }`}
+                  >
                     {prStatus.state}
                   </span>
                 )}

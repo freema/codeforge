@@ -12,7 +12,6 @@ var (
 	ErrValidation        = errors.New("validation error")
 	ErrUnauthorized      = errors.New("unauthorized")
 	ErrConflict          = errors.New("conflict")
-	ErrInternal          = errors.New("internal error")
 	ErrInvalidTransition = errors.New("invalid state transition")
 )
 
@@ -59,15 +58,6 @@ func Conflict(format string, args ...interface{}) *AppError {
 		Err:     ErrConflict,
 		Message: fmt.Sprintf(format, args...),
 		Status:  http.StatusConflict,
-	}
-}
-
-// Internal creates a 500 error.
-func Internal(format string, args ...interface{}) *AppError {
-	return &AppError{
-		Err:     ErrInternal,
-		Message: fmt.Sprintf(format, args...),
-		Status:  http.StatusInternalServerError,
 	}
 }
 

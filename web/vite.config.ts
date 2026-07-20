@@ -9,16 +9,6 @@ export default defineConfig({
   server: {
     host: true,
     proxy: {
-      "/api/v1/health": {
-        target: apiTarget,
-        changeOrigin: true,
-        rewrite: () => "/health",
-      },
-      "/api/v1/metrics": {
-        target: apiTarget,
-        changeOrigin: true,
-        rewrite: () => "/metrics",
-      },
       "/api": {
         target: apiTarget,
         changeOrigin: true,
@@ -31,7 +21,6 @@ export default defineConfig({
         manualChunks: {
           vendor: ["react", "react-dom", "react-router"],
           query: ["@tanstack/react-query"],
-          charts: ["recharts"],
         },
       },
     },
