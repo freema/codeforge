@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { useHealth } from "../hooks/useHealth";
 
-const navItems = [
+const operatorNavItems = [
   { to: "/", label: "Dashboard", icon: "dashboard", end: true },
   { to: "/sessions", label: "Sessions", icon: "task", end: false },
   { to: "/workflows", label: "Workflows", icon: "account_tree", end: false },
@@ -12,12 +12,20 @@ const navItems = [
   { to: "/admin", label: "Admin", icon: "admin_panel_settings", end: false },
 ];
 
+const tenantNavItems = [
+  { to: "/", label: "Dashboard", icon: "dashboard", end: true },
+  { to: "/sessions", label: "Sessions", icon: "task", end: false },
+  { to: "/usage", label: "Usage", icon: "monitoring", end: false },
+];
+
 export default function AppLayout() {
-  const { logout } = useAuth();
+  const { logout, role, tenantName, tier } = useAuth();
   const { theme, toggle } = useTheme();
   const navigate = useNavigate();
   const { data: health } = useHealth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const navItems = role === "tenant" ? tenantNavItems : operatorNavItems;
 
   function handleLogout() {
     logout();
@@ -107,6 +115,23 @@ export default function AppLayout() {
 
           {/* Bottom section */}
           <div className="flex flex-col gap-4">
+            {/* Tenant identity */}
+            {role === "tenant" && tenantName && (
+              <div className="flex items-center gap-2 px-3">
+                <span className="material-symbols-outlined text-sm text-fg-4">
+                  apartment
+                </span>
+                <span className="min-w-0 truncate text-xs text-fg-3">
+                  {tenantName}
+                </span>
+                {tier && (
+                  <span className="shrink-0 rounded-full border border-edge bg-surface px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-fg-3">
+                    {tier}
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* User actions */}
             <div className="flex items-center gap-2 rounded-xl border border-edge bg-surface-alt p-3">
               <button

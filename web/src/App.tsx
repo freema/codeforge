@@ -11,6 +11,7 @@ import WorkflowCreate from "./pages/WorkflowCreate";
 import WorkflowDetail from "./pages/WorkflowDetail";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
+import Usage from "./pages/Usage";
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/workflows/:name" element={<WorkflowDetail />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/admin" element={<Admin />} />
+          <Route path="/usage" element={<Usage />} />
         </Route>
       </Route>
     </Routes>

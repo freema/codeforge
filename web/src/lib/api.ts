@@ -26,6 +26,8 @@ import type {
   CreateTenantResult,
   UpdateTenantRequest,
   TenantUsageSummary,
+  MeResponse,
+  MyUsage,
   KeyPoolEntry,
   AddKeyPoolRequest,
 } from "../types";
@@ -229,6 +231,13 @@ export function createApiClient(serverUrl: string, token: string) {
     getTenantUsage: (id: string, period?: string) =>
       get<TenantUsageSummary>(
         `/admin/tenants/${id}/usage${period ? `?period=${encodeURIComponent(period)}` : ""}`,
+      ),
+
+    // Me (tenant self-service)
+    getMe: () => get<MeResponse>("/me"),
+    getMyUsage: (period?: string) =>
+      get<MyUsage>(
+        `/me/usage${period ? `?period=${encodeURIComponent(period)}` : ""}`,
       ),
 
     // Admin: Key Pool

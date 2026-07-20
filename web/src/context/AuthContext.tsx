@@ -7,10 +7,15 @@ import {
   type ReactNode,
 } from "react";
 
+type AuthRole = "operator" | "tenant";
+
 interface AuthState {
   serverUrl: string;
   token: string;
   isAuthenticated: boolean;
+  role: AuthRole;
+  tenantName?: string;
+  tier?: string;
 }
 
 interface AuthContextValue extends AuthState {
@@ -26,19 +31,29 @@ function loadAuth(): AuthState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as { serverUrl: string; token: string };
+      const parsed = JSON.parse(raw) as {
+        serverUrl: string;
+        token: string;
+        role?: AuthRole;
+        tenantName?: string;
+        tier?: string;
+      };
       if (parsed.token) {
         return {
           serverUrl: parsed.serverUrl,
           token: parsed.token,
           isAuthenticated: true,
+          // Legacy entries have no role — treat them as operator.
+          role: parsed.role === "tenant" ? "tenant" : "operator",
+          tenantName: parsed.tenantName,
+          tier: parsed.tier,
         };
       }
     }
   } catch {
     // ignore
   }
-  return { serverUrl: "", token: "", isAuthenticated: false };
+  return { serverUrl: "", token: "", isAuthenticated: false, role: "operator" };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -48,7 +63,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (state.isAuthenticated) {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ serverUrl: state.serverUrl, token: state.token }),
+        JSON.stringify({
+          serverUrl: state.serverUrl,
+          token: state.token,
+          role: state.role,
+          tenantName: state.tenantName,
+          tier: state.tier,
+        }),
       );
     } else {
       localStorage.removeItem(STORAGE_KEY);
@@ -63,11 +84,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (res.status === 401) throw new Error("Invalid token");
       throw new Error("Server unreachable");
     }
-    setState({ serverUrl: "", token, isAuthenticated: true });
+    // Legacy servers return only {"status":"authenticated"} — default to operator.
+    const body = (await res.json().catch(() => ({}))) as {
+      role?: string;
+      tenant_name?: string;
+      tier?: string;
+    };
+    const role: AuthRole = body.role === "tenant" ? "tenant" : "operator";
+    setState({
+      serverUrl: "",
+      token,
+      isAuthenticated: true,
+      role,
+      tenantName: role === "tenant" ? body.tenant_name : undefined,
+      tier: role === "tenant" ? body.tier : undefined,
+    });
   }, []);
 
   const logout = useCallback(() => {
-    setState({ serverUrl: "", token: "", isAuthenticated: false });
+    setState({
+      serverUrl: "",
+      token: "",
+      isAuthenticated: false,
+      role: "operator",
+    });
   }, []);
 
   return (
@@ -84,4 +124,4 @@ export function useAuth(): AuthContextValue {
 }
 
 export { AuthContext };
-export type { AuthContextValue, AuthState };
+export type { AuthContextValue, AuthState, AuthRole };

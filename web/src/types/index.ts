@@ -45,6 +45,9 @@ export type {
   CreateTenantResult,
   UpdateTenantRequest,
   TenantUsageSummary,
+  MeResponse,
+  MyUsageLimits,
+  MyUsage,
   KeyPoolEntry,
   AddKeyPoolRequest,
 } from "./tenant";

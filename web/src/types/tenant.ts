@@ -42,6 +42,27 @@ export interface TenantUsageSummary {
   total_cost_usd: number;
 }
 
+export interface MeResponse {
+  role: "operator" | "tenant";
+  tenant?: Tenant;
+}
+
+export interface MyUsageLimits {
+  tier: string;
+  max_sessions_per_day: number;
+  max_concurrent_sessions: number;
+  max_budget_usd_per_session: number;
+  allowed_clis: string;
+  allowed_models: string | null;
+}
+
+export interface MyUsage {
+  period: string;
+  sessions_today: number;
+  summary: TenantUsageSummary;
+  limits: MyUsageLimits;
+}
+
 export interface KeyPoolEntry {
   id: string;
   provider: string;
