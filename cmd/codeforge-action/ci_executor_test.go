@@ -62,7 +62,7 @@ func TestBuildSystemContext_NoFiles(t *testing.T) {
 func TestBuildPrompt_Custom(t *testing.T) {
 	executor := NewCIExecutor(Config{
 		SessionType: "custom",
-		Prompt:   "fix the bug",
+		Prompt:      "fix the bug",
 	})
 
 	prompt, err := executor.buildPrompt(&CIContext{})

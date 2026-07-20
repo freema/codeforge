@@ -18,13 +18,13 @@ const (
 
 // Config holds all configuration for a CI Action run.
 type Config struct {
-	SessionType     string // pr_review, code_review, knowledge_update, custom
-	Prompt       string // user prompt (or auto-detect from PR)
-	CLI          string // claude-code, codex
-	Model        string // AI model override
-	APIKey       string // AI provider API key
-	ProviderToken string // GitHub/GitLab token for PR operations
-	MCPConfig    string // JSON string or path to .mcp.json
+	SessionType          string // pr_review, code_review, knowledge_update, custom
+	Prompt               string // user prompt (or auto-detect from PR)
+	CLI                  string // claude-code, codex
+	Model                string // AI model override
+	APIKey               string // AI provider API key
+	ProviderToken        string // GitHub/GitLab token for PR operations
+	MCPConfig            string // JSON string or path to .mcp.json
 	PostComments         bool   // post review as PR comments
 	OutputFormat         string // json, markdown, text
 	MaxTurns             int    // max conversation turns
@@ -60,14 +60,14 @@ func run() int {
 // In GitLab CI, they come from CI/CD variables.
 func parseConfig() Config {
 	cfg := Config{
-		SessionType:      envDefault("INPUT_SESSION_TYPE", envDefault("INPUT_TASK_TYPE", "pr_review")),
-		Prompt:        envDefault("INPUT_PROMPT", ""),
-		CLI:           envDefault("INPUT_CLI", envDefault("CODEFORGE_CLI", cliClaudeCode)),
-		Model:         envDefault("INPUT_MODEL", ""),
-		ProviderToken: envDefault("INPUT_PROVIDER_TOKEN", ""),
-		MCPConfig:     envDefault("INPUT_MCP_CONFIG", ""),
-		PostComments:  envBool("INPUT_POST_COMMENTS", true),
-		OutputFormat:  envDefault("INPUT_OUTPUT_FORMAT", "json"),
+		SessionType:          envDefault("INPUT_SESSION_TYPE", envDefault("INPUT_TASK_TYPE", "pr_review")),
+		Prompt:               envDefault("INPUT_PROMPT", ""),
+		CLI:                  envDefault("INPUT_CLI", envDefault("CODEFORGE_CLI", cliClaudeCode)),
+		Model:                envDefault("INPUT_MODEL", ""),
+		ProviderToken:        envDefault("INPUT_PROVIDER_TOKEN", ""),
+		MCPConfig:            envDefault("INPUT_MCP_CONFIG", ""),
+		PostComments:         envBool("INPUT_POST_COMMENTS", true),
+		OutputFormat:         envDefault("INPUT_OUTPUT_FORMAT", "json"),
 		MaxTurns:             envInt("INPUT_MAX_TURNS", 0),
 		AllowedTools:         envDefault("INPUT_ALLOWED_TOOLS", ""),
 		FailOnRequestChanges: envBool("INPUT_FAIL_ON_REQUEST_CHANGES", false),
