@@ -8,6 +8,7 @@ import (
 
 	"github.com/freema/codeforge/internal/database"
 	"github.com/freema/codeforge/internal/redisclient"
+	"github.com/freema/codeforge/internal/server/middleware"
 	"github.com/freema/codeforge/internal/workspace"
 )
 
@@ -108,11 +109,18 @@ func (h *HealthHandler) Info(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// AuthVerify returns 200 if the Bearer token is valid.
-// This endpoint lives behind BearerAuth middleware, so reaching it means the token is OK.
+// AuthVerify returns 200 if the Bearer token is valid, plus the caller's role
+// so the UI can adapt (operator = static token, tenant = cfk_ subscription token).
+// This endpoint lives behind auth middleware, so reaching it means the token is OK.
 func (h *HealthHandler) AuthVerify(w http.ResponseWriter, r *http.Request) {
+	resp := map[string]string{"status": "authenticated", "role": "operator"}
+	if t := middleware.TenantFromContext(r.Context()); t != nil {
+		resp["role"] = "tenant"
+		resp["tenant_name"] = t.Name
+		resp["tier"] = t.Tier
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "authenticated"})
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // Ready returns 200 if the server is accepting traffic, 503 during shutdown.

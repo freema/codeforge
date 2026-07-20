@@ -82,8 +82,9 @@ paths:
       operationId: verifyAuth
       tags: [Auth]
       description: |
-        Returns 200 if the provided Bearer token is valid.
-        Returns 401 if the token is missing or invalid.
+        Returns 200 if the provided Bearer token is valid, plus the caller's role:
+        `operator` for the static server token, `tenant` for subscription cfk_ tokens
+        (with tenant_name and tier). Returns 401 if the token is missing or invalid.
         Use this endpoint to validate API tokens from your UI before making other API calls.
       responses:
         "200":
@@ -96,6 +97,92 @@ paths:
                   status:
                     type: string
                     example: authenticated
+                  role:
+                    type: string
+                    enum: [operator, tenant]
+                  tenant_name:
+                    type: string
+                    description: Present only for tenant tokens
+                  tier:
+                    type: string
+                    description: Present only for tenant tokens
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/me:
+    get:
+      summary: Caller identity
+      operationId: getMe
+      tags: [Auth]
+      description: |
+        Returns the caller's role. Tenant tokens additionally get the tenant
+        profile with limits, so the UI can adapt its navigation.
+      responses:
+        "200":
+          description: Caller identity
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [role]
+                properties:
+                  role:
+                    type: string
+                    enum: [operator, tenant]
+                  tenant:
+                    $ref: "#/components/schemas/Tenant"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/me/usage:
+    get:
+      summary: Self-service usage for the authenticated tenant
+      operationId: getMyUsage
+      tags: [Auth]
+      description: |
+        The tenant's own aggregated usage plus effective limits. Tenant tokens
+        only — the operator has no tenant scope and receives 404 (use the admin
+        per-tenant usage endpoint instead).
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [24h, 7d, 30d]
+            default: 7d
+      responses:
+        "200":
+          description: Usage summary and limits
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  period:
+                    type: string
+                  sessions_today:
+                    type: integer
+                  summary:
+                    $ref: "#/components/schemas/UsageSummary"
+                  limits:
+                    type: object
+                    properties:
+                      tier:
+                        type: string
+                      max_sessions_per_day:
+                        type: integer
+                        description: -1 means unlimited
+                      max_concurrent_sessions:
+                        type: integer
+                      max_budget_usd_per_session:
+                        type: number
+                      allowed_clis:
+                        type: string
+                      allowed_models:
+                        type: string
+                        nullable: true
+        "404":
+          description: Caller is not a tenant token
         "401":
           $ref: "#/components/responses/Unauthorized"
 

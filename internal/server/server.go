@@ -129,6 +129,13 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 
 			r.Get("/session-types", sessionHandler.ListSessionTypes)
 
+			// Caller identity + self-service usage — available to both roles
+			// (tenants get their own scope, operators are directed to /admin).
+			if tenantHandler != nil {
+				r.Get("/me", tenantHandler.Me)
+				r.Get("/me/usage", tenantHandler.MeUsage)
+			}
+
 			r.Route("/cli", func(r chi.Router) {
 				r.Get("/", cliHandler.List)
 				r.Get("/health", cliHandler.Health)

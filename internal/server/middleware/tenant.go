@@ -42,8 +42,7 @@ func TenantAuth(operatorToken string, lookup TenantLookup) func(http.Handler) ht
 			// Tenant API token → resolve and attach the tenant.
 			if lookup != nil && strings.HasPrefix(token, "cfk_") {
 				if t, err := lookup.GetTenantByTokenHash(r.Context(), tenant.HashToken(token)); err == nil && t != nil {
-					ctx := context.WithValue(r.Context(), tenantCtxKey, t)
-					next.ServeHTTP(w, r.WithContext(ctx))
+					next.ServeHTTP(w, r.WithContext(ContextWithTenant(r.Context(), t)))
 					return
 				}
 			}
@@ -75,6 +74,12 @@ func OperatorOnly(next http.Handler) http.Handler {
 func TenantFromContext(ctx context.Context) *tenant.Tenant {
 	t, _ := ctx.Value(tenantCtxKey).(*tenant.Tenant)
 	return t
+}
+
+// ContextWithTenant returns ctx with the tenant attached, as TenantAuth does
+// for cfk_ tokens. Exported for handler tests.
+func ContextWithTenant(ctx context.Context, t *tenant.Tenant) context.Context {
+	return context.WithValue(ctx, tenantCtxKey, t)
 }
 
 func unauthorized(w http.ResponseWriter) {

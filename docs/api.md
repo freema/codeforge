@@ -78,14 +78,43 @@ GET /api/docs/openapi.yaml # Raw OpenAPI spec
 GET /api/v1/auth/verify
 ```
 
-Response `200`:
+Response `200` (operator token):
 ```json
-{ "status": "authenticated" }
+{ "status": "authenticated", "role": "operator" }
+```
+
+Response `200` (tenant `cfk_` token, subscription model):
+```json
+{ "status": "authenticated", "role": "tenant", "tenant_name": "Acme", "tier": "pro" }
 ```
 
 Response `401`:
 ```json
 { "error": "unauthorized", "message": "missing or invalid Bearer token" }
+```
+
+### Caller Identity & Self-Service Usage
+
+```
+GET /api/v1/me
+GET /api/v1/me/usage?period=24h|7d|30d      (default 7d; tenant tokens only — operators get 404)
+```
+
+`/me` returns `{"role": "operator"}` for the operator token, or the tenant profile with limits:
+
+```json
+{ "role": "tenant", "tenant": { "id": "...", "name": "Acme", "tier": "pro", "max_sessions_per_day": 50 } }
+```
+
+`/me/usage` returns the authenticated tenant's own consumption and effective limits:
+
+```json
+{
+  "period": "7d",
+  "sessions_today": 3,
+  "summary": { "total_sessions": 12, "total_input_tokens": 90000, "total_output_tokens": 41000, "total_cost_usd": 1.87 },
+  "limits": { "tier": "pro", "max_sessions_per_day": 50, "max_concurrent_sessions": 2, "max_budget_usd_per_session": 5, "allowed_clis": "claude-code,codex", "allowed_models": null }
+}
 ```
 
 ---
