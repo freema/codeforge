@@ -10,6 +10,7 @@ import WorkflowList from "./pages/WorkflowList";
 import WorkflowCreate from "./pages/WorkflowCreate";
 import WorkflowDetail from "./pages/WorkflowDetail";
 import Settings from "./pages/Settings";
+import Admin from "./pages/Admin";
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
           />
           <Route path="/workflows/:name" element={<WorkflowDetail />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/admin" element={<Admin />} />
         </Route>
       </Route>
     </Routes>

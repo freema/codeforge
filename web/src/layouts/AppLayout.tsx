@@ -9,6 +9,7 @@ const navItems = [
   { to: "/sessions", label: "Sessions", icon: "task", end: false },
   { to: "/workflows", label: "Workflows", icon: "account_tree", end: false },
   { to: "/settings", label: "Settings", icon: "settings", end: false },
+  { to: "/admin", label: "Admin", icon: "admin_panel_settings", end: false },
 ];
 
 export default function AppLayout() {
