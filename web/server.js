@@ -49,7 +49,8 @@ if (isDev) {
   const { default: compression } = await import("compression");
   app.use(compression());
   app.use(express.static(path.resolve(__dirname, "dist")));
-  app.get("*", (_req, res) => {
+  // Express 5: "*" is no longer a valid route path, use a catch-all middleware
+  app.use((_req, res) => {
     res.sendFile(path.resolve(__dirname, "dist", "index.html"));
   });
 }
