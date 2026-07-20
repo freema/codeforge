@@ -110,6 +110,13 @@ func (p *GitHubReviewPoster) PostPRReview(ctx context.Context, repo *RepoInfo, t
 	}
 
 	postResult, err := p.doPostReview(ctx, url, token, body)
+	if err != nil && event != "COMMENT" && resp422(err) && strings.Contains(strings.ToLower(err.Error()), "own pull request") {
+		// GitHub forbids APPROVE/REQUEST_CHANGES when the token owner authored the PR
+		slog.Warn("cannot post verdict on own pull request, downgrading to COMMENT", "event", event)
+		event = "COMMENT"
+		body["event"] = event
+		postResult, err = p.doPostReview(ctx, url, token, body)
+	}
 	if err != nil && len(comments) > 0 && resp422(err) {
 		// Line comments failed despite diff validation — retry without them,
 		// putting all issues into the summary body instead.

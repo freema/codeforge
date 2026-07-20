@@ -253,7 +253,7 @@ GitHub/GitLab can send webhooks to CodeForge when PRs/MRs are opened or updated.
 2. Payload URL: `https://your-codeforge.com/api/v1/webhooks/github`
 3. Content type: `application/json`
 4. Secret: set to match `CODEFORGE_CODE_REVIEW__WEBHOOK_SECRETS__GITHUB`
-5. Select "Pull requests" event
+5. Select "Pull requests" event (add "Issue comments" to enable `/review` and `/fix` commands)
 
 **GitLab:**
 1. Go to project → Settings → Webhooks → Add webhook
@@ -285,6 +285,12 @@ code_review:
 | Provider | Event | Actions |
 |----------|-------|---------|
 | GitHub | `pull_request` | `opened`, `synchronize`, `reopened` |
+| GitHub | `issue_comment` | `created` — `/review`, `/fix-cr`, `/fix <instruction>` commands |
 | GitLab | `Merge Request Hook` | `open`, `update`, `reopen` |
+| GitLab | `Note Hook` | `/review`, `/fix-cr`, `/fix <instruction>` commands |
 
 Draft PRs and WIP MRs are skipped unless `review_drafts` is `true`.
+
+### Reviewing Your Own PRs
+
+GitHub rejects `APPROVE`/`REQUEST_CHANGES` reviews when the API token owner authored the PR. CodeForge detects this (422 "own pull request") and automatically downgrades the review to `COMMENT`, keeping the verdict visible in the summary body.
