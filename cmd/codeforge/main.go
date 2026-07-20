@@ -271,7 +271,7 @@ func run() error {
 		executor.SetUsageLogger(tenantStore)
 	}
 
-	srv := server.New(cfg, rdb, sqliteDB, sessionService, prService, pool, keyRegistry, mcpRegistry, toolRegistry, workspaceMgr, workflowRegistry, workflowConfigStore, cliRegistry, cliConfigs, webhookReceiverHandler, tenantHandler, tenantService, version)
+	srv := server.New(cfg, rdb, sqliteDB, sessionService, prService, pool, keyRegistry, mcpRegistry, workspaceMgr, workflowRegistry, workflowConfigStore, cliRegistry, cliConfigs, webhookReceiverHandler, tenantHandler, tenantService, version)
 
 	// Start background services
 	appCtx, appCancel := context.WithCancel(context.Background())
