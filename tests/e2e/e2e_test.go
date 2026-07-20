@@ -125,7 +125,7 @@ func waitForTerminal(t *testing.T, sessionID string, timeout time.Duration) map[
 		var result map[string]interface{}
 		decodeJSON(t, resp, &result)
 		status := result["status"].(string)
-		if status == "completed" || status == "failed" || status == "pr_created" {
+		if status == "completed" || status == "failed" || status == "pr_created" || status == "canceled" {
 			return result
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -276,14 +276,10 @@ func TestE2ESessionCancel(t *testing.T) {
 		t.Logf("cancel returned %d (might already be done)", resp.StatusCode)
 	}
 
-	result := waitForTerminal(t, sessionID, 15*time.Second)
-	if result["status"] != "failed" {
-		t.Fatalf("expected failed after cancel, got %v", result["status"])
-	}
-
-	errMsg, _ := result["error"].(string)
-	if !bytes.Contains([]byte(errMsg), []byte("canceled")) {
-		t.Logf("cancel error (may vary): %s", errMsg)
+	// SIGTERM grace: the CLI gets up to 15s before SIGKILL escalation.
+	result := waitForTerminal(t, sessionID, 30*time.Second)
+	if result["status"] != "canceled" {
+		t.Fatalf("expected canceled after cancel, got %v", result["status"])
 	}
 	t.Log("cancel test passed")
 }
