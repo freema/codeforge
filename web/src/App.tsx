@@ -9,6 +9,7 @@ import SessionDetail from "./pages/SessionDetail";
 import WorkflowList from "./pages/WorkflowList";
 import WorkflowCreate from "./pages/WorkflowCreate";
 import WorkflowDetail from "./pages/WorkflowDetail";
+import Schedules from "./pages/Schedules";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
 import Usage from "./pages/Usage";
@@ -31,6 +32,7 @@ export default function App() {
             element={<Navigate to="/sessions" replace />}
           />
           <Route path="/workflows/:name" element={<WorkflowDetail />} />
+          <Route path="/schedules" element={<Schedules />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/usage" element={<Usage />} />

@@ -30,6 +30,10 @@ import type {
   MyUsage,
   KeyPoolEntry,
   AddKeyPoolRequest,
+  Schedule,
+  CreateScheduleRequest,
+  UpdateScheduleRequest,
+  RunScheduleResult,
 } from "../types";
 
 export class ApiError extends Error {
@@ -246,6 +250,17 @@ export function createApiClient(serverUrl: string, token: string) {
     addKeyPoolEntry: (req: AddKeyPoolRequest) =>
       post<KeyPoolEntry>("/admin/key-pool/", req),
     deleteKeyPoolEntry: (id: string) => del<void>(`/admin/key-pool/${id}`),
+
+    // Schedules
+    listSchedules: () =>
+      get<{ schedules: Schedule[] }>("/schedules/").then((r) => r.schedules),
+    createSchedule: (req: CreateScheduleRequest) =>
+      post<Schedule>("/schedules/", req),
+    updateSchedule: (id: string, req: UpdateScheduleRequest) =>
+      patch<Schedule>(`/schedules/${id}`, req),
+    deleteSchedule: (id: string) => del<void>(`/schedules/${id}`),
+    runSchedule: (id: string) =>
+      post<RunScheduleResult>(`/schedules/${id}/run`),
 
     // Health
     getHealth: () => get<HealthResponse>("/health"),

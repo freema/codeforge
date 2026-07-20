@@ -39,6 +39,12 @@ export type {
   SentryConfig,
 } from "./sentry";
 export type {
+  Schedule,
+  CreateScheduleRequest,
+  UpdateScheduleRequest,
+  RunScheduleResult,
+} from "./schedule";
+export type {
   TenantTier,
   Tenant,
   CreateTenantRequest,
