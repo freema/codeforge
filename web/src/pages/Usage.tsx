@@ -31,6 +31,24 @@ function formatCost(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
+// allowed_clis/allowed_models arrive either as a JSON array string
+// ('["claude-code"]') or a plain comma-separated list.
+function parseList(raw: string): string[] {
+  const s = raw.trim();
+  if (s.startsWith("[")) {
+    try {
+      const arr: unknown = JSON.parse(s);
+      if (Array.isArray(arr)) return arr.map(String).filter(Boolean);
+    } catch {
+      // fall through to comma parsing
+    }
+  }
+  return s
+    .split(",")
+    .map((c) => c.trim())
+    .filter(Boolean);
+}
+
 export default function Usage() {
   usePageTitle("Usage");
   const [period, setPeriod] = useState<Period>("7d");
@@ -189,14 +207,8 @@ function UsageContent({ usage }: { usage: MyUsage }) {
   const barColor =
     pct >= 100 ? "bg-red-400" : pct >= 80 ? "bg-amber-400" : "bg-accent";
 
-  const clis = limits.allowed_clis
-    .split(",")
-    .map((c) => c.trim())
-    .filter(Boolean);
-  const models = (limits.allowed_models ?? "")
-    .split(",")
-    .map((m) => m.trim())
-    .filter(Boolean);
+  const clis = parseList(limits.allowed_clis);
+  const models = parseList(limits.allowed_models ?? "");
 
   return (
     <>

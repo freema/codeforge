@@ -113,7 +113,7 @@ GET /api/v1/me/usage?period=24h|7d|30d      (default 7d; tenant tokens only — 
   "period": "7d",
   "sessions_today": 3,
   "summary": { "total_sessions": 12, "total_input_tokens": 90000, "total_output_tokens": 41000, "total_cost_usd": 1.87 },
-  "limits": { "tier": "pro", "max_sessions_per_day": 50, "max_concurrent_sessions": 2, "max_budget_usd_per_session": 5, "allowed_clis": "claude-code,codex", "allowed_models": null }
+  "limits": { "tier": "pro", "max_sessions_per_day": 50, "max_concurrent_sessions": 2, "max_budget_usd_per_session": 5, "allowed_clis": "[\"claude-code\",\"codex\"]", "allowed_models": null }
 }
 ```
 
