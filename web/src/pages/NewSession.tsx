@@ -1,5 +1,30 @@
 import { useState, useMemo, useEffect, type FormEvent } from "react";
 import { useNavigate } from "react-router";
+import {
+  Braces,
+  ChevronDown,
+  ChevronsUpDown,
+  CircleAlert,
+  CircleCheck,
+  Code,
+  GitPullRequest,
+  Github,
+  Gitlab,
+  Link2,
+  Loader2,
+  Lock,
+  Globe,
+  MapIcon,
+  MessageSquare,
+  Puzzle,
+  Search,
+  SearchCode,
+  SlidersHorizontal,
+  SquareTerminal,
+  TriangleAlert,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
 import { useCreateSession } from "../hooks/useSessionMutations";
 import { useKeys } from "../hooks/useKeys";
 import { useMCPServers } from "../hooks/useMCPServers";
@@ -20,45 +45,45 @@ import type {
 const SESSION_TYPE_CONFIG: Record<
   string,
   {
-    icon: string;
+    icon: LucideIcon;
     label: string;
     desc: string;
     submit: string;
-    submitIcon: string;
+    submitIcon: LucideIcon;
   }
 > = {
   code: {
-    icon: "code",
+    icon: Code,
     label: "Code",
     desc: "Write or modify code based on your instructions",
-    submit: "Launch Session",
-    submitIcon: "bolt",
+    submit: "Launch session",
+    submitIcon: Zap,
   },
   plan: {
-    icon: "map",
+    icon: MapIcon,
     label: "Plan",
     desc: "Analyze the codebase and produce an implementation plan",
-    submit: "Start Planning",
-    submitIcon: "map",
+    submit: "Start planning",
+    submitIcon: MapIcon,
   },
   review: {
-    icon: "rate_review",
-    label: "Repo Review",
+    icon: SearchCode,
+    label: "Repo review",
     desc: "Review the entire repository for code quality, security and architecture",
-    submit: "Start Review",
-    submitIcon: "rate_review",
+    submit: "Start review",
+    submitIcon: SearchCode,
   },
   pr_review: {
-    icon: "difference",
-    label: "MR / PR Review",
+    icon: GitPullRequest,
+    label: "MR / PR review",
     desc: "Review a specific merge request or pull request diff and post comments",
-    submit: "Start Review",
-    submitIcon: "difference",
+    submit: "Start review",
+    submitIcon: GitPullRequest,
   },
 };
 
 export default function NewSession() {
-  usePageTitle("New Session");
+  usePageTitle("New session");
   const navigate = useNavigate();
   const createSession = useCreateSession();
   const { data: allKeys } = useKeys();
@@ -171,10 +196,10 @@ export default function NewSession() {
   const typeConfig = SESSION_TYPE_CONFIG[taskType];
   const sessionTypePlaceholder =
     typeConfig?.desc ??
-    "Describe what the AI agent should do with this repository...";
+    "Describe what the AI agent should do with this repository…";
 
-  const submitLabel = typeConfig?.submit ?? "Launch Session";
-  const submitIcon = typeConfig?.submitIcon ?? "bolt";
+  const submitLabel = typeConfig?.submit ?? "Launch session";
+  const SubmitIcon = typeConfig?.submitIcon ?? Zap;
 
   function handleSessionTypeChange(newType: string) {
     setTaskType(newType);
@@ -245,417 +270,424 @@ export default function NewSession() {
     (isPrReview ? !prNumber : !isPromptOptional && !prompt);
 
   const inputCls =
-    "w-full rounded-lg border border-edge bg-surface px-3 py-2.5 text-sm text-fg font-mono placeholder-fg-4 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors";
+    "w-full rounded-md border border-edge bg-input px-3 py-2 text-sm text-fg placeholder-fg-4 transition-colors focus:border-accent focus:outline-none";
 
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="mb-10">
-        <h1 className="text-4xl font-bold tracking-tight text-fg">
-          New Session
-        </h1>
-        <p className="mt-2 text-sm text-fg-3">
-          Configure and launch an AI coding session
-        </p>
+      <div className="mb-8">
+        <p className="eyebrow mb-1">Sessions</p>
+        <h2 className="font-expanded text-2xl font-extrabold tracking-tight text-fg">
+          New session
+        </h2>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* 1. Session Type — FIRST */}
+        {/* 1. Session type — FIRST */}
         {taskTypes && taskTypes.length > 0 && (
-          <div>
-            <label className="mb-2 block text-xs font-medium text-fg-3">
-              Session Type
-            </label>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {taskTypes.map((tt) => {
-                const cfg = SESSION_TYPE_CONFIG[tt.name];
-                const isActive = taskType === tt.name;
-                return (
-                  <button
-                    key={tt.name}
-                    type="button"
-                    onClick={() => handleSessionTypeChange(tt.name)}
-                    className={`flex flex-col items-center gap-1 rounded-lg border px-3 py-3 text-center transition-all ${
-                      isActive
-                        ? "border-accent bg-accent/10 text-accent"
-                        : "border-edge bg-surface text-fg-3 hover:border-fg-4 hover:text-fg"
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-xl">
-                      {cfg?.icon ?? "task"}
-                    </span>
-                    <span className="text-sm font-medium">
-                      {cfg?.label ?? tt.label}
-                    </span>
-                    <span
-                      className={`text-[10px] leading-tight ${
-                        isActive ? "text-accent/70" : "text-fg-4"
+          <div className="overflow-hidden rounded-md border border-edge bg-surface">
+            <div className="border-b border-edge px-5 py-3.5">
+              <span className="eyebrow">Session type</span>
+            </div>
+            <div className="p-5">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {taskTypes.map((tt) => {
+                  const cfg = SESSION_TYPE_CONFIG[tt.name];
+                  const isActive = taskType === tt.name;
+                  const Icon = cfg?.icon ?? SquareTerminal;
+                  return (
+                    <button
+                      key={tt.name}
+                      type="button"
+                      onClick={() => handleSessionTypeChange(tt.name)}
+                      className={`flex flex-col items-center gap-1.5 rounded-md border px-3 py-3 text-center transition-colors ${
+                        isActive
+                          ? "border-accent-muted bg-accent-soft text-accent"
+                          : "border-edge bg-surface-alt text-fg-3 hover:border-fg-4 hover:text-fg"
                       }`}
                     >
-                      {cfg?.desc ?? tt.description}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* 2. Provider */}
-        {keys && keys.length > 0 && (
-          <div>
-            <label className="mb-2 block text-xs font-medium text-fg-3">
-              Provider
-            </label>
-            <div className="flex gap-2">
-              {keys.map((k) => (
-                <button
-                  key={k.name}
-                  type="button"
-                  onClick={() => {
-                    setProviderKey(k.name);
-                    setSelectedRepo(null);
-                    setRepoUrl("");
-                  }}
-                  className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${
-                    providerKey === k.name
-                      ? "border-accent bg-accent/10 text-accent"
-                      : "border-edge bg-surface text-fg-3 hover:border-fg-4 hover:text-fg"
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-lg">
-                    {k.provider === "github" ? "code" : "cloud"}
-                  </span>
-                  {k.name}
-                  <span className="text-xs text-fg-4">({k.provider})</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 3. Repository */}
-        <div>
-          <label className="mb-2 block text-xs font-medium text-fg-3">
-            Repository
-          </label>
-          {providerKey && repos && repos.length > 0 ? (
-            <div className="space-y-3">
-              <RepoSelector
-                repos={repos}
-                selected={selectedRepo}
-                loading={reposLoading}
-                onSelect={handleRepoSelect}
-              />
-              {selectedRepo && (
-                <div className="flex items-center gap-3 rounded-lg border border-accent/20 bg-accent/5 p-3">
-                  <span className="material-symbols-outlined text-accent">
-                    check_circle
-                  </span>
-                  <div>
-                    <p className="text-sm font-medium text-fg">
-                      {selectedRepo.full_name}
-                    </p>
-                    <p className="text-xs text-fg-3">
-                      {selectedRepo.description || "No description"}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : providerKey && reposLoading ? (
-            <div className="flex items-center gap-3 rounded-lg border border-edge bg-surface p-4">
-              <span className="material-symbols-outlined animate-spin text-accent">
-                progress_activity
-              </span>
-              <span className="text-sm text-fg-3">Loading repositories...</span>
-            </div>
-          ) : (
-            <div>
-              <input
-                type="url"
-                value={repoUrl}
-                onChange={(e) => setRepoUrl(e.target.value)}
-                placeholder="https://github.com/user/repo.git"
-                required
-                className={inputCls}
-              />
-              {!providerKey && keys && keys.length > 0 && (
-                <p className="mt-2 text-xs text-fg-4">
-                  Select a provider key above to browse repositories
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* 4. Conditional fields based on session type */}
-
-        {/* 4a. PR Review: PR selector + output mode */}
-        {isPrReview && (selectedRepo || repoUrl) && (
-          <div className="space-y-4">
-            <div>
-              <label className="mb-2 block text-xs font-medium text-fg-3">
-                Pull Request / Merge Request
-              </label>
-              <PRSelector
-                pullRequests={pullRequests ?? []}
-                loading={prsLoading}
-                selected={prNumber}
-                onSelect={setPrNumber}
-                inputCls={inputCls}
-              />
-            </div>
-            <div>
-              <label className="mb-2 block text-xs font-medium text-fg-3">
-                Output Mode
-              </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setOutputMode("post_comments")}
-                  className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
-                    outputMode === "post_comments"
-                      ? "border-accent bg-accent/10 text-accent"
-                      : "border-edge bg-surface text-fg-3 hover:border-fg-4 hover:text-fg"
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-base">
-                    comment
-                  </span>
-                  Post to PR
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOutputMode("api_only")}
-                  className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
-                    outputMode === "api_only"
-                      ? "border-accent bg-accent/10 text-accent"
-                      : "border-edge bg-surface text-fg-3 hover:border-fg-4 hover:text-fg"
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-base">
-                    api
-                  </span>
-                  API Only
-                </button>
+                      <Icon className="size-5" />
+                      <span className="text-sm font-medium">
+                        {cfg?.label ?? tt.label}
+                      </span>
+                      <span
+                        className={`text-[10px] leading-tight ${
+                          isActive ? "text-accent/70" : "text-fg-4"
+                        }`}
+                      >
+                        {cfg?.desc ?? tt.description}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
         )}
 
-        {/* 4b. Non-PR-Review: Branches */}
-        {showBranches && (
-          <div
-            className={`grid gap-4 ${showTargetBranch ? "grid-cols-2" : "grid-cols-1"}`}
-          >
+        {/* 2. Repository: provider, repo, PR / branches */}
+        <div className="overflow-hidden rounded-md border border-edge bg-surface">
+          <div className="border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">Repository</span>
+          </div>
+          <div className="space-y-5 p-5">
+            {/* Provider */}
+            {keys && keys.length > 0 && (
+              <div>
+                <label className="mb-2 block text-sm font-medium text-fg-2">
+                  Provider
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {keys.map((k) => (
+                    <button
+                      key={k.name}
+                      type="button"
+                      onClick={() => {
+                        setProviderKey(k.name);
+                        setSelectedRepo(null);
+                        setRepoUrl("");
+                      }}
+                      className={`flex items-center gap-2 rounded-md border px-4 py-2 font-mono text-sm transition-colors ${
+                        providerKey === k.name
+                          ? "border-accent-muted bg-accent-soft text-accent"
+                          : "border-edge bg-surface-alt text-fg-3 hover:border-fg-4 hover:text-fg"
+                      }`}
+                    >
+                      {k.provider === "github" ? (
+                        <Github className="size-4" />
+                      ) : (
+                        <Gitlab className="size-4" />
+                      )}
+                      {k.name}
+                      <span className="text-xs text-fg-4">({k.provider})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Repository */}
             <div>
-              <label className="mb-2 block text-xs font-medium text-fg-3">
-                Source Branch
+              <label className="mb-2 block text-sm font-medium text-fg-2">
+                Repository
               </label>
-              {branchOptions.length > 0 ? (
-                <Select
-                  value={sourceBranch}
-                  onChange={(v) => {
-                    setSourceBranch(v);
-                    if (showTargetBranch) setTargetBranch(v);
-                  }}
-                  options={branchOptions}
-                  placeholder={selectedRepo?.default_branch || "main"}
-                />
+              {providerKey && repos && repos.length > 0 ? (
+                <div className="space-y-3">
+                  <RepoSelector
+                    repos={repos}
+                    selected={selectedRepo}
+                    loading={reposLoading}
+                    onSelect={handleRepoSelect}
+                  />
+                  {selectedRepo && (
+                    <div className="flex items-center gap-3 rounded-md border border-accent-muted bg-accent-soft p-3">
+                      <CircleCheck className="size-4 shrink-0 text-accent" />
+                      <div className="min-w-0">
+                        <p className="truncate font-mono text-sm text-fg">
+                          {selectedRepo.full_name}
+                        </p>
+                        <p className="truncate text-xs text-fg-3">
+                          {selectedRepo.description || "No description"}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : providerKey && reposLoading ? (
+                <div className="flex items-center gap-3 rounded-md border border-edge bg-surface-alt p-4">
+                  <Loader2 className="size-4 animate-spin text-accent" />
+                  <span className="text-sm text-fg-3">
+                    Loading repositories…
+                  </span>
+                </div>
               ) : (
-                <input
-                  type="text"
-                  value={sourceBranch}
-                  onChange={(e) => setSourceBranch(e.target.value)}
-                  placeholder={selectedRepo?.default_branch || "main"}
-                  className={inputCls}
-                />
+                <div>
+                  <input
+                    type="url"
+                    value={repoUrl}
+                    onChange={(e) => setRepoUrl(e.target.value)}
+                    placeholder="https://github.com/user/repo.git"
+                    required
+                    className={inputCls + " font-mono"}
+                  />
+                  {!providerKey && keys && keys.length > 0 && (
+                    <p className="mt-2 text-xs text-fg-4">
+                      Select a provider key above to browse repositories
+                    </p>
+                  )}
+                </div>
               )}
             </div>
-            {showTargetBranch && (
-              <div>
-                <label className="mb-2 block text-xs font-medium text-fg-3">
-                  Target Branch (for PR)
-                </label>
-                {branchOptions.length > 0 ? (
-                  <Select
-                    value={targetBranch}
-                    onChange={setTargetBranch}
-                    options={branchOptions}
-                    placeholder={selectedRepo?.default_branch || "main"}
+
+            {/* PR review: PR selector + output mode */}
+            {isPrReview && (selectedRepo || repoUrl) && (
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-fg-2">
+                    Pull request / merge request
+                  </label>
+                  <PRSelector
+                    pullRequests={pullRequests ?? []}
+                    loading={prsLoading}
+                    selected={prNumber}
+                    onSelect={setPrNumber}
+                    inputCls={inputCls}
                   />
-                ) : (
-                  <input
-                    type="text"
-                    value={targetBranch}
-                    onChange={(e) => setTargetBranch(e.target.value)}
-                    placeholder={selectedRepo?.default_branch || "main"}
-                    className={inputCls}
-                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-fg-2">
+                    Output mode
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setOutputMode("post_comments")}
+                      className={`flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                        outputMode === "post_comments"
+                          ? "border-accent-muted bg-accent-soft text-accent"
+                          : "border-edge bg-surface-alt text-fg-3 hover:border-fg-4 hover:text-fg"
+                      }`}
+                    >
+                      <MessageSquare className="size-4" />
+                      Post to PR
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOutputMode("api_only")}
+                      className={`flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                        outputMode === "api_only"
+                          ? "border-accent-muted bg-accent-soft text-accent"
+                          : "border-edge bg-surface-alt text-fg-3 hover:border-fg-4 hover:text-fg"
+                      }`}
+                    >
+                      <Braces className="size-4" />
+                      API only
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Non-PR-review: branches */}
+            {showBranches && (
+              <div
+                className={`grid gap-4 ${showTargetBranch ? "grid-cols-2" : "grid-cols-1"}`}
+              >
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-fg-2">
+                    Source branch
+                  </label>
+                  {branchOptions.length > 0 ? (
+                    <Select
+                      value={sourceBranch}
+                      onChange={(v) => {
+                        setSourceBranch(v);
+                        if (showTargetBranch) setTargetBranch(v);
+                      }}
+                      options={branchOptions}
+                      placeholder={selectedRepo?.default_branch || "main"}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={sourceBranch}
+                      onChange={(e) => setSourceBranch(e.target.value)}
+                      placeholder={selectedRepo?.default_branch || "main"}
+                      className={inputCls + " font-mono"}
+                    />
+                  )}
+                </div>
+                {showTargetBranch && (
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-fg-2">
+                      Target branch (for PR)
+                    </label>
+                    {branchOptions.length > 0 ? (
+                      <Select
+                        value={targetBranch}
+                        onChange={setTargetBranch}
+                        options={branchOptions}
+                        placeholder={selectedRepo?.default_branch || "main"}
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        value={targetBranch}
+                        onChange={(e) => setTargetBranch(e.target.value)}
+                        placeholder={selectedRepo?.default_branch || "main"}
+                        className={inputCls + " font-mono"}
+                      />
+                    )}
+                  </div>
                 )}
               </div>
             )}
           </div>
-        )}
-
-        {/* 5. Prompt */}
-        <div>
-          <label className="mb-2 block text-xs font-medium text-fg-3">
-            {isPrReview
-              ? "Additional review instructions (optional)"
-              : "What should the agent do?"}
-          </label>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder={sessionTypePlaceholder}
-            required={!isPromptOptional}
-            minLength={isPromptOptional ? 0 : 10}
-            rows={isPrReview ? 3 : 5}
-            className={inputCls + " resize-none"}
-          />
         </div>
 
-        {/* 6. CLI & Model */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="mb-2 block text-xs font-medium text-fg-3">
-              CLI
-            </label>
-            <Select
-              value={selectedCli}
-              onChange={(v) => {
-                setSelectedCli(v);
-                setAiModel("");
-              }}
-              options={availableClis.map((cli) => ({
-                value: cli.name,
-                label: cli.name + (cli.is_default ? " (default)" : ""),
-              }))}
-              placeholder="Select CLI..."
-            />
+        {/* 3. Instructions */}
+        <div className="overflow-hidden rounded-md border border-edge bg-surface">
+          <div className="border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">Instructions</span>
           </div>
-          <div>
-            <label className="mb-2 block text-xs font-medium text-fg-3">
-              AI Model
+          <div className="p-5">
+            <label className="mb-2 block text-sm font-medium text-fg-2">
+              {isPrReview
+                ? "Additional review instructions (optional)"
+                : "What should the agent do?"}
             </label>
-            <Select
-              value={aiModel}
-              onChange={setAiModel}
-              options={[
-                { value: "", label: "(auto)" },
-                ...cliModels.map((m) => ({ value: m, label: m })),
-              ]}
-              placeholder="Select model..."
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder={sessionTypePlaceholder}
+              required={!isPromptOptional}
+              minLength={isPromptOptional ? 0 : 10}
+              rows={isPrReview ? 3 : 5}
+              className={inputCls + " resize-none"}
             />
           </div>
         </div>
 
-        {selectedCli === "claude-code" && !hasAnthropicKey && (
-          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-            <span className="material-symbols-outlined mt-0.5 text-sm text-amber-400">
-              warning
-            </span>
-            <p className="text-xs text-amber-400/80">
-              No Anthropic API key configured.{" "}
-              <a
-                href="/settings?tab=ai"
-                className="underline hover:text-amber-300"
-              >
-                Add one in Settings
-              </a>{" "}
-              or set <code className="font-mono">ANTHROPIC_API_KEY</code> env
-              var.
-            </p>
+        {/* 4. Runtime: CLI, model, MCP */}
+        <div className="overflow-hidden rounded-md border border-edge bg-surface">
+          <div className="border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">Runtime</span>
           </div>
-        )}
-        {selectedCli === "codex" && !hasOpenAIKey && (
-          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-            <span className="material-symbols-outlined mt-0.5 text-sm text-amber-400">
-              warning
-            </span>
-            <p className="text-xs text-amber-400/80">
-              No OpenAI API key configured.{" "}
-              <a
-                href="/settings?tab=ai"
-                className="underline hover:text-amber-300"
-              >
-                Add one in Settings
-              </a>{" "}
-              or set <code className="font-mono">OPENAI_API_KEY</code> env var.
-            </p>
-          </div>
-        )}
-
-        {/* 7. MCP Servers */}
-        {mcpServers && mcpServers.length > 0 && (
-          <div>
-            <label className="mb-2 block text-xs font-medium text-fg-3">
-              MCP Servers
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {mcpServers.map((s) => (
-                <button
-                  key={s.name}
-                  type="button"
-                  onClick={() => toggleMcp(s.name)}
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
-                    selectedMcp.includes(s.name)
-                      ? "border-accent bg-accent/10 text-accent"
-                      : "border-edge bg-surface text-fg-3 hover:border-fg-4 hover:text-fg"
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-lg">
-                    {selectedMcp.includes(s.name)
-                      ? "check_circle"
-                      : "extension"}
-                  </span>
-                  {s.name}
-                </button>
-              ))}
+          <div className="space-y-5 p-5">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-fg-2">
+                  CLI
+                </label>
+                <Select
+                  value={selectedCli}
+                  onChange={(v) => {
+                    setSelectedCli(v);
+                    setAiModel("");
+                  }}
+                  options={availableClis.map((cli) => ({
+                    value: cli.name,
+                    label: cli.name + (cli.is_default ? " (default)" : ""),
+                  }))}
+                  placeholder="Select CLI…"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-fg-2">
+                  Model
+                </label>
+                <Select
+                  value={aiModel}
+                  onChange={setAiModel}
+                  options={[
+                    { value: "", label: "(auto)" },
+                    ...cliModels.map((m) => ({ value: m, label: m })),
+                  ]}
+                  placeholder="Select model…"
+                />
+              </div>
             </div>
-            <p className="mt-2 text-xs text-fg-4">
-              Enable MCP servers to give the agent additional capabilities
-            </p>
-          </div>
-        )}
 
-        {/* 8. Advanced */}
-        <div className="rounded-xl border border-edge bg-surface">
+            {selectedCli === "claude-code" && !hasAnthropicKey && (
+              <div className="flex items-start gap-2.5 rounded-md border border-warn/30 bg-warn/10 px-3 py-2.5">
+                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" />
+                <p className="text-xs text-warn">
+                  No Anthropic API key configured.{" "}
+                  <a
+                    href="/settings?tab=ai"
+                    className="underline transition-colors hover:text-fg"
+                  >
+                    Add one in Settings
+                  </a>{" "}
+                  or set <code className="font-mono">ANTHROPIC_API_KEY</code>{" "}
+                  env var.
+                </p>
+              </div>
+            )}
+            {selectedCli === "codex" && !hasOpenAIKey && (
+              <div className="flex items-start gap-2.5 rounded-md border border-warn/30 bg-warn/10 px-3 py-2.5">
+                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" />
+                <p className="text-xs text-warn">
+                  No OpenAI API key configured.{" "}
+                  <a
+                    href="/settings?tab=ai"
+                    className="underline transition-colors hover:text-fg"
+                  >
+                    Add one in Settings
+                  </a>{" "}
+                  or set <code className="font-mono">OPENAI_API_KEY</code> env
+                  var.
+                </p>
+              </div>
+            )}
+
+            {mcpServers && mcpServers.length > 0 && (
+              <div>
+                <label className="mb-2 block text-sm font-medium text-fg-2">
+                  MCP servers
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {mcpServers.map((s) => (
+                    <button
+                      key={s.name}
+                      type="button"
+                      onClick={() => toggleMcp(s.name)}
+                      className={`flex items-center gap-2 rounded-md border px-3 py-2 font-mono text-sm transition-colors ${
+                        selectedMcp.includes(s.name)
+                          ? "border-accent-muted bg-accent-soft text-accent"
+                          : "border-edge bg-surface-alt text-fg-3 hover:border-fg-4 hover:text-fg"
+                      }`}
+                    >
+                      {selectedMcp.includes(s.name) ? (
+                        <CircleCheck className="size-4" />
+                      ) : (
+                        <Puzzle className="size-4" />
+                      )}
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-fg-4">
+                  Enable MCP servers to give the agent additional capabilities
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 5. Advanced */}
+        <div className="overflow-hidden rounded-md border border-edge bg-surface">
           <button
             type="button"
             onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex w-full items-center justify-between p-4 text-sm font-medium text-fg-3 hover:text-fg transition-colors"
+            className="flex w-full items-center justify-between px-5 py-3.5 text-left transition-colors hover:bg-surface-alt"
           >
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-base">tune</span>
-              Advanced Configuration
-            </div>
-            <span
-              className="material-symbols-outlined text-base transition-transform"
-              style={{ transform: showAdvanced ? "rotate(180deg)" : "none" }}
-            >
-              expand_more
+            <span className="flex items-center gap-2 text-sm font-medium text-fg-2">
+              <SlidersHorizontal className="size-4 text-fg-3" />
+              Advanced configuration
             </span>
+            <ChevronDown
+              className="size-4 text-fg-3"
+              style={{ transform: showAdvanced ? "rotate(180deg)" : "none" }}
+            />
           </button>
 
           {showAdvanced && (
-            <div className="border-t border-edge p-4 space-y-4">
+            <div className="space-y-4 border-t border-edge p-5">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="mb-1 block text-xs text-fg-3">
-                    Max Iterations
+                  <label className="mb-2 block text-sm font-medium text-fg-2">
+                    Max iterations
                   </label>
                   <input
                     type="number"
                     value={maxTurns}
                     onChange={(e) => setMaxTurns(e.target.value)}
                     placeholder="default: unlimited"
-                    className={inputCls}
+                    className={inputCls + " font-mono"}
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-fg-3">
+                  <label className="mb-2 block text-sm font-medium text-fg-2">
                     Timeout (seconds)
                   </label>
                   <input
@@ -663,12 +695,12 @@ export default function NewSession() {
                     value={timeout}
                     onChange={(e) => setTimeout(e.target.value)}
                     placeholder="600"
-                    className={inputCls}
+                    className={inputCls + " font-mono"}
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-fg-3">
-                    Max Budget ($)
+                  <label className="mb-2 block text-sm font-medium text-fg-2">
+                    Max budget ($)
                   </label>
                   <input
                     type="number"
@@ -676,13 +708,13 @@ export default function NewSession() {
                     value={maxBudget}
                     onChange={(e) => setMaxBudget(e.target.value)}
                     placeholder="5.00"
-                    className={inputCls}
+                    className={inputCls + " font-mono"}
                   />
                 </div>
               </div>
 
               <div>
-                <label className="mb-1 block text-xs text-fg-3">
+                <label className="mb-2 block text-sm font-medium text-fg-2">
                   Callback URL
                 </label>
                 <input
@@ -690,7 +722,7 @@ export default function NewSession() {
                   value={callbackUrl}
                   onChange={(e) => setCallbackUrl(e.target.value)}
                   placeholder="https://your-app.com/webhook"
-                  className={inputCls}
+                  className={inputCls + " font-mono"}
                 />
               </div>
             </div>
@@ -699,11 +731,9 @@ export default function NewSession() {
 
         {/* Error */}
         {error && (
-          <div className="flex items-center gap-3 rounded-lg border border-red-900/50 bg-red-900/10 p-4">
-            <span className="material-symbols-outlined text-red-400">
-              error
-            </span>
-            <p className="text-sm text-red-400">{error}</p>
+          <div className="flex items-center gap-3 rounded-md border border-danger/30 bg-danger/10 p-4">
+            <CircleAlert className="size-4 shrink-0 text-danger" />
+            <p className="text-sm text-danger">{error}</p>
           </div>
         )}
 
@@ -712,23 +742,19 @@ export default function NewSession() {
           <button
             type="button"
             onClick={() => void navigate(-1)}
-            className="rounded-lg border border-edge bg-surface px-6 py-3 text-sm font-medium text-fg-3 transition-colors hover:border-fg-4 hover:text-fg"
+            className="rounded-md border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={isSubmitDisabled}
-            className="flex items-center gap-2 rounded-lg bg-accent px-8 py-3 text-sm font-bold text-page shadow-[0_0_20px_rgba(0,255,64,0.3)] transition-all hover:bg-accent-hover hover:shadow-[0_0_30px_rgba(0,255,64,0.5)] disabled:opacity-40 disabled:shadow-none"
+            className="flex items-center gap-2 rounded-md bg-accent px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-40"
           >
             {createSession.isPending ? (
-              <span className="material-symbols-outlined text-xl animate-spin">
-                progress_activity
-              </span>
+              <Loader2 className="size-4 animate-spin" />
             ) : (
-              <span className="material-symbols-outlined text-xl">
-                {submitIcon}
-              </span>
+              <SubmitIcon className="size-4" />
             )}
             {submitLabel}
           </button>
@@ -779,44 +805,40 @@ function PRSelector({
     <div className="space-y-3">
       {/* Dropdown of open PRs */}
       {loading ? (
-        <div className="flex items-center gap-3 rounded-lg border border-edge bg-surface p-3">
-          <span className="material-symbols-outlined animate-spin text-accent text-base">
-            progress_activity
-          </span>
-          <span className="text-sm text-fg-3">Loading open PRs...</span>
+        <div className="flex items-center gap-3 rounded-md border border-edge bg-surface-alt p-3">
+          <Loader2 className="size-4 animate-spin text-accent" />
+          <span className="text-sm text-fg-3">Loading open PRs…</span>
         </div>
       ) : pullRequests.length > 0 ? (
         <div className="space-y-2">
-          <div className="max-h-48 overflow-y-auto rounded-lg border border-edge">
+          <div className="max-h-48 overflow-y-auto rounded-md border border-edge">
             {pullRequests.map((pr) => (
               <button
                 key={pr.number}
                 type="button"
                 onClick={() => onSelect(String(pr.number))}
-                className={`flex w-full items-center gap-3 border-b border-edge p-2.5 text-left transition-colors last:border-b-0 hover:bg-accent/5 ${
-                  selected === String(pr.number) ? "bg-accent/10" : ""
+                className={`flex w-full items-center gap-3 border-b border-edge p-2.5 text-left transition-colors last:border-b-0 hover:bg-surface-alt ${
+                  selected === String(pr.number) ? "bg-accent-soft" : ""
                 }`}
               >
                 <span
-                  className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-mono font-bold ${
+                  className={`shrink-0 rounded-[4px] border px-1.5 py-0.5 font-mono text-[10px] font-medium ${
                     selected === String(pr.number)
-                      ? "border-accent/30 text-accent"
+                      ? "border-accent-muted text-accent"
                       : "border-edge text-fg-3"
                   }`}
                 >
                   #{pr.number}
                 </span>
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-fg">{pr.title}</p>
-                  <p className="text-[10px] text-fg-4">
+                  <p className="font-mono text-[10px] text-fg-4">
                     {pr.source_branch} → {pr.target_branch}
                     {pr.author && ` · ${pr.author}`}
                   </p>
                 </div>
                 {selected === String(pr.number) && (
-                  <span className="material-symbols-outlined text-accent text-base">
-                    check_circle
-                  </span>
+                  <CircleCheck className="size-4 shrink-0 text-accent" />
                 )}
               </button>
             ))}
@@ -830,23 +852,19 @@ function PRSelector({
 
       {/* Selected PR confirmation */}
       {selectedPR && (
-        <div className="flex items-center gap-3 rounded-lg border border-accent/20 bg-accent/5 p-2.5">
-          <span className="material-symbols-outlined text-accent text-base">
-            check_circle
-          </span>
-          <span className="text-xs font-mono text-accent font-bold">
+        <div className="flex items-center gap-3 rounded-md border border-accent-muted bg-accent-soft p-2.5">
+          <CircleCheck className="size-4 shrink-0 text-accent" />
+          <span className="font-mono text-xs font-medium text-accent">
             #{selectedPR.number}
           </span>
-          <span className="text-xs text-fg truncate">{selectedPR.title}</span>
+          <span className="truncate text-xs text-fg">{selectedPR.title}</span>
         </div>
       )}
 
       {/* URL paste helper + manual number input */}
       <div className="flex gap-2">
-        <div className="flex-1 relative">
-          <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-4 text-base">
-            link
-          </span>
+        <div className="relative flex-1">
+          <Link2 className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-4" />
           <input
             type="text"
             value={urlInput}
@@ -856,8 +874,8 @@ function PRSelector({
               handleUrlPaste(text);
               e.preventDefault();
             }}
-            placeholder="Paste PR/MR URL or enter number..."
-            className={inputCls + " pl-9"}
+            placeholder="Paste a PR/MR URL or enter a number"
+            className={inputCls + " pl-9 font-mono"}
           />
         </div>
         <input
@@ -866,7 +884,7 @@ function PRSelector({
           value={selected}
           onChange={(e) => onSelect(e.target.value)}
           placeholder="#"
-          className={inputCls + " w-24 text-center"}
+          className={inputCls + " w-24 text-center font-mono"}
         />
       </div>
     </div>
@@ -902,12 +920,10 @@ function RepoSelector({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex w-full items-center justify-between rounded-lg border border-edge bg-surface p-3 text-left transition-colors hover:border-fg-4"
+        className="flex w-full items-center justify-between rounded-md border border-edge bg-input p-3 text-left transition-colors hover:border-fg-4"
       >
-        <span className="text-sm text-fg font-mono">{selected.full_name}</span>
-        <span className="material-symbols-outlined text-sm text-fg-3">
-          unfold_more
-        </span>
+        <span className="font-mono text-sm text-fg">{selected.full_name}</span>
+        <ChevronsUpDown className="size-4 text-fg-3" />
       </button>
     );
   }
@@ -915,27 +931,23 @@ function RepoSelector({
   return (
     <div className="space-y-2">
       <div className="relative">
-        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-fg-4 text-lg">
-          search
-        </span>
+        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-4" />
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search repositories..."
-          className="w-full rounded-lg border border-edge bg-surface py-2.5 pl-10 pr-3 text-sm text-fg font-mono placeholder-fg-4 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          placeholder="Search repositories…"
+          className="w-full rounded-md border border-edge bg-input py-2 pr-3 pl-9 font-mono text-sm text-fg placeholder-fg-4 transition-colors focus:border-accent focus:outline-none"
           autoFocus
         />
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-8">
-          <span className="material-symbols-outlined animate-spin text-accent">
-            progress_activity
-          </span>
+          <Loader2 className="size-5 animate-spin text-accent" />
         </div>
       ) : (
-        <div className="max-h-64 overflow-y-auto rounded-lg border border-edge">
+        <div className="max-h-64 overflow-y-auto rounded-md border border-edge">
           {filtered.length === 0 ? (
             <p className="p-4 text-center text-sm text-fg-4">
               No repositories found
@@ -950,15 +962,17 @@ function RepoSelector({
                   setOpen(false);
                   setSearch("");
                 }}
-                className={`flex w-full items-center gap-3 border-b border-edge p-3 text-left transition-colors last:border-b-0 hover:bg-accent/5 ${
-                  selected?.full_name === repo.full_name ? "bg-accent/10" : ""
+                className={`flex w-full items-center gap-3 border-b border-edge p-3 text-left transition-colors last:border-b-0 hover:bg-surface-alt ${
+                  selected?.full_name === repo.full_name ? "bg-accent-soft" : ""
                 }`}
               >
-                <span className="material-symbols-outlined text-fg-4 text-lg">
-                  {repo.private ? "lock" : "public"}
-                </span>
+                {repo.private ? (
+                  <Lock className="size-4 shrink-0 text-fg-4" />
+                ) : (
+                  <Globe className="size-4 shrink-0 text-fg-4" />
+                )}
                 <div className="flex-1 overflow-hidden">
-                  <p className="truncate text-sm font-medium text-fg">
+                  <p className="truncate font-mono text-sm text-fg">
                     {repo.full_name}
                   </p>
                   {repo.description && (
@@ -967,7 +981,7 @@ function RepoSelector({
                     </p>
                   )}
                 </div>
-                <span className="shrink-0 rounded border border-edge px-1.5 py-0.5 text-[10px] font-mono text-fg-3">
+                <span className="shrink-0 rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] text-fg-3">
                   {repo.default_branch}
                 </span>
               </button>

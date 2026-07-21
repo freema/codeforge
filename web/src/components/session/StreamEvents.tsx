@@ -1,5 +1,15 @@
 import { useMemo } from "react";
-import { Loader2 } from "lucide-react";
+import {
+  Circle,
+  CircleAlert,
+  CircleCheck,
+  GitCommitHorizontal,
+  Info,
+  ListChecks,
+  Loader2,
+  SquareTerminal,
+  User,
+} from "lucide-react";
 import MarkdownText from "../MarkdownText";
 import { ToolUseBlock, ToolResultBlock } from "./ToolBlocks";
 import { ThinkingBlock } from "./ThinkingBlock";
@@ -96,32 +106,26 @@ function PlanProgressBlock({
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   return (
-    <div className="my-2 rounded-lg border border-accent/20 bg-accent/[0.03] overflow-hidden">
+    <div className="my-2 overflow-hidden rounded-md border border-edge bg-surface-alt">
       {/* Header with progress */}
-      <div className="flex items-center gap-3 px-3 py-2 border-b border-accent/10">
-        <span className="material-symbols-outlined text-base text-accent">
-          checklist
-        </span>
-        <span className="text-xs font-bold uppercase tracking-wider text-accent">
+      <div className="flex items-center gap-3 border-b border-edge px-3 py-2">
+        <ListChecks className="size-4 shrink-0 text-accent" />
+        <span className="font-mono text-[10px] font-medium tracking-[0.14em] text-fg-2 uppercase">
           Plan
         </span>
         <span className="ml-auto font-mono text-[10px] text-fg-3">
           {completed}/{total}
         </span>
         {/* Mini progress bar */}
-        <div className="w-20 h-1.5 rounded-full bg-accent/10 overflow-hidden">
+        <div className="h-1.5 w-20 overflow-hidden rounded-full bg-edge">
           <div
             className="h-full rounded-full bg-accent transition-all duration-500"
             style={{ width: `${pct}%` }}
           />
         </div>
-        {pct === 100 && (
-          <span className="material-symbols-outlined text-sm text-accent">
-            done_all
-          </span>
-        )}
+        {pct === 100 && <CircleCheck className="size-3.5 shrink-0 text-ok" />}
         {pct < 100 && isActive && inProgress > 0 && (
-          <Loader2 className="h-3 w-3 animate-spin text-accent/60" />
+          <Loader2 className="size-3 shrink-0 animate-spin text-accent" />
         )}
       </div>
 
@@ -133,20 +137,14 @@ function PlanProgressBlock({
           return (
             <div
               key={i}
-              className={`flex items-center gap-2 py-1 ${isCompleted ? "text-fg-4" : isInProg ? "text-accent" : "text-fg-3"}`}
+              className={`flex items-center gap-2 py-1 ${isCompleted ? "text-fg-4" : isInProg ? "text-fg" : "text-fg-3"}`}
             >
               {isCompleted ? (
-                <span className="material-symbols-outlined text-sm text-accent/60">
-                  check_circle
-                </span>
+                <CircleCheck className="size-3.5 shrink-0 text-ok/70" />
               ) : isInProg ? (
-                <span className="material-symbols-outlined text-sm text-accent animate-pulse">
-                  pending
-                </span>
+                <Loader2 className="size-3.5 shrink-0 animate-spin text-accent" />
               ) : (
-                <span className="material-symbols-outlined text-sm text-fg-4/50">
-                  radio_button_unchecked
-                </span>
+                <Circle className="size-3.5 shrink-0 text-fg-4/60" />
               )}
               <span
                 className={`text-xs ${isCompleted ? "line-through opacity-60" : ""}`}
@@ -186,18 +184,16 @@ function TerminalEvent({ event }: { event: StreamEvent }) {
     const prompt = typeof obj.prompt === "string" ? obj.prompt : "";
     if (!prompt) return null;
     return (
-      <div className="mt-3 mb-1 flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2">
-        <span className="w-14 shrink-0 font-mono text-[10px] text-fg-4 pt-0.5">
+      <div className="mt-3 mb-1 flex items-start gap-2 rounded-md border border-info/30 bg-info/10 px-3 py-2">
+        <span className="w-14 shrink-0 pt-0.5 font-mono text-[10px] text-fg-4">
           {ts}
         </span>
-        <span className="material-symbols-outlined text-[14px] text-blue-400 mt-0.5">
-          person
-        </span>
+        <User className="mt-0.5 size-3.5 shrink-0 text-info" />
         <div className="min-w-0 flex-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400">
+          <span className="font-mono text-[10px] font-medium tracking-wider text-info uppercase">
             You
           </span>
-          <p className="mt-0.5 text-xs text-fg whitespace-pre-wrap">{prompt}</p>
+          <p className="mt-0.5 text-xs whitespace-pre-wrap text-fg">{prompt}</p>
         </div>
       </div>
     );
@@ -208,14 +204,12 @@ function TerminalEvent({ event }: { event: StreamEvent }) {
     const msg = formatSystemEvent(event.event, data);
     if (!msg) return null;
     return (
-      <div className="flex items-start gap-2 rounded px-2 py-1.5 bg-accent/5">
-        <span className="w-14 shrink-0 font-mono text-[10px] text-fg-4 pt-0.5">
+      <div className="flex items-start gap-2 rounded-md px-2 py-1.5">
+        <span className="w-14 shrink-0 pt-0.5 font-mono text-[10px] text-fg-4">
           {ts}
         </span>
-        <span className="material-symbols-outlined text-[14px] text-accent/70 mt-0.5">
-          info
-        </span>
-        <span className="text-xs text-accent/80">{msg}</span>
+        <Info className="mt-0.5 size-3.5 shrink-0 text-fg-4" />
+        <span className="font-mono text-xs text-fg-3">{msg}</span>
       </div>
     );
   }
@@ -225,14 +219,12 @@ function TerminalEvent({ event }: { event: StreamEvent }) {
     const msg = formatSystemEvent(event.event, data);
     if (!msg) return null;
     return (
-      <div className="flex items-start gap-2 rounded px-2 py-1.5 bg-cyan-400/5">
-        <span className="w-14 shrink-0 font-mono text-[10px] text-fg-4 pt-0.5">
+      <div className="flex items-start gap-2 rounded-md px-2 py-1.5">
+        <span className="w-14 shrink-0 pt-0.5 font-mono text-[10px] text-fg-4">
           {ts}
         </span>
-        <span className="material-symbols-outlined text-[14px] text-cyan-400/70 mt-0.5">
-          commit
-        </span>
-        <span className="text-xs text-cyan-400/80">{msg}</span>
+        <GitCommitHorizontal className="mt-0.5 size-3.5 shrink-0 text-fg-4" />
+        <span className="font-mono text-xs text-fg-3">{msg}</span>
       </div>
     );
   }
@@ -240,14 +232,12 @@ function TerminalEvent({ event }: { event: StreamEvent }) {
   // Result event — just a status marker
   if (event.type === "result") {
     return (
-      <div className="mt-3 flex items-center gap-2 rounded px-2 py-1.5 bg-accent/5">
-        <span className="w-14 shrink-0 font-mono text-[10px] text-fg-4 pt-0.5">
+      <div className="mt-3 flex items-center gap-2 rounded-md bg-ok/10 px-2 py-1.5">
+        <span className="w-14 shrink-0 pt-0.5 font-mono text-[10px] text-fg-4">
           {ts}
         </span>
-        <span className="material-symbols-outlined text-[14px] text-accent">
-          check_circle
-        </span>
-        <span className="text-xs font-bold text-accent">Session completed</span>
+        <CircleCheck className="size-3.5 shrink-0 text-ok" />
+        <span className="text-xs font-medium text-ok">Session completed</span>
       </div>
     );
   }
@@ -291,20 +281,20 @@ function TerminalEvent({ event }: { event: StreamEvent }) {
           .replace(/^"(.*)"$/, "$1")
           .replace(/^'(.*)'$/, "$1");
         return (
-          <div className="flex items-center gap-2 rounded px-2 py-1.5">
+          <div className="flex items-center gap-2 rounded-md px-2 py-1.5">
             <span className="w-14 shrink-0 font-mono text-[10px] text-fg-4">
               {ts}
             </span>
-            <span className="material-symbols-outlined text-[14px] text-purple-400">
-              terminal
+            <SquareTerminal className="size-3.5 shrink-0 text-fg-3" />
+            <span className="font-mono text-xs font-medium text-fg-2">
+              Bash
             </span>
-            <span className="text-xs font-bold text-purple-400">Bash</span>
-            <span className="flex-1 min-w-0 truncate text-xs text-fg-3 font-mono">
+            <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-3">
               {shortCmd}
             </span>
             {exitCode != null && (
               <span
-                className={`font-mono text-[10px] ${exitCode === 0 ? "text-accent/60" : "text-red-400"}`}
+                className={`font-mono text-[10px] ${exitCode === 0 ? "text-ok/70" : "text-danger"}`}
               >
                 exit {exitCode}
               </span>
@@ -326,14 +316,12 @@ function TerminalEvent({ event }: { event: StreamEvent }) {
     // Error
     if (dataType === "error") {
       return (
-        <div className="flex items-start gap-2 rounded px-2 py-1.5 bg-red-500/5">
-          <span className="w-14 shrink-0 font-mono text-[10px] text-fg-4 pt-0.5">
+        <div className="flex items-start gap-2 rounded-md bg-danger/10 px-2 py-1.5">
+          <span className="w-14 shrink-0 pt-0.5 font-mono text-[10px] text-fg-4">
             {ts}
           </span>
-          <span className="material-symbols-outlined text-[14px] text-red-400 mt-0.5">
-            error
-          </span>
-          <span className="text-xs text-red-400 whitespace-pre-wrap break-words">
+          <CircleAlert className="mt-0.5 size-3.5 shrink-0 text-danger" />
+          <span className="font-mono text-xs whitespace-pre-wrap break-words text-danger">
             {content}
           </span>
         </div>
@@ -360,19 +348,19 @@ function TerminalEvent({ event }: { event: StreamEvent }) {
 
       return (
         <div className="flex items-start gap-2 px-2 py-1">
-          <span className="w-14 shrink-0 font-mono text-[10px] text-fg-4 pt-0.5">
+          <span className="w-14 shrink-0 pt-0.5 font-mono text-[10px] text-fg-4">
             {ts}
           </span>
           <div className="min-w-0 flex-1">
             {hasMeta && (
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 {cost != null && (
-                  <span className="inline-flex items-center gap-0.5 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-mono text-accent">
+                  <span className="inline-flex items-center gap-0.5 rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] text-fg-3">
                     ${cost.toFixed(3)}
                   </span>
                 )}
                 {inputTokens != null && outputTokens != null && (
-                  <span className="inline-flex items-center gap-0.5 rounded-full bg-fg-4/10 px-1.5 py-0.5 text-[10px] font-mono text-fg-3">
+                  <span className="inline-flex items-center gap-0.5 rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] text-fg-3">
                     {inputTokens > 1000
                       ? `${(inputTokens / 1000).toFixed(1)}k`
                       : inputTokens}
@@ -384,12 +372,12 @@ function TerminalEvent({ event }: { event: StreamEvent }) {
                   </span>
                 )}
                 {numTurns != null && (
-                  <span className="inline-flex items-center gap-0.5 rounded-full bg-fg-4/10 px-1.5 py-0.5 text-[10px] font-mono text-fg-3">
+                  <span className="inline-flex items-center gap-0.5 rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] text-fg-3">
                     {numTurns} {numTurns === 1 ? "turn" : "turns"}
                   </span>
                 )}
                 {durationMs != null && (
-                  <span className="inline-flex items-center gap-0.5 rounded-full bg-fg-4/10 px-1.5 py-0.5 text-[10px] font-mono text-fg-3">
+                  <span className="inline-flex items-center gap-0.5 rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] text-fg-3">
                     {durationMs > 60000
                       ? `${(durationMs / 60000).toFixed(1)}m`
                       : `${(durationMs / 1000).toFixed(1)}s`}
@@ -407,7 +395,7 @@ function TerminalEvent({ event }: { event: StreamEvent }) {
       if (!content) return null;
       return (
         <div className="flex items-start gap-2 px-2 py-1">
-          <span className="w-14 shrink-0 font-mono text-[10px] text-fg-4 pt-0.5">
+          <span className="w-14 shrink-0 pt-0.5 font-mono text-[10px] text-fg-4">
             {ts}
           </span>
           <div className="min-w-0 flex-1">
@@ -422,14 +410,12 @@ function TerminalEvent({ event }: { event: StreamEvent }) {
       const msg = formatStreamSystemEvent(data as Record<string, unknown>);
       if (!msg) return null;
       return (
-        <div className="flex items-start gap-2 rounded px-2 py-1.5 bg-accent/5">
-          <span className="w-14 shrink-0 font-mono text-[10px] text-fg-4 pt-0.5">
+        <div className="flex items-start gap-2 rounded-md px-2 py-1.5">
+          <span className="w-14 shrink-0 pt-0.5 font-mono text-[10px] text-fg-4">
             {ts}
           </span>
-          <span className="material-symbols-outlined text-[14px] text-accent/70 mt-0.5">
-            info
-          </span>
-          <span className="text-xs text-accent/80">{msg}</span>
+          <Info className="mt-0.5 size-3.5 shrink-0 text-fg-4" />
+          <span className="font-mono text-xs text-fg-3">{msg}</span>
         </div>
       );
     }
@@ -438,10 +424,10 @@ function TerminalEvent({ event }: { event: StreamEvent }) {
     if (content.startsWith("{") && content.length > 200) return null;
     return (
       <div className="flex items-start gap-2 px-2 py-0.5">
-        <span className="w-14 shrink-0 font-mono text-[10px] text-fg-4 pt-0.5">
+        <span className="w-14 shrink-0 pt-0.5 font-mono text-[10px] text-fg-4">
           {ts}
         </span>
-        <span className="min-w-0 flex-1 text-xs text-fg-3 whitespace-pre-wrap break-words">
+        <span className="min-w-0 flex-1 font-mono text-xs whitespace-pre-wrap break-words text-fg-3">
           {content}
         </span>
       </div>
@@ -452,13 +438,13 @@ function TerminalEvent({ event }: { event: StreamEvent }) {
   if (content.startsWith("{") && content.length > 200) return null;
   return (
     <div className="flex items-start gap-2 px-2 py-0.5">
-      <span className="w-14 shrink-0 font-mono text-[10px] text-fg-4 pt-0.5">
+      <span className="w-14 shrink-0 pt-0.5 font-mono text-[10px] text-fg-4">
         {ts}
       </span>
-      <span className="text-[10px] font-bold text-fg-4 uppercase mt-0.5">
+      <span className="mt-0.5 font-mono text-[10px] font-medium text-fg-4 uppercase">
         [{event.type}]
       </span>
-      <span className="min-w-0 flex-1 text-xs text-fg-3 whitespace-pre-wrap break-words">
+      <span className="min-w-0 flex-1 font-mono text-xs whitespace-pre-wrap break-words text-fg-3">
         {content}
       </span>
     </div>

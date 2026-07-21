@@ -101,6 +101,7 @@ tasks/                 Planning documents (not code)
 - **Review as action**: user triggers review via `POST /sessions/:id/review`, not automatic
 - **PR review is a session**: `pr_review` session type reuses the entire session system, no separate infrastructure
 - **UI**: React 19 + TypeScript + Vite + Tailwind CSS 4 + React Query, lives in `web/`
+- **UI design system**: "The Forge" — tokens, typography, and component vocabulary in `web/DESIGN.md`; follow it for any UI change
 - **UI dev**: Vite hot reload in Docker container, proxies API to Go app container
 - **UI prod**: Vite build + Express server with API proxy
 

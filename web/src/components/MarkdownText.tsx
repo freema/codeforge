@@ -113,8 +113,8 @@ function Block({ block }: { block: BlockNode }) {
   switch (block.type) {
     case "code":
       return (
-        <pre className="overflow-x-auto rounded-lg border border-edge bg-surface p-3">
-          <code className="text-[11px] leading-relaxed text-fg-2">
+        <pre className="overflow-x-auto rounded-md border border-edge bg-surface-alt p-3">
+          <code className="font-mono text-[11px] leading-relaxed text-fg-2">
             {block.content}
           </code>
         </pre>
@@ -123,18 +123,18 @@ function Block({ block }: { block: BlockNode }) {
     case "heading":
       if (block.level === 1)
         return (
-          <h3 className="text-sm font-bold text-fg">
+          <h3 className="text-sm font-semibold text-fg">
             {renderInline(block.content)}
           </h3>
         );
       if (block.level === 2)
         return (
-          <h4 className="text-xs font-bold text-fg">
+          <h4 className="text-xs font-semibold text-fg">
             {renderInline(block.content)}
           </h4>
         );
       return (
-        <h5 className="text-xs font-bold text-fg-2">
+        <h5 className="text-xs font-semibold text-fg-2">
           {renderInline(block.content)}
         </h5>
       );
@@ -147,7 +147,7 @@ function Block({ block }: { block: BlockNode }) {
               key={j}
               className="flex gap-2 text-xs leading-relaxed text-fg-2"
             >
-              <span className="mt-1 shrink-0 text-accent/40">-</span>
+              <span className="mt-1 shrink-0 text-fg-4">-</span>
               <span>{renderInline(item)}</span>
             </li>
           ))}
@@ -182,7 +182,7 @@ function renderInline(text: string): ReactNode[] {
     if (match[2]) {
       // Bold
       parts.push(
-        <strong key={key++} className="font-bold text-fg">
+        <strong key={key++} className="font-semibold text-fg">
           {match[2]}
         </strong>,
       );
@@ -191,7 +191,7 @@ function renderInline(text: string): ReactNode[] {
       parts.push(
         <code
           key={key++}
-          className="rounded bg-surface px-1.5 py-0.5 font-mono text-[0.95em] text-accent/80"
+          className="rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[0.95em] text-fg-2"
         >
           {match[3]}
         </code>,

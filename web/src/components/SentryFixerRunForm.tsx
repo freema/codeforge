@@ -1,5 +1,13 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router";
+import {
+  Building2,
+  CircleCheck,
+  FolderGit2,
+  KeyRound,
+  Loader2,
+  Play,
+} from "lucide-react";
 import { useKeys } from "../hooks/useKeys";
 import { useRepositories } from "../hooks/useRepositories";
 import {
@@ -34,11 +42,12 @@ function loadConfig(): SentryConfig | null {
   }
 }
 
+/* Sentry severity → semantic status tokens */
 const LEVEL_COLORS: Record<string, string> = {
-  fatal: "bg-red-500",
-  error: "bg-orange-500",
-  warning: "bg-yellow-500",
-  info: "bg-blue-500",
+  fatal: "bg-danger",
+  error: "bg-danger",
+  warning: "bg-warn",
+  info: "bg-info",
 };
 
 export default function SentryFixerRunForm() {
@@ -145,294 +154,279 @@ export default function SentryFixerRunForm() {
           : 4;
 
   return (
-    <div className="rounded-xl border border-edge bg-surface/50 p-6 space-y-5">
-      <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-        <span className="material-symbols-outlined text-accent text-base">
-          bug_report
-        </span>
-        Sentry Fixer
-      </h3>
-
-      {/* ── Sentry Key ── */}
-      <div>
-        <label className="mb-1.5 block text-xs font-medium text-fg-3">
-          Sentry Key
-        </label>
-        {sentryKeys.length > 0 ? (
-          sentryKeys.length === 1 ? (
-            <div className="flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5 text-sm font-mono text-accent">
-              <span className="material-symbols-outlined text-base">
-                vpn_key
-              </span>
-              {sentryKeys[0]!.name}
-            </div>
-          ) : (
-            <Select
-              value={effectiveKey}
-              onChange={(v) => {
-                setSentryKey(v);
-                setOrgSlug("");
-                setOrgRegion("");
-                setProjectSlug("");
-              }}
-              placeholder="Select sentry key..."
-              options={sentryKeys.map((k) => ({
-                value: k.name,
-                label: k.name,
-              }))}
-            />
-          )
-        ) : (
-          <p className="py-2 text-xs text-fg-4">
-            No Sentry keys configured. Add one in Settings.
-          </p>
-        )}
+    <div className="overflow-hidden rounded-md border border-edge bg-surface">
+      <div className="border-b border-edge px-5 py-3.5">
+        <span className="eyebrow">Sentry fixer</span>
       </div>
 
-      {/* ── Organization ── */}
-      {step >= 1 && (
+      <div className="space-y-5 p-5">
+        {/* ── Sentry key ── */}
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-fg-3">
-            Organization
+          <label className="mb-2 block text-sm font-medium text-fg-2">
+            Sentry key
           </label>
-          {orgsLoading ? (
-            <div className="flex items-center gap-2 py-2.5 text-xs text-fg-4">
-              <span className="material-symbols-outlined animate-spin text-sm">
-                progress_activity
-              </span>
-              Loading organizations...
-            </div>
-          ) : orgs && orgs.length === 1 ? (
-            <div className="flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5 text-sm font-mono text-accent">
-              <span className="material-symbols-outlined text-base">
-                corporate_fare
-              </span>
-              {orgs[0]!.name}
-              <span className="text-accent/50 text-xs">({orgs[0]!.slug})</span>
-            </div>
-          ) : orgs && orgs.length > 1 ? (
-            <Select
-              value={effectiveOrg}
-              onChange={(v) => {
-                setOrgSlug(v);
-                setOrgRegion(orgs.find((o) => o.slug === v)?.region ?? "");
-                setProjectSlug("");
-              }}
-              placeholder="Select organization..."
-              options={orgs.map((o) => ({
-                value: o.slug,
-                label: `${o.name} (${o.slug})${o.region !== "us" ? ` [${o.region.toUpperCase()}]` : ""}`,
-              }))}
-            />
-          ) : (
-            <p className="py-2 text-xs text-fg-4">
-              No organizations found for this key.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* ── Project ── */}
-      {step >= 2 && (
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-fg-3">
-            Project
-          </label>
-          {projectsLoading ? (
-            <div className="flex items-center gap-2 py-2.5 text-xs text-fg-4">
-              <span className="material-symbols-outlined animate-spin text-sm">
-                progress_activity
-              </span>
-              Loading projects...
-            </div>
-          ) : sentryProjects && sentryProjects.length > 0 ? (
-            <Select
-              value={projectSlug}
-              onChange={setProjectSlug}
-              placeholder="Select project..."
-              options={sentryProjects.map((p) => ({
-                value: p.slug,
-                label: `${p.name}${p.platform ? ` (${p.platform})` : ""}`,
-              }))}
-            />
-          ) : (
-            <p className="py-2 text-xs text-fg-4">
-              No projects found in this organization.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* ── Git Provider + Repo ── */}
-      {step >= 3 && (
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-fg-3">
-              Git Provider
-            </label>
-            {gitKeys.length > 0 ? (
-              gitKeys.length === 1 ? (
-                <div className="flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5 text-sm font-mono text-accent">
-                  <span className="material-symbols-outlined text-base">
-                    code
-                  </span>
-                  {gitKeys[0]!.name}
-                </div>
-              ) : (
-                <Select
-                  value={effectiveGitKey}
-                  onChange={(v) => {
-                    setGitKey(v);
-                    setRepoUrl("");
-                  }}
-                  placeholder="Select git key..."
-                  options={gitKeys.map((k) => ({
-                    value: k.name,
-                    label: `${k.name} (${k.provider})`,
-                  }))}
-                />
-              )
-            ) : (
-              <p className="py-2 text-xs text-fg-4">No GitHub/GitLab keys</p>
-            )}
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-fg-3">
-              Repository
-            </label>
-            {reposLoading && effectiveGitKey ? (
-              <div className="flex items-center gap-2 py-2.5 text-xs text-fg-4">
-                <span className="material-symbols-outlined animate-spin text-sm">
-                  progress_activity
-                </span>
-                Loading...
+          {sentryKeys.length > 0 ? (
+            sentryKeys.length === 1 ? (
+              <div className="flex items-center gap-2 rounded-md border border-accent-muted bg-accent-soft px-3 py-2.5 font-mono text-sm text-accent">
+                <KeyRound className="size-4 shrink-0" />
+                {sentryKeys[0]!.name}
               </div>
-            ) : repos && repos.length > 0 ? (
+            ) : (
               <Select
-                value={repoUrl}
-                onChange={setRepoUrl}
-                placeholder="Select repository..."
-                options={repos.map((r) => ({
-                  value: r.clone_url,
-                  label: r.full_name,
+                value={effectiveKey}
+                onChange={(v) => {
+                  setSentryKey(v);
+                  setOrgSlug("");
+                  setOrgRegion("");
+                  setProjectSlug("");
+                }}
+                placeholder="Select a Sentry key…"
+                options={sentryKeys.map((k) => ({
+                  value: k.name,
+                  label: k.name,
+                }))}
+              />
+            )
+          ) : (
+            <p className="py-2 text-xs text-fg-4">
+              No Sentry keys configured. Add one in Settings.
+            </p>
+          )}
+        </div>
+
+        {/* ── Organization ── */}
+        {step >= 1 && (
+          <div>
+            <label className="mb-2 block text-sm font-medium text-fg-2">
+              Organization
+            </label>
+            {orgsLoading ? (
+              <div className="flex items-center gap-2 py-2.5 text-xs text-fg-4">
+                <Loader2 className="size-3.5 animate-spin" />
+                Loading organizations…
+              </div>
+            ) : orgs && orgs.length === 1 ? (
+              <div className="flex items-center gap-2 rounded-md border border-accent-muted bg-accent-soft px-3 py-2.5 font-mono text-sm text-accent">
+                <Building2 className="size-4 shrink-0" />
+                {orgs[0]!.name}
+                <span className="text-xs text-accent/60">
+                  ({orgs[0]!.slug})
+                </span>
+              </div>
+            ) : orgs && orgs.length > 1 ? (
+              <Select
+                value={effectiveOrg}
+                onChange={(v) => {
+                  setOrgSlug(v);
+                  setOrgRegion(orgs.find((o) => o.slug === v)?.region ?? "");
+                  setProjectSlug("");
+                }}
+                placeholder="Select an organization…"
+                options={orgs.map((o) => ({
+                  value: o.slug,
+                  label: `${o.name} (${o.slug})${o.region !== "us" ? ` [${o.region.toUpperCase()}]` : ""}`,
                 }))}
               />
             ) : (
-              <p className="py-2 text-xs text-fg-4">No repositories found.</p>
+              <p className="py-2 text-xs text-fg-4">
+                No organizations found for this key.
+              </p>
             )}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── Max Issues ── */}
-      {step >= 4 && (
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-fg-3">
-            Max issues to fix
-          </label>
-          <div className="flex items-center gap-4">
-            <input
-              type="range"
-              min={1}
-              max={20}
-              value={maxIssues}
-              onChange={(e) => setMaxIssues(e.target.value)}
-              className="flex-1 accent-accent"
-            />
-            <span className="w-8 text-center font-mono text-sm font-bold text-accent">
-              {maxIssues}
-            </span>
-          </div>
-          <p className="mt-1 text-[10px] text-fg-4">
-            Claude will process the top {maxIssues} most critical issues by
-            severity and frequency.
-          </p>
-        </div>
-      )}
-
-      {/* ── Issues Preview (readonly) ── */}
-      {step >= 4 && (
-        <>
+        {/* ── Project ── */}
+        {step >= 2 && (
           <div>
-            <div className="mb-2 flex items-center justify-between">
-              <label className="text-xs font-medium text-fg-3">
-                Unresolved Issues
+            <label className="mb-2 block text-sm font-medium text-fg-2">
+              Project
+            </label>
+            {projectsLoading ? (
+              <div className="flex items-center gap-2 py-2.5 text-xs text-fg-4">
+                <Loader2 className="size-3.5 animate-spin" />
+                Loading projects…
+              </div>
+            ) : sentryProjects && sentryProjects.length > 0 ? (
+              <Select
+                value={projectSlug}
+                onChange={setProjectSlug}
+                placeholder="Select a project…"
+                options={sentryProjects.map((p) => ({
+                  value: p.slug,
+                  label: `${p.name}${p.platform ? ` (${p.platform})` : ""}`,
+                }))}
+              />
+            ) : (
+              <p className="py-2 text-xs text-fg-4">
+                No projects found in this organization.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* ── Git provider + repo ── */}
+        {step >= 3 && (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-fg-2">
+                Git provider
               </label>
-              {issues && (
-                <span className="font-mono text-[10px] text-fg-4">
-                  {issues.length} loaded
+              {gitKeys.length > 0 ? (
+                gitKeys.length === 1 ? (
+                  <div className="flex items-center gap-2 rounded-md border border-accent-muted bg-accent-soft px-3 py-2.5 font-mono text-sm text-accent">
+                    <FolderGit2 className="size-4 shrink-0" />
+                    {gitKeys[0]!.name}
+                  </div>
+                ) : (
+                  <Select
+                    value={effectiveGitKey}
+                    onChange={(v) => {
+                      setGitKey(v);
+                      setRepoUrl("");
+                    }}
+                    placeholder="Select a git key…"
+                    options={gitKeys.map((k) => ({
+                      value: k.name,
+                      label: `${k.name} (${k.provider})`,
+                    }))}
+                  />
+                )
+              ) : (
+                <p className="py-2 text-xs text-fg-4">
+                  No GitHub or GitLab keys
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-fg-2">
+                Repository
+              </label>
+              {reposLoading && effectiveGitKey ? (
+                <div className="flex items-center gap-2 py-2.5 text-xs text-fg-4">
+                  <Loader2 className="size-3.5 animate-spin" />
+                  Loading…
+                </div>
+              ) : repos && repos.length > 0 ? (
+                <Select
+                  value={repoUrl}
+                  onChange={setRepoUrl}
+                  placeholder="Select a repository…"
+                  options={repos.map((r) => ({
+                    value: r.clone_url,
+                    label: r.full_name,
+                  }))}
+                />
+              ) : (
+                <p className="py-2 text-xs text-fg-4">No repositories found.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Max issues ── */}
+        {step >= 4 && (
+          <div>
+            <label className="mb-2 block text-sm font-medium text-fg-2">
+              Max issues to fix
+            </label>
+            <div className="flex items-center gap-4">
+              <input
+                type="range"
+                min={1}
+                max={20}
+                value={maxIssues}
+                onChange={(e) => setMaxIssues(e.target.value)}
+                className="flex-1 accent-accent"
+              />
+              <span className="w-8 text-center font-mono text-sm font-semibold text-accent">
+                {maxIssues}
+              </span>
+            </div>
+            <p className="mt-1.5 text-xs text-fg-4">
+              Claude will process the top {maxIssues} most critical issues by
+              severity and frequency.
+            </p>
+          </div>
+        )}
+
+        {/* ── Issues preview (readonly) ── */}
+        {step >= 4 && (
+          <>
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <label className="text-sm font-medium text-fg-2">
+                  Unresolved issues
+                </label>
+                {issues && (
+                  <span className="font-mono text-[10px] text-fg-4">
+                    {issues.length} loaded
+                  </span>
+                )}
+              </div>
+              {issuesLoading ? (
+                <div className="space-y-1.5">
+                  {[1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className="animate-soft-pulse h-9 rounded-md bg-surface-alt"
+                    />
+                  ))}
+                </div>
+              ) : issues && issues.length > 0 ? (
+                <div className="max-h-56 divide-y divide-edge overflow-y-auto rounded-md border border-edge">
+                  {issues.map((issue) => (
+                    <div
+                      key={issue.id}
+                      className="flex items-center gap-3 px-3 py-2"
+                    >
+                      <span
+                        className={`size-2 shrink-0 rounded-full ${LEVEL_COLORS[issue.level] ?? "bg-fg-4"}`}
+                      />
+                      <span className="shrink-0 font-mono text-[10px] text-fg-4">
+                        {issue.shortId}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg">
+                        {issue.title}
+                      </span>
+                      <span className="shrink-0 rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] text-fg-4">
+                        {issue.count}x
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-2 py-6 text-xs text-fg-4">
+                  <CircleCheck className="size-4 text-ok" />
+                  No unresolved issues
+                </div>
+              )}
+            </div>
+
+            {/* ── Run button ── */}
+            <div className="flex flex-wrap items-center gap-4">
+              <button
+                onClick={() => void handleRun()}
+                disabled={
+                  !configComplete || runWorkflow.isPending || !issues?.length
+                }
+                className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+              >
+                {runWorkflow.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Play className="size-4" />
+                )}
+                Fix top {maxIssues} issues
+              </button>
+              {issues && issues.length > 0 && (
+                <span className="text-xs text-fg-4">
+                  {issues.length} unresolved — will process up to {maxIssues}
                 </span>
               )}
             </div>
-            {issuesLoading ? (
-              <div className="space-y-1.5">
-                {[1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className="h-9 animate-pulse rounded-lg bg-surface-alt"
-                  />
-                ))}
-              </div>
-            ) : issues && issues.length > 0 ? (
-              <div className="max-h-56 overflow-y-auto rounded-lg border border-edge divide-y divide-edge">
-                {issues.map((issue) => (
-                  <div
-                    key={issue.id}
-                    className="flex items-center gap-3 px-3 py-2"
-                  >
-                    <div
-                      className={`h-2 w-2 shrink-0 rounded-full ${LEVEL_COLORS[issue.level] ?? "bg-gray-500"}`}
-                    />
-                    <span className="shrink-0 font-mono text-[10px] text-fg-4">
-                      {issue.shortId}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-xs text-fg">
-                      {issue.title}
-                    </span>
-                    <span className="shrink-0 rounded border border-edge bg-surface px-1.5 py-0.5 font-mono text-[10px] text-fg-4">
-                      {issue.count}x
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="flex items-center justify-center gap-2 py-6 text-xs text-fg-4">
-                <span className="material-symbols-outlined text-base">
-                  check_circle
-                </span>
-                No unresolved issues
-              </div>
-            )}
-          </div>
-
-          {/* ── Run Button ── */}
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => void handleRun()}
-              disabled={
-                !configComplete || runWorkflow.isPending || !issues?.length
-              }
-              className="flex items-center gap-2 rounded-lg bg-accent px-6 py-2.5 text-sm font-bold text-page shadow-[0_0_15px_rgba(0,255,64,0.3)] transition-all hover:bg-accent-hover disabled:opacity-50"
-            >
-              {runWorkflow.isPending ? (
-                <span className="material-symbols-outlined animate-spin text-base">
-                  progress_activity
-                </span>
-              ) : (
-                <span className="material-symbols-outlined text-lg">
-                  play_arrow
-                </span>
-              )}
-              Fix Top {maxIssues} Issues
-            </button>
-            {issues && issues.length > 0 && (
-              <span className="text-xs text-fg-4">
-                {issues.length} unresolved — will process up to {maxIssues}
-              </span>
-            )}
-          </div>
-        </>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

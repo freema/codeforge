@@ -2,36 +2,43 @@ import type { ReviewResult } from "../../types";
 
 export function ReviewResultCard({ review }: { review: ReviewResult }) {
   const verdictColors = {
-    approve: "text-accent border-accent/30 bg-accent/10",
-    request_changes: "text-yellow-400 border-yellow-500/30 bg-yellow-500/10",
-    comment: "text-blue-400 border-blue-500/30 bg-blue-500/10",
+    approve: "border-ok/30 bg-ok/10 text-ok",
+    request_changes: "border-warn/30 bg-warn/10 text-warn",
+    comment: "border-info/30 bg-info/10 text-info",
   };
 
   const severityColors = {
-    critical: "text-red-400 bg-red-900/20 border-red-900/30",
-    major: "text-orange-400 bg-orange-900/20 border-orange-900/30",
-    minor: "text-yellow-400 bg-yellow-900/20 border-yellow-900/30",
-    suggestion: "text-blue-400 bg-blue-900/20 border-blue-900/30",
+    critical: "border-danger/30 bg-danger/10 text-danger",
+    major: "border-warn/30 bg-warn/10 text-warn",
+    minor: "border-warn/30 bg-warn/10 text-warn",
+    suggestion: "border-info/30 bg-info/10 text-info",
   };
 
-  return (
-    <div>
-      <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-        <span className="material-symbols-outlined text-blue-400 text-base">
-          rate_review
-        </span>
-        Code Review
-      </h3>
+  const scoreColor =
+    review.score >= 8
+      ? "text-ok"
+      : review.score >= 5
+        ? "text-warn"
+        : "text-danger";
 
-      <div className="space-y-3">
+  return (
+    <div className="overflow-hidden rounded-md border border-edge bg-surface">
+      <div className="border-b border-edge px-4 py-3">
+        <span className="eyebrow">Code review</span>
+      </div>
+
+      <div className="space-y-3 p-4">
         <div className="flex items-center justify-between">
           <span
-            className={`rounded-full border px-3 py-1 text-xs font-bold uppercase ${verdictColors[review.verdict]}`}
+            className={`inline-flex items-center rounded-[4px] border px-2 py-0.5 font-mono text-[10px] font-medium tracking-[0.08em] uppercase ${verdictColors[review.verdict]}`}
           >
             {review.verdict.replace("_", " ")}
           </span>
-          <span className="font-mono text-sm text-fg">
-            Score: <span className="text-accent font-bold">{review.score}</span>
+          <span className="font-mono text-sm text-fg-2">
+            Score:{" "}
+            <span className={`font-semibold ${scoreColor}`}>
+              {review.score}
+            </span>
             /10
           </span>
         </div>
@@ -43,10 +50,12 @@ export function ReviewResultCard({ review }: { review: ReviewResult }) {
             {review.issues.map((issue, i) => (
               <div
                 key={i}
-                className={`rounded-lg border p-3 ${severityColors[issue.severity]}`}
+                className="rounded-md border border-edge bg-surface-alt p-3"
               >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-bold uppercase">
+                <div className="mb-1 flex items-center gap-2">
+                  <span
+                    className={`inline-flex items-center rounded-[4px] border px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-[0.08em] uppercase ${severityColors[issue.severity]}`}
+                  >
                     {issue.severity}
                   </span>
                   <span className="font-mono text-xs text-fg-3">
@@ -54,7 +63,7 @@ export function ReviewResultCard({ review }: { review: ReviewResult }) {
                     {issue.line ? `:${issue.line}` : ""}
                   </span>
                 </div>
-                <p className="text-sm">{issue.description}</p>
+                <p className="text-sm text-fg-2">{issue.description}</p>
                 {issue.suggestion && (
                   <p className="mt-1 text-xs text-fg-3">
                     Suggestion: {issue.suggestion}

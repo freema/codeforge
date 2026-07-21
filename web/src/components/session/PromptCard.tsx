@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ChevronDown, History, User } from "lucide-react";
 import StatusBadge from "../StatusBadge";
 import type { SessionStatus } from "../../types";
 
@@ -11,18 +12,16 @@ export function PromptCard({ prompt, ts }: { prompt: string; ts: string }) {
   });
 
   return (
-    <div className="mb-1 flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2">
-      <span className="w-14 shrink-0 font-mono text-[10px] text-fg-4 pt-0.5">
+    <div className="mb-1 flex items-start gap-2 rounded-md border border-info/30 bg-info/10 px-3 py-2">
+      <span className="w-14 shrink-0 pt-0.5 font-mono text-[10px] text-fg-4">
         {time}
       </span>
-      <span className="material-symbols-outlined text-[14px] text-blue-400 mt-0.5">
-        person
-      </span>
+      <User className="mt-0.5 size-3.5 shrink-0 text-info" />
       <div className="min-w-0 flex-1">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400">
+        <span className="font-mono text-[10px] font-medium tracking-wider text-info uppercase">
           You
         </span>
-        <p className="mt-0.5 text-xs text-fg whitespace-pre-wrap">{prompt}</p>
+        <p className="mt-0.5 text-xs whitespace-pre-wrap text-fg">{prompt}</p>
       </div>
     </div>
   );
@@ -45,30 +44,26 @@ export function IterationsHistory({
     <div className="mt-2">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-surface/30"
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-surface-alt"
       >
-        <span className="material-symbols-outlined text-[14px] text-fg-4">
-          history
-        </span>
-        <span className="text-xs font-bold text-fg-3">
+        <History className="size-3.5 shrink-0 text-fg-4" />
+        <span className="text-xs font-medium text-fg-3">
           {past.length} previous iteration{past.length > 1 ? "s" : ""}
         </span>
-        <span
-          className="material-symbols-outlined ml-auto text-[14px] text-fg-4 transition-transform"
+        <ChevronDown
+          className="ml-auto size-3.5 shrink-0 text-fg-4 transition-transform"
           style={{ transform: expanded ? "rotate(180deg)" : "none" }}
-        >
-          expand_more
-        </span>
+        />
       </button>
       {expanded && (
-        <div className="ml-4 mt-1 space-y-2 border-l-2 border-edge pl-3">
+        <div className="mt-1 ml-4 space-y-2 border-l-2 border-edge pl-3">
           {past.map((iter) => (
             <div
               key={iter.number}
-              className="rounded-lg border border-accent/10 bg-surface/30 p-2.5"
+              className="rounded-md border border-edge bg-surface-alt p-2.5"
             >
               <div className="mb-1 flex items-center justify-between">
-                <span className="text-[10px] font-bold text-accent/70">
+                <span className="font-mono text-[10px] text-fg-3">
                   #{iter.number}
                 </span>
                 <StatusBadge status={iter.status} />

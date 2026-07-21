@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
+import { ChevronDown } from "lucide-react";
 
 export interface SelectOption {
   value: string;
@@ -56,21 +57,18 @@ export default function Select({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between rounded-lg border border-edge bg-surface px-3 py-2.5 text-left text-sm font-mono transition-colors hover:border-fg-4 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+        className="flex w-full items-center justify-between rounded-md border border-edge bg-input px-3 py-2.5 text-left font-mono text-sm transition-colors hover:border-fg-4 focus:border-accent focus:outline-none"
       >
         <span className={selected ? "text-fg" : "text-fg-4"}>
           {displayLabel}
         </span>
-        <span
-          className="material-symbols-outlined text-base text-fg-4 transition-transform"
-          style={{ transform: open ? "rotate(180deg)" : "none" }}
-        >
-          expand_more
-        </span>
+        <ChevronDown
+          className={`size-4 text-fg-4 transition-transform ${open ? "rotate-180" : ""}`}
+        />
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-edge bg-surface-alt shadow-lg shadow-black/40 backdrop-blur-xl">
+        <div className="absolute top-full right-0 left-0 z-50 mt-1 rounded-md border border-edge bg-surface shadow-lg shadow-black/20">
           {options.length > 5 && (
             <div className="border-b border-edge p-1.5">
               <input
@@ -78,8 +76,8 @@ export default function Select({
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search..."
-                className="w-full rounded-md border border-edge bg-surface px-2.5 py-1.5 text-xs text-fg font-mono placeholder-fg-4 focus:border-accent focus:outline-none"
+                placeholder="Search…"
+                className="w-full rounded-md border border-edge bg-input px-2.5 py-1.5 font-mono text-xs text-fg placeholder-fg-4 focus:border-accent focus:outline-none"
               />
             </div>
           )}
@@ -98,10 +96,10 @@ export default function Select({
                     setOpen(false);
                     setSearch("");
                   }}
-                  className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-mono transition-colors first:rounded-t-lg last:rounded-b-lg ${
+                  className={`flex w-full items-center gap-2 px-3 py-2.5 text-left font-mono text-sm transition-colors first:rounded-t-md last:rounded-b-md ${
                     opt.value === value
-                      ? "bg-accent/10 text-accent"
-                      : "text-fg hover:bg-accent/5"
+                      ? "bg-accent-soft text-accent"
+                      : "text-fg hover:bg-surface-alt"
                   }`}
                 >
                   {opt.label}

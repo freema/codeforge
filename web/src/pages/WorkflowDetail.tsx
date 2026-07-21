@@ -1,5 +1,17 @@
 import { useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router";
+import {
+  Circle,
+  CloudDownload,
+  Code,
+  Loader2,
+  Play,
+  SquareTerminal,
+  Trash2,
+  X,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
 import { usePageTitle } from "../hooks/usePageTitle";
 import Select from "../components/Select";
 import SentryFixerRunForm from "../components/SentryFixerRunForm";
@@ -13,25 +25,31 @@ import { useRepositories } from "../hooks/useRepositories";
 import { useToast } from "../context/ToastContext";
 import type { StepType } from "../types";
 
+/* Step-type chips: session is the hot AI work (ember), fetch and
+   action are cold machine processes (steel). */
 const stepTypeColors: Record<
   StepType,
-  { color: string; bg: string; icon: string }
+  { chip: string; iconColor: string; icon: LucideIcon }
 > = {
   fetch: {
-    color: "text-cyan-400",
-    bg: "bg-cyan-400/10",
-    icon: "cloud_download",
+    icon: CloudDownload,
+    iconColor: "text-info",
+    chip: "border-info/30 bg-info/10 text-info",
   },
   session: {
-    color: "text-yellow-400",
-    bg: "bg-yellow-400/10",
-    icon: "terminal",
+    icon: SquareTerminal,
+    iconColor: "text-accent",
+    chip: "border-accent-muted bg-accent-soft text-accent",
   },
-  action: { color: "text-purple-400", bg: "bg-purple-400/10", icon: "bolt" },
+  action: {
+    icon: Zap,
+    iconColor: "text-info",
+    chip: "border-info/30 bg-info/10 text-info",
+  },
 };
 
 export default function WorkflowDetail() {
-  usePageTitle("Workflow Detail");
+  usePageTitle("Workflow detail");
   const { name } = useParams<{ name: string }>();
   const decodedName = name ? decodeURIComponent(name) : undefined;
   const navigate = useNavigate();
@@ -62,15 +80,15 @@ export default function WorkflowDetail() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <span className="material-symbols-outlined animate-spin text-3xl text-accent/50">
-          progress_activity
-        </span>
+        <Loader2 className="size-6 animate-spin text-fg-4" />
       </div>
     );
   }
 
   if (!workflow) {
-    return <p className="py-20 text-center text-fg-4">Workflow not found.</p>;
+    return (
+      <p className="py-20 text-center text-sm text-fg-4">Workflow not found.</p>
+    );
   }
 
   async function handleDelete() {
@@ -99,18 +117,21 @@ export default function WorkflowDetail() {
   }
 
   const inputCls =
-    "w-full rounded-lg border border-edge bg-surface px-3 py-2.5 text-sm text-fg font-mono placeholder-fg-4 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors";
+    "w-full rounded-md border border-edge bg-input px-3 py-2 font-mono text-sm text-fg placeholder-fg-4 transition-colors focus:border-accent focus:outline-none";
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
+          <p className="eyebrow mb-1">Workflows</p>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-fg">{workflow.name}</h1>
+            <h2 className="font-expanded text-2xl font-extrabold tracking-tight text-fg">
+              {workflow.name}
+            </h2>
             {workflow.builtin && (
-              <span className="rounded-full border border-accent/20 bg-accent/10 px-3 py-0.5 text-xs font-bold text-accent">
-                BUILT-IN
+              <span className="rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-fg-3 uppercase">
+                Built-in
               </span>
             )}
           </div>
@@ -124,17 +145,19 @@ export default function WorkflowDetail() {
             <>
               {confirmDelete ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-fg-3">Sure?</span>
+                  <span className="text-xs text-fg-3">
+                    Delete this workflow?
+                  </span>
                   <button
                     onClick={() => void handleDelete()}
                     disabled={deleteWorkflow.isPending}
-                    className="rounded-lg border border-red-900/50 bg-red-900/20 px-3 py-1.5 text-xs font-medium text-red-400 disabled:opacity-50"
+                    className="rounded-md border border-danger/30 bg-surface px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"
                   >
                     Delete
                   </button>
                   <button
                     onClick={() => setConfirmDelete(false)}
-                    className="rounded-lg border border-edge px-3 py-1.5 text-xs text-fg-3"
+                    className="rounded-md border border-edge bg-surface px-3 py-1.5 text-xs font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg"
                   >
                     Cancel
                   </button>
@@ -142,11 +165,9 @@ export default function WorkflowDetail() {
               ) : (
                 <button
                   onClick={() => setConfirmDelete(true)}
-                  className="flex items-center gap-1.5 rounded-lg border border-red-900/50 bg-red-900/20 px-3 py-2 text-sm text-red-400 transition-colors hover:bg-red-900/40"
+                  className="flex items-center gap-1.5 rounded-md border border-danger/30 bg-surface px-3 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger/10"
                 >
-                  <span className="material-symbols-outlined text-lg">
-                    delete
-                  </span>
+                  <Trash2 className="size-4" />
                   Delete
                 </button>
               )}
@@ -154,16 +175,14 @@ export default function WorkflowDetail() {
           )}
           <button
             onClick={() => setShowRun(!showRun)}
-            className={`flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-bold transition-all ${
+            className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm transition-colors ${
               showRun
-                ? "border border-edge bg-surface-alt text-fg-2"
-                : "bg-accent text-page shadow-[0_0_15px_rgba(0,255,64,0.3)] hover:bg-accent-hover"
+                ? "border border-edge bg-surface font-medium text-fg-2 hover:border-fg-4 hover:text-fg"
+                : "bg-accent font-semibold text-white hover:bg-accent-hover"
             }`}
           >
-            <span className="material-symbols-outlined text-lg">
-              {showRun ? "close" : "play_arrow"}
-            </span>
-            {showRun ? "Close" : "Run Workflow"}
+            {showRun ? <X className="size-4" /> : <Play className="size-4" />}
+            {showRun ? "Close" : "Run workflow"}
           </button>
         </div>
       </div>
@@ -173,123 +192,114 @@ export default function WorkflowDetail() {
         (isSentryFixer ? (
           <SentryFixerRunForm />
         ) : (
-          <div className="rounded-xl border border-edge bg-surface/50 p-6 space-y-4">
-            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-              <span className="material-symbols-outlined text-accent text-base">
-                tune
-              </span>
-              Run Parameters
-            </h3>
-
-            {/* Smart: Provider key selector */}
-            {gitKeys &&
-              gitKeys.length > 0 &&
-              workflow.parameters.some(
-                (p) => p.name === "provider_key" || p.name === "repo_url",
-              ) && (
-                <div>
-                  <label className="mb-2 block text-xs text-fg-3">
-                    Provider Key
-                  </label>
-                  <div className="flex gap-2">
-                    {gitKeys.map((k) => (
-                      <button
-                        key={k.name}
-                        type="button"
-                        onClick={() => {
-                          setSelectedKey(k.name);
-                          updateParam("provider_key", k.name);
-                        }}
-                        className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${
-                          (selectedKey || params.provider_key) === k.name
-                            ? "border-accent bg-accent/10 text-accent"
-                            : "border-edge text-fg-3 hover:border-fg-4"
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-lg">
-                          code
-                        </span>
-                        {k.name}
-                      </button>
-                    ))}
+          <div className="overflow-hidden rounded-md border border-edge bg-surface">
+            <div className="border-b border-edge px-5 py-3.5">
+              <span className="eyebrow">Run parameters</span>
+            </div>
+            <div className="space-y-4 p-5">
+              {/* Smart: Provider key selector */}
+              {gitKeys &&
+                gitKeys.length > 0 &&
+                workflow.parameters.some(
+                  (p) => p.name === "provider_key" || p.name === "repo_url",
+                ) && (
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-fg-3">
+                      Provider key
+                    </label>
+                    <div className="flex gap-2">
+                      {gitKeys.map((k) => (
+                        <button
+                          key={k.name}
+                          type="button"
+                          onClick={() => {
+                            setSelectedKey(k.name);
+                            updateParam("provider_key", k.name);
+                          }}
+                          className={`flex items-center gap-2 rounded-md border px-4 py-2 font-mono text-sm transition-colors ${
+                            (selectedKey || params.provider_key) === k.name
+                              ? "border-accent-muted bg-accent-soft text-accent"
+                              : "border-edge bg-surface text-fg-2 hover:border-fg-4 hover:text-fg"
+                          }`}
+                        >
+                          <Code className="size-4" />
+                          {k.name}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
+
+              {/* Smart: Repo URL selector if repos available */}
+              {repos &&
+                repos.length > 0 &&
+                workflow.parameters.some((p) => p.name === "repo_url") && (
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-fg-3">
+                      Repository
+                    </label>
+                    <Select
+                      value={params.repo_url || ""}
+                      onChange={(v) => updateParam("repo_url", v)}
+                      placeholder="Select repository..."
+                      options={repos.map((r) => ({
+                        value: r.clone_url,
+                        label: r.full_name,
+                      }))}
+                    />
+                  </div>
+                )}
+
+              {/* Other parameters */}
+              {workflow.parameters
+                .filter(
+                  (p) => p.name !== "provider_key" && p.name !== "repo_url",
+                )
+                .map((p) => (
+                  <div key={p.name}>
+                    <label className="mb-1.5 block text-xs font-medium text-fg-3">
+                      {p.name.replace(/_/g, " ")}
+                      {p.required && (
+                        <span className="ml-1 text-danger">*</span>
+                      )}
+                    </label>
+                    <input
+                      type="text"
+                      value={params[p.name] ?? p.default ?? ""}
+                      onChange={(e) => updateParam(p.name, e.target.value)}
+                      placeholder={p.default ?? `Enter ${p.name}...`}
+                      className={inputCls}
+                    />
+                  </div>
+                ))}
+
+              {workflow.parameters.length === 0 && (
+                <p className="text-sm text-fg-4">
+                  This workflow has no parameters.
+                </p>
               )}
 
-            {/* Smart: Repo URL selector if repos available */}
-            {repos &&
-              repos.length > 0 &&
-              workflow.parameters.some((p) => p.name === "repo_url") && (
-                <div>
-                  <label className="mb-2 block text-xs text-fg-3">
-                    Repository
-                  </label>
-                  <Select
-                    value={params.repo_url || ""}
-                    onChange={(v) => updateParam("repo_url", v)}
-                    placeholder="Select repository..."
-                    options={repos.map((r) => ({
-                      value: r.clone_url,
-                      label: r.full_name,
-                    }))}
-                  />
-                </div>
-              )}
-
-            {/* Other parameters */}
-            {workflow.parameters
-              .filter((p) => p.name !== "provider_key" && p.name !== "repo_url")
-              .map((p) => (
-                <div key={p.name}>
-                  <label className="mb-2 block text-xs text-fg-3">
-                    {p.name.replace(/_/g, " ")}
-                    {p.required && <span className="ml-1 text-red-400">*</span>}
-                  </label>
-                  <input
-                    type="text"
-                    value={params[p.name] ?? p.default ?? ""}
-                    onChange={(e) => updateParam(p.name, e.target.value)}
-                    placeholder={p.default ?? `Enter ${p.name}...`}
-                    className={inputCls}
-                  />
-                </div>
-              ))}
-
-            {workflow.parameters.length === 0 && (
-              <p className="text-sm text-fg-4">
-                This workflow has no parameters.
-              </p>
-            )}
-
-            <button
-              onClick={() => void handleRun()}
-              disabled={runWorkflow.isPending}
-              className="flex items-center gap-2 rounded-lg bg-accent px-6 py-2.5 text-sm font-bold text-page shadow-[0_0_15px_rgba(0,255,64,0.3)] transition-all hover:bg-accent-hover disabled:opacity-50"
-            >
-              {runWorkflow.isPending ? (
-                <span className="material-symbols-outlined animate-spin text-base">
-                  progress_activity
-                </span>
-              ) : (
-                <span className="material-symbols-outlined text-lg">
-                  play_arrow
-                </span>
-              )}
-              Start Run
-            </button>
+              <button
+                onClick={() => void handleRun()}
+                disabled={runWorkflow.isPending}
+                className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+              >
+                {runWorkflow.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Play className="size-4" />
+                )}
+                Start run
+              </button>
+            </div>
           </div>
         ))}
 
       {/* Steps */}
-      <div className="rounded-xl border border-edge bg-surface-alt overflow-hidden">
-        <div className="flex items-center justify-between border-b border-edge bg-surface/70 px-6 py-4">
-          <h3 className="flex items-center gap-2 font-bold text-fg">
-            <span className="material-symbols-outlined text-sm text-accent">
-              schema
-            </span>
-            Workflow Steps
-          </h3>
-          <span className="rounded-full bg-edge px-2 py-0.5 font-mono text-xs text-fg-3">
+      <div className="overflow-hidden rounded-md border border-edge bg-surface">
+        <div className="flex items-center justify-between border-b border-edge px-5 py-3.5">
+          <span className="eyebrow">Workflow steps</span>
+          <span className="rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-xs text-fg-3">
             {workflow.steps.length} step{workflow.steps.length !== 1 ? "s" : ""}
           </span>
         </div>
@@ -297,37 +307,31 @@ export default function WorkflowDetail() {
           <div className="flex flex-col gap-2">
             {workflow.steps.map((step, i) => {
               const tc = stepTypeColors[step.type] ?? {
-                color: "text-fg-3",
-                bg: "bg-surface",
-                icon: "circle",
+                icon: Circle,
+                iconColor: "text-fg-3",
+                chip: "border-edge bg-surface-alt text-fg-3",
               };
+              const StepIcon = tc.icon;
               return (
                 <div key={step.name}>
-                  <div className="flex items-center gap-3 rounded-lg border border-edge bg-surface p-4 transition-colors hover:border-accent/30">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-alt font-mono text-sm font-bold text-accent/60">
+                  <div className="flex items-center gap-3 rounded-md border border-edge bg-surface-alt p-4">
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-surface font-mono text-sm font-semibold text-fg-3">
                       {i + 1}
                     </span>
-                    <span className={`material-symbols-outlined ${tc.color}`}>
-                      {tc.icon}
-                    </span>
+                    <StepIcon className={`size-4 shrink-0 ${tc.iconColor}`} />
                     <div className="flex-1">
-                      <span className="text-sm font-medium text-fg">
+                      <span className="font-mono text-sm text-fg">
                         {step.name}
                       </span>
                     </div>
                     <span
-                      className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${tc.bg} ${tc.color}`}
-                      style={{
-                        borderColor: "currentColor",
-                        borderWidth: "1px",
-                        opacity: 0.5,
-                      }}
+                      className={`rounded-[4px] border px-1.5 py-0.5 font-mono text-[10px] tracking-wider uppercase ${tc.chip}`}
                     >
                       {step.type}
                     </span>
                   </div>
                   {i < workflow.steps.length - 1 && (
-                    <div className="ml-[19px] flex h-4 items-center">
+                    <div className="ml-[33px] flex h-4 items-center">
                       <div className="h-full w-px bg-edge" />
                     </div>
                   )}

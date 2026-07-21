@@ -1,5 +1,22 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router";
+import {
+  Ban,
+  CircleCheck,
+  CircleX,
+  FileDiff,
+  FolderGit2,
+  GitMerge,
+  Hourglass,
+  List,
+  MessageSquare,
+  Play,
+  Plus,
+  RefreshCw,
+  Search,
+  SquareTerminal,
+  type LucideIcon,
+} from "lucide-react";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useSessions } from "../hooks/useSessions";
 import StatusBadge from "../components/StatusBadge";
@@ -9,16 +26,16 @@ import type { Session, SessionStatus } from "../types";
 const STATUS_FILTERS: {
   label: string;
   value: SessionStatus | "all";
-  icon: string;
+  icon: LucideIcon;
 }[] = [
-  { label: "All", value: "all", icon: "list" },
-  { label: "Queued", value: "pending", icon: "hourglass_empty" },
-  { label: "Running", value: "running", icon: "play_arrow" },
-  { label: "Completed", value: "completed", icon: "check_circle" },
-  { label: "Failed", value: "failed", icon: "warning" },
-  { label: "Canceled", value: "canceled", icon: "cancel" },
-  { label: "Awaiting", value: "awaiting_instruction", icon: "chat_bubble" },
-  { label: "PR Created", value: "pr_created", icon: "call_merge" },
+  { label: "All", value: "all", icon: List },
+  { label: "Queued", value: "pending", icon: Hourglass },
+  { label: "Running", value: "running", icon: Play },
+  { label: "Completed", value: "completed", icon: CircleCheck },
+  { label: "Failed", value: "failed", icon: CircleX },
+  { label: "Canceled", value: "canceled", icon: Ban },
+  { label: "Awaiting", value: "awaiting_instruction", icon: MessageSquare },
+  { label: "PR created", value: "pr_created", icon: GitMerge },
 ];
 
 export default function SessionList() {
@@ -65,75 +82,69 @@ export default function SessionList() {
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-fg">
+          <p className="eyebrow mb-1">Operations</p>
+          <h2 className="font-expanded text-2xl font-extrabold tracking-tight text-fg">
             Sessions
-          </h1>
-          <p className="mt-1 text-sm text-fg-3">
-            Manage and monitor your AI coding sessions
-          </p>
+          </h2>
         </div>
         <div className="flex gap-3">
           <button
             onClick={() => void refetch()}
-            className="group flex h-10 items-center gap-2 rounded-lg border border-edge bg-surface-alt px-4 text-sm font-bold text-fg-2 transition-all hover:border-accent hover:text-accent"
+            className="flex items-center gap-2 rounded-md border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg"
           >
-            <span
-              className={`material-symbols-outlined text-xl transition-transform group-hover:rotate-180 ${isLoading ? "animate-spin" : ""}`}
-            >
-              refresh
-            </span>
+            <RefreshCw
+              className={`size-4 ${isLoading ? "animate-spin" : ""}`}
+            />
             Refresh
           </button>
           <button
             onClick={() => void navigate("/sessions/new")}
-            className="flex h-10 items-center gap-2 rounded-lg bg-accent px-4 text-sm font-bold text-page shadow-[0_0_15px_rgba(0,255,64,0.3)] transition-colors hover:bg-accent-hover"
+            className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover"
           >
-            <span className="material-symbols-outlined text-xl">add</span>
-            New Session
+            <Plus className="size-4" />
+            New session
           </button>
         </div>
       </div>
 
       {/* Search and filters */}
-      <div className="flex flex-col gap-4 md:flex-row">
-        <div className="group relative flex-1">
-          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-fg-4 transition-colors group-focus-within:text-accent">
-            <span className="material-symbols-outlined">search</span>
-          </div>
+      <div className="flex flex-col gap-3 md:flex-row">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-4" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="> Search by ID or prompt..."
-            className="h-12 w-full rounded-lg border border-edge bg-surface-alt pl-10 pr-4 font-mono text-sm text-fg placeholder-fg-4 transition-all focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            placeholder="Search by ID, repo, or prompt"
+            className="w-full rounded-md border border-edge bg-input py-2 pr-3 pl-9 font-mono text-sm text-fg placeholder-fg-4 transition-colors focus:border-accent focus:outline-none"
           />
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0">
+        <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0">
           {STATUS_FILTERS.map((f) => {
             const count =
               f.value === "all"
                 ? sessions.length
                 : (statusCounts[f.value] ?? 0);
+            const active = statusFilter === f.value;
+            const Icon = f.icon;
             return (
               <button
                 key={f.value}
                 onClick={() => setStatusFilter(f.value)}
-                className={`flex h-12 items-center gap-2 whitespace-nowrap rounded-lg border px-4 text-sm font-medium transition-colors ${
-                  statusFilter === f.value
-                    ? "border-accent bg-accent-soft text-accent"
-                    : "border-edge bg-surface text-fg-3 hover:border-fg-4 hover:text-fg"
+                className={`flex items-center gap-1.5 rounded-md border px-3 py-2 font-mono text-xs whitespace-nowrap transition-colors ${
+                  active
+                    ? "border-accent-muted bg-accent-soft text-accent"
+                    : "border-edge bg-surface text-fg-3 hover:text-fg"
                 }`}
               >
-                <span className="material-symbols-outlined text-lg">
-                  {f.icon}
-                </span>
+                <Icon className="size-3.5" />
                 {f.label}
                 {count > 0 && f.value !== "all" && (
                   <span
-                    className={`ml-1 rounded px-1.5 py-0.5 text-[10px] ${
-                      statusFilter === f.value
-                        ? "bg-accent/20 text-accent"
-                        : "bg-edge text-fg-2"
+                    className={`rounded-[4px] px-1.5 py-0.5 text-[10px] ${
+                      active
+                        ? "bg-accent/15 text-accent"
+                        : "bg-surface-alt text-fg-3"
                     }`}
                   >
                     {count}
@@ -149,7 +160,7 @@ export default function SessionList() {
       {!isLoading && sessions.length === 0 ? (
         <EmptyState onNew={() => void navigate("/sessions/new")} />
       ) : filteredSessions.length === 0 ? (
-        <p className="py-12 text-center text-sm text-fg-2">
+        <p className="py-12 text-center text-sm text-fg-3">
           No sessions match your filters.
         </p>
       ) : (
@@ -167,7 +178,7 @@ export default function SessionList() {
       {/* Pagination info */}
       {filteredSessions.length > 0 && (
         <div className="flex items-center justify-between border-t border-edge pt-6">
-          <span className="text-sm text-fg-4">
+          <span className="text-xs text-fg-4">
             Showing {filteredSessions.length} of {sessions.length} sessions
           </span>
         </div>
@@ -194,81 +205,40 @@ function SessionRow({
   return (
     <button
       onClick={onClick}
-      className={`group relative flex w-full flex-col gap-4 rounded-lg border p-5 text-left transition-all duration-300 md:flex-row ${
-        isFailed
-          ? "border-edge hover:border-red-500/50"
-          : "border-edge hover:border-accent/50"
-      } bg-surface-alt cursor-pointer overflow-hidden`}
+      className="relative flex w-full cursor-pointer flex-col gap-4 overflow-hidden rounded-md border border-edge bg-surface p-5 text-left transition-colors hover:border-fg-4 md:flex-row"
     >
-      {/* Left color indicator */}
+      {/* Left status rail */}
       {isRunning && (
-        <div className="absolute bottom-0 left-0 top-0 w-1 bg-accent" />
+        <span className="absolute inset-y-0 left-0 w-0.5 bg-accent" />
       )}
       {isFailed && (
-        <div className="absolute bottom-0 left-0 top-0 w-1 bg-red-500/50" />
+        <span className="absolute inset-y-0 left-0 w-0.5 bg-danger" />
       )}
 
       {/* Session ID & timing */}
       <div className="flex min-w-[140px] items-center gap-3 md:flex-col md:items-start md:gap-1">
-        <div className="flex items-center gap-2">
-          <span
-            className={`material-symbols-outlined ${
-              isRunning
-                ? "animate-pulse text-accent"
-                : isFailed
-                  ? "text-red-500"
-                  : session.status === "completed"
-                    ? "text-fg-3"
-                    : "text-yellow-500"
-            }`}
-          >
-            {isRunning
-              ? "terminal"
-              : isFailed
-                ? "error"
-                : session.status === "completed"
-                  ? "check_circle"
-                  : "pending"}
-          </span>
-          <span
-            className={`font-mono font-bold tracking-wider ${
-              isRunning
-                ? "text-accent"
-                : isFailed
-                  ? "text-red-400"
-                  : session.status === "completed"
-                    ? "text-fg-3"
-                    : "text-fg"
-            }`}
-          >
-            {session.id.slice(0, 8).toUpperCase()}
-          </span>
-        </div>
-        <span className="font-mono text-xs text-fg-4">
+        <span className="font-mono text-sm text-fg-4">
+          {session.id.slice(0, 8)}
+        </span>
+        <span className="text-xs text-fg-4">
           {formatTimeAgo(session.created_at)}
         </span>
       </div>
 
       {/* Content */}
-      <div className="flex flex-1 flex-col gap-2">
-        <div className="flex items-center gap-2 font-mono text-sm text-fg-3">
-          <span className="material-symbols-outlined text-base">folder</span>
-          <span className="transition-colors hover:text-accent">
-            {repoShort}
-          </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <div className="flex items-center gap-1.5 font-mono text-xs text-fg-3">
+          <FolderGit2 className="size-3.5 shrink-0 text-fg-4" />
+          <span className="truncate">{repoShort}</span>
         </div>
-        <p
-          className={`text-sm font-medium ${
-            session.status === "completed" ? "text-fg-3" : "text-fg"
-          }`}
-        >
+        <p className="text-sm text-fg-2">
           {session.prompt.length > 150
             ? session.prompt.slice(0, 150) + "..."
             : session.prompt}
         </p>
         {session.error && (
-          <p className="mt-1 font-mono text-xs text-red-400">
-            &gt; {session.error.slice(0, 100)}
+          <p className="truncate font-mono text-xs text-danger">
+            {session.error.slice(0, 100)}
           </p>
         )}
       </div>
@@ -278,7 +248,7 @@ function SessionRow({
         <StatusBadge status={session.status} />
         <div className="flex items-center gap-2">
           {session.session_type && (
-            <span className="rounded border border-fg-4/30 px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-fg-4">
+            <span className="rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-fg-3 uppercase">
               {session.session_type}
             </span>
           )}
@@ -296,10 +266,8 @@ function SessionRow({
               />
             )}
           {session.pr_url && (
-            <span className="flex items-center gap-0.5 font-mono text-[10px] text-teal-500">
-              <span className="material-symbols-outlined text-xs">
-                call_merge
-              </span>
+            <span className="flex items-center gap-1 font-mono text-[10px] text-info">
+              <GitMerge className="size-3" />
               PR
             </span>
           )}
@@ -321,11 +289,9 @@ function DiffStats({
     if (match && (match[1] !== "0" || match[2] !== "0")) {
       return (
         <span className="flex items-center gap-1.5 font-mono text-xs">
-          <span className="material-symbols-outlined text-sm text-fg-4">
-            difference
-          </span>
-          <span className="text-emerald-400">+{match[1]}</span>
-          <span className="text-red-400">-{match[2]}</span>
+          <FileDiff className="size-3.5 text-fg-4" />
+          <span className="text-ok">+{match[1]}</span>
+          <span className="text-danger">-{match[2]}</span>
         </span>
       );
     }
@@ -333,7 +299,7 @@ function DiffStats({
   if (filesCount > 0) {
     return (
       <span className="flex items-center gap-1 font-mono text-xs text-fg-4">
-        <span className="material-symbols-outlined text-sm">difference</span>
+        <FileDiff className="size-3.5" />
         {filesCount} files
       </span>
     );
@@ -343,20 +309,17 @@ function DiffStats({
 
 function EmptyState({ onNew }: { onNew: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center py-20">
-      <span className="material-symbols-outlined mb-4 text-5xl text-slate-700">
-        task
-      </span>
-      <p className="mb-1 text-lg font-medium text-fg-3">No sessions yet</p>
-      <p className="mb-6 text-sm text-fg-4">
-        Create your first AI coding session to get started.
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <SquareTerminal className="mb-3 size-6 text-fg-4" strokeWidth={1.75} />
+      <p className="mb-6 text-sm text-fg-3">
+        No sessions yet. Create one to get started.
       </p>
       <button
         onClick={onNew}
-        className="flex items-center gap-2 rounded-lg bg-accent px-6 py-3 text-sm font-bold text-page shadow-[0_0_15px_rgba(0,255,64,0.3)] transition-colors hover:bg-accent-hover"
+        className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover"
       >
-        <span className="material-symbols-outlined text-xl">add</span>
-        New Session
+        <Plus className="size-4" />
+        New session
       </button>
     </div>
   );

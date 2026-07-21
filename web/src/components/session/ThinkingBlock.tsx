@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Brain, ChevronDown } from "lucide-react";
 
 export function ThinkingBlock({
   ts,
@@ -15,27 +16,23 @@ export function ThinkingBlock({
     <div className="mb-0.5">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-start gap-2 rounded px-2 py-1 text-left transition-colors hover:bg-surface/30"
+        className="flex w-full items-start gap-2 rounded-md px-2 py-1 text-left transition-colors hover:bg-surface-alt"
       >
-        <span className="w-14 shrink-0 font-mono text-[10px] text-fg-4 pt-0.5">
+        <span className="w-14 shrink-0 pt-0.5 font-mono text-[10px] text-fg-4">
           {ts}
         </span>
-        <span className="material-symbols-outlined text-[14px] text-fg-4 mt-0.5 italic">
-          psychology
+        <Brain className="mt-0.5 size-3.5 shrink-0 text-info/70" />
+        <span className="flex-1 truncate font-mono text-[11px] text-fg-4 italic">
+          {expanded ? "Thinking" : preview}
         </span>
-        <span className="flex-1 text-[11px] text-fg-4 italic truncate">
-          {expanded ? "" : preview}
-        </span>
-        <span
-          className="material-symbols-outlined text-[12px] text-fg-4"
+        <ChevronDown
+          className="size-3.5 shrink-0 text-fg-4 transition-transform"
           style={{ transform: expanded ? "rotate(180deg)" : "none" }}
-        >
-          expand_more
-        </span>
+        />
       </button>
       {expanded && (
-        <div className="ml-[72px] mr-2 mb-1 rounded border-l-2 border-edge bg-surface/20 px-3 py-2 overflow-x-auto">
-          <pre className="font-mono text-[11px] text-fg-4 italic whitespace-pre-wrap break-words leading-relaxed">
+        <div className="mr-2 mb-1 ml-[72px] overflow-x-auto rounded-md border-l-2 border-info/30 bg-surface-alt px-3 py-2">
+          <pre className="font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words text-fg-3 italic">
             {content}
           </pre>
         </div>

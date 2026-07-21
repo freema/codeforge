@@ -1,5 +1,18 @@
 import { useState, useMemo, type FormEvent } from "react";
 import { useNavigate } from "react-router";
+import {
+  ArrowLeft,
+  BookOpen,
+  Bug,
+  Building2,
+  ChevronRight,
+  Code,
+  KeyRound,
+  Loader2,
+  Network,
+  Save,
+  type LucideIcon,
+} from "lucide-react";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useWorkflows } from "../hooks/useWorkflows";
 import { useKeys } from "../hooks/useKeys";
@@ -10,18 +23,18 @@ import { useApi } from "../hooks/useApi";
 import { useToast } from "../context/ToastContext";
 import Select from "../components/Select";
 
-const workflowIcons: Record<string, string> = {
-  "sentry-fixer": "bug_report",
-  "github-issue-fixer": "code",
-  "gitlab-issue-fixer": "code",
-  "knowledge-update": "menu_book",
+const workflowIcons: Record<string, LucideIcon> = {
+  "sentry-fixer": Bug,
+  "github-issue-fixer": Code,
+  "gitlab-issue-fixer": Code,
+  "knowledge-update": BookOpen,
 };
 
 const inputCls =
-  "w-full rounded-lg border border-edge bg-surface px-3 py-2.5 text-sm text-fg font-mono placeholder-fg-4 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors";
+  "w-full rounded-md border border-edge bg-input px-3 py-2 font-mono text-sm text-fg placeholder-fg-4 transition-colors focus:border-accent focus:outline-none";
 
 export default function WorkflowCreate() {
-  usePageTitle("Create Workflow");
+  usePageTitle("New workflow");
   const navigate = useNavigate();
   const { toast } = useToast();
   const api = useApi();
@@ -154,25 +167,24 @@ export default function WorkflowCreate() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => void navigate("/workflows")}
-            className="flex items-center rounded-lg border border-edge p-2 text-fg-3 transition-colors hover:border-accent/30 hover:text-accent"
+            className="rounded-md p-2 text-fg-3 transition-colors hover:bg-surface-alt hover:text-fg"
+            title="Back to workflows"
           >
-            <span className="material-symbols-outlined text-lg">
-              arrow_back
-            </span>
+            <ArrowLeft className="size-5" />
           </button>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-fg">
-              Create Workflow
-            </h1>
-            <p className="mt-0.5 text-sm text-fg-3">
-              Pick a template to get started
-            </p>
+            <p className="eyebrow mb-1">Workflows</p>
+            <h2 className="font-expanded text-2xl font-extrabold tracking-tight text-fg">
+              New workflow
+            </h2>
           </div>
         </div>
 
+        <p className="text-sm text-fg-3">Pick a template to get started.</p>
+
         <div className="grid gap-3">
           {builtinTemplates.map((t) => {
-            const icon = workflowIcons[t.name] || "account_tree";
+            const Icon = workflowIcons[t.name] ?? Network;
             return (
               <button
                 key={t.name}
@@ -186,31 +198,27 @@ export default function WorkflowCreate() {
                   }
                   setParams(defaults);
                 }}
-                className="group flex items-start gap-4 rounded-xl border border-edge bg-surface-alt p-5 text-left transition-all hover:border-accent/40 hover:bg-accent/5"
+                className="group flex items-start gap-4 rounded-md border border-edge bg-surface p-5 text-left transition-colors hover:border-fg-4"
               >
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-surface border border-edge group-hover:border-accent/30">
-                  <span className="material-symbols-outlined text-2xl text-fg-3 group-hover:text-accent">
-                    {icon}
-                  </span>
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-md border border-edge bg-surface-alt">
+                  <Icon className="size-5 text-fg-3" strokeWidth={1.75} />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-fg group-hover:text-accent">
+                  <p className="font-mono text-sm font-semibold text-fg">
                     {t.name}
                   </p>
-                  <p className="mt-0.5 text-xs text-fg-4">{t.description}</p>
+                  <p className="mt-0.5 text-xs text-fg-3">{t.description}</p>
                   <div className="mt-2 flex items-center gap-2">
-                    <span className="rounded-full border border-edge px-2 py-0.5 text-[10px] font-bold text-fg-4">
+                    <span className="rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] text-fg-3">
                       {t.steps.length} steps
                     </span>
-                    <span className="rounded-full border border-edge px-2 py-0.5 text-[10px] font-bold text-fg-4">
+                    <span className="rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] text-fg-3">
                       {t.parameters.filter((p) => p.required).length} required
                       params
                     </span>
                   </div>
                 </div>
-                <span className="material-symbols-outlined ml-auto mt-1 text-lg text-fg-4 group-hover:text-accent">
-                  chevron_right
-                </span>
+                <ChevronRight className="mt-1 ml-auto size-4 shrink-0 text-fg-4 transition-colors group-hover:text-fg" />
               </button>
             );
           })}
@@ -229,194 +237,190 @@ export default function WorkflowCreate() {
             setParams({});
             setError("");
           }}
-          className="flex items-center rounded-lg border border-edge p-2 text-fg-3 transition-colors hover:border-accent/30 hover:text-accent"
+          className="rounded-md p-2 text-fg-3 transition-colors hover:bg-surface-alt hover:text-fg"
+          title="Back to templates"
         >
-          <span className="material-symbols-outlined text-lg">arrow_back</span>
+          <ArrowLeft className="size-5" />
         </button>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-fg">
-            Configure Workflow
-          </h1>
-          <p className="mt-0.5 text-sm text-fg-3">
-            Template:{" "}
-            <span className="font-mono text-accent">{selectedTemplate}</span>
-          </p>
+          <p className="eyebrow mb-1">Workflows</p>
+          <h2 className="font-expanded text-2xl font-extrabold tracking-tight text-fg">
+            New workflow
+          </h2>
+          <p className="mt-1 font-mono text-xs text-fg-3">{selectedTemplate}</p>
         </div>
       </div>
 
       <form onSubmit={(e) => void handleSubmit(e)} className="space-y-6">
         {/* Name (optional override) */}
-        <section className="rounded-xl border border-edge bg-surface/50 p-6 space-y-4">
-          <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-            <span className="material-symbols-outlined text-accent text-base">
-              label
-            </span>
-            Name
-          </h3>
-          <input
-            type="text"
-            value={customName}
-            onChange={(e) => setCustomName(e.target.value)}
-            placeholder={`Auto: ${generateName() || "will be generated..."}`}
-            className={inputCls}
-          />
-          <p className="text-[10px] text-fg-4">
-            Leave empty to auto-generate from template + parameters.
-          </p>
+        <section className="overflow-hidden rounded-md border border-edge bg-surface">
+          <div className="border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">Name</span>
+          </div>
+          <div className="space-y-3 p-5">
+            <input
+              type="text"
+              value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              placeholder={`Auto: ${generateName() || "will be generated"}`}
+              className={inputCls}
+            />
+            <p className="text-xs text-fg-4">
+              Leave empty to auto-generate from template and parameters.
+            </p>
+          </div>
         </section>
 
         {/* Parameters */}
-        <section className="rounded-xl border border-edge bg-surface/50 p-6 space-y-4">
-          <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-            <span className="material-symbols-outlined text-accent text-base">
-              tune
-            </span>
-            Parameters
-          </h3>
-
-          {isSentryFixer ? (
-            <SentryFixerParams
-              params={params}
-              updateParam={updateParam}
-              sentryKeys={sentryKeys}
-              effectiveSentryKey={effectiveSentryKey}
-              sentryOrgs={sentryOrgs}
-              sentryProjects={sentryProjects}
-              gitKeys={gitKeys}
-              repos={repos}
-            />
-          ) : (
-            template?.parameters.map((p) => {
-              // Smart: provider_key with git keys selector
-              if (p.name === "provider_key" && gitKeys.length > 0) {
-                return (
-                  <div key={p.name}>
-                    <label className="mb-1.5 block text-xs text-fg-3">
-                      Provider Key
-                      {p.required && (
-                        <span className="ml-1 text-red-400">*</span>
-                      )}
-                    </label>
-                    <div className="flex gap-2">
-                      {gitKeys.map((k) => (
-                        <button
-                          key={k.name}
-                          type="button"
-                          onClick={() => updateParam("provider_key", k.name)}
-                          className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${
-                            params.provider_key === k.name
-                              ? "border-accent bg-accent/10 text-accent"
-                              : "border-edge text-fg-3 hover:border-fg-4"
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-lg">
-                            code
-                          </span>
-                          {k.name}
-                        </button>
-                      ))}
+        <section className="overflow-hidden rounded-md border border-edge bg-surface">
+          <div className="border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">Parameters</span>
+          </div>
+          <div className="space-y-4 p-5">
+            {isSentryFixer ? (
+              <SentryFixerParams
+                params={params}
+                updateParam={updateParam}
+                sentryKeys={sentryKeys}
+                effectiveSentryKey={effectiveSentryKey}
+                sentryOrgs={sentryOrgs}
+                sentryProjects={sentryProjects}
+                gitKeys={gitKeys}
+                repos={repos}
+              />
+            ) : (
+              template?.parameters.map((p) => {
+                // Smart: provider_key with git keys selector
+                if (p.name === "provider_key" && gitKeys.length > 0) {
+                  return (
+                    <div key={p.name}>
+                      <label className="mb-1.5 block text-xs font-medium text-fg-3">
+                        Provider key
+                        {p.required && (
+                          <span className="ml-1 text-danger">*</span>
+                        )}
+                      </label>
+                      <div className="flex gap-2">
+                        {gitKeys.map((k) => (
+                          <button
+                            key={k.name}
+                            type="button"
+                            onClick={() => updateParam("provider_key", k.name)}
+                            className={`flex items-center gap-2 rounded-md border px-4 py-2 font-mono text-sm transition-colors ${
+                              params.provider_key === k.name
+                                ? "border-accent-muted bg-accent-soft text-accent"
+                                : "border-edge bg-surface text-fg-2 hover:border-fg-4 hover:text-fg"
+                            }`}
+                          >
+                            <Code className="size-4" />
+                            {k.name}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                );
-              }
+                  );
+                }
 
-              // Smart: repo_url with repo selector
-              if (p.name === "repo_url" && repos && repos.length > 0) {
+                // Smart: repo_url with repo selector
+                if (p.name === "repo_url" && repos && repos.length > 0) {
+                  return (
+                    <div key={p.name}>
+                      <label className="mb-1.5 block text-xs font-medium text-fg-3">
+                        Repository
+                        {p.required && (
+                          <span className="ml-1 text-danger">*</span>
+                        )}
+                      </label>
+                      <Select
+                        value={params.repo_url || ""}
+                        onChange={(v) => updateParam("repo_url", v)}
+                        placeholder="Select repository..."
+                        options={repos.map((r) => ({
+                          value: r.clone_url,
+                          label: r.full_name,
+                        }))}
+                      />
+                    </div>
+                  );
+                }
+
+                // Smart: key_name for sentry/provider keys
+                if (p.name === "key_name" && allKeys && allKeys.length > 0) {
+                  return (
+                    <div key={p.name}>
+                      <label className="mb-1.5 block text-xs font-medium text-fg-3">
+                        Auth key
+                        {p.required && (
+                          <span className="ml-1 text-danger">*</span>
+                        )}
+                      </label>
+                      <Select
+                        value={params.key_name || ""}
+                        onChange={(v) => updateParam("key_name", v)}
+                        placeholder="Select key..."
+                        options={allKeys.map((k) => ({
+                          value: k.name,
+                          label: `${k.name} (${k.provider})`,
+                        }))}
+                      />
+                    </div>
+                  );
+                }
+
+                // Default: text input
                 return (
                   <div key={p.name}>
-                    <label className="mb-1.5 block text-xs text-fg-3">
-                      Repository
+                    <label className="mb-1.5 block text-xs font-medium text-fg-3">
+                      {p.name.replace(/_/g, " ")}
                       {p.required && (
-                        <span className="ml-1 text-red-400">*</span>
+                        <span className="ml-1 text-danger">*</span>
                       )}
                     </label>
-                    <Select
-                      value={params.repo_url || ""}
-                      onChange={(v) => updateParam("repo_url", v)}
-                      placeholder="Select repository..."
-                      options={repos.map((r) => ({
-                        value: r.clone_url,
-                        label: r.full_name,
-                      }))}
+                    <input
+                      type="text"
+                      value={params[p.name] ?? p.default ?? ""}
+                      onChange={(e) => updateParam(p.name, e.target.value)}
+                      placeholder={p.default ?? `Enter ${p.name}...`}
+                      className={inputCls}
                     />
                   </div>
                 );
-              }
-
-              // Smart: key_name for sentry/provider keys
-              if (p.name === "key_name" && allKeys && allKeys.length > 0) {
-                return (
-                  <div key={p.name}>
-                    <label className="mb-1.5 block text-xs text-fg-3">
-                      Auth Key
-                      {p.required && (
-                        <span className="ml-1 text-red-400">*</span>
-                      )}
-                    </label>
-                    <Select
-                      value={params.key_name || ""}
-                      onChange={(v) => updateParam("key_name", v)}
-                      placeholder="Select key..."
-                      options={allKeys.map((k) => ({
-                        value: k.name,
-                        label: `${k.name} (${k.provider})`,
-                      }))}
-                    />
-                  </div>
-                );
-              }
-
-              // Default: text input
-              return (
-                <div key={p.name}>
-                  <label className="mb-1.5 block text-xs text-fg-3">
-                    {p.name.replace(/_/g, " ")}
-                    {p.required && <span className="ml-1 text-red-400">*</span>}
-                  </label>
-                  <input
-                    type="text"
-                    value={params[p.name] ?? p.default ?? ""}
-                    onChange={(e) => updateParam(p.name, e.target.value)}
-                    placeholder={p.default ?? `Enter ${p.name}...`}
-                    className={inputCls}
-                  />
-                </div>
-              );
-            })
-          )}
+              })
+            )}
+          </div>
         </section>
 
         {/* Timeout */}
-        <section className="rounded-xl border border-edge bg-surface/50 p-6 space-y-4">
-          <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-            <span className="material-symbols-outlined text-accent text-base">
-              timer
-            </span>
-            Timeout
-          </h3>
-          <div className="flex items-center gap-4">
-            <input
-              type="range"
-              min={5}
-              max={30}
-              step={1}
-              value={timeoutMinutes}
-              onChange={(e) => setTimeoutMinutes(Number(e.target.value))}
-              className="flex-1 accent-accent"
-            />
-            <span className="w-16 text-center font-mono text-sm font-bold text-accent">
-              {timeoutMinutes} min
-            </span>
+        <section className="overflow-hidden rounded-md border border-edge bg-surface">
+          <div className="border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">Timeout</span>
           </div>
-          <p className="text-[10px] text-fg-4">
-            If the session exceeds this limit it will complete gracefully — you
-            can still create a PR or continue with a follow-up instruction.
-          </p>
+          <div className="space-y-3 p-5">
+            <div className="flex items-center gap-4">
+              <input
+                type="range"
+                min={5}
+                max={30}
+                step={1}
+                value={timeoutMinutes}
+                onChange={(e) => setTimeoutMinutes(Number(e.target.value))}
+                className="flex-1 accent-accent"
+              />
+              <span className="w-16 text-center font-mono text-sm font-semibold text-fg">
+                {timeoutMinutes} min
+              </span>
+            </div>
+            <p className="text-xs text-fg-4">
+              If the session exceeds this limit it will complete gracefully —
+              you can still create a PR or continue with a follow-up
+              instruction.
+            </p>
+          </div>
         </section>
 
         {/* Error */}
         {error && (
-          <div className="rounded-lg border border-red-900/50 bg-red-900/20 px-4 py-3 text-sm text-red-400">
+          <div className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
             {error}
           </div>
         )}
@@ -426,21 +430,19 @@ export default function WorkflowCreate() {
           <button
             type="submit"
             disabled={createConfig.isPending}
-            className="flex items-center gap-2 rounded-lg bg-accent px-6 py-2.5 text-sm font-bold text-page shadow-[0_0_15px_rgba(0,255,64,0.3)] transition-all hover:bg-accent-hover disabled:opacity-50"
+            className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
           >
             {createConfig.isPending ? (
-              <span className="material-symbols-outlined animate-spin text-base">
-                progress_activity
-              </span>
+              <Loader2 className="size-4 animate-spin" />
             ) : (
-              <span className="material-symbols-outlined text-lg">save</span>
+              <Save className="size-4" />
             )}
-            Save Workflow
+            Save workflow
           </button>
           <button
             type="button"
             onClick={() => void navigate("/workflows")}
-            className="rounded-lg border border-edge px-4 py-2.5 text-sm text-fg-3 transition-colors hover:text-fg-2"
+            className="rounded-md border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg"
           >
             Cancel
           </button>
@@ -483,11 +485,11 @@ function SentryFixerParams({
       {/* Sentry Key */}
       <div>
         <label className="mb-1.5 block text-xs font-medium text-fg-3">
-          Sentry Key
+          Sentry key
         </label>
         {sentryKeys.length === 1 ? (
-          <div className="flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5 text-sm font-mono text-accent">
-            <span className="material-symbols-outlined text-base">vpn_key</span>
+          <div className="flex items-center gap-2 rounded-md border border-accent-muted bg-accent-soft px-3 py-2 font-mono text-sm text-accent">
+            <KeyRound className="size-4" />
             {sentryKeys[0]!.name}
           </div>
         ) : sentryKeys.length > 1 ? (
@@ -516,18 +518,14 @@ function SentryFixerParams({
           </label>
           {!sentryOrgs ? (
             <div className="flex items-center gap-2 py-2.5 text-xs text-fg-4">
-              <span className="material-symbols-outlined animate-spin text-sm">
-                progress_activity
-              </span>
+              <Loader2 className="size-3.5 animate-spin" />
               Loading organizations...
             </div>
           ) : sentryOrgs.length === 1 ? (
-            <div className="flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5 text-sm font-mono text-accent">
-              <span className="material-symbols-outlined text-base">
-                corporate_fare
-              </span>
+            <div className="flex items-center gap-2 rounded-md border border-accent-muted bg-accent-soft px-3 py-2 font-mono text-sm text-accent">
+              <Building2 className="size-4" />
               {sentryOrgs[0]!.name}
-              <span className="text-accent/50 text-xs">
+              <span className="text-xs text-accent/60">
                 ({sentryOrgs[0]!.slug})
               </span>
             </div>
@@ -558,9 +556,7 @@ function SentryFixerParams({
           </label>
           {!sentryProjects ? (
             <div className="flex items-center gap-2 py-2.5 text-xs text-fg-4">
-              <span className="material-symbols-outlined animate-spin text-sm">
-                progress_activity
-              </span>
+              <Loader2 className="size-3.5 animate-spin" />
               Loading projects...
             </div>
           ) : sentryProjects.length > 0 ? (
@@ -583,7 +579,7 @@ function SentryFixerParams({
       {gitKeys.length > 0 && (
         <div>
           <label className="mb-1.5 block text-xs font-medium text-fg-3">
-            Git Provider
+            Git provider
           </label>
           <div className="flex gap-2">
             {gitKeys.map((k) => (
@@ -594,13 +590,13 @@ function SentryFixerParams({
                   updateParam("provider_key", k.name);
                   updateParam("repo_url", "");
                 }}
-                className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${
+                className={`flex items-center gap-2 rounded-md border px-4 py-2 font-mono text-sm transition-colors ${
                   params.provider_key === k.name
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-edge text-fg-3 hover:border-fg-4"
+                    ? "border-accent-muted bg-accent-soft text-accent"
+                    : "border-edge bg-surface text-fg-2 hover:border-fg-4 hover:text-fg"
                 }`}
               >
-                <span className="material-symbols-outlined text-lg">code</span>
+                <Code className="size-4" />
                 {k.name}
               </button>
             ))}
@@ -640,7 +636,7 @@ function SentryFixerParams({
             onChange={(e) => updateParam("max_issues", e.target.value)}
             className="flex-1 accent-accent"
           />
-          <span className="w-8 text-center font-mono text-sm font-bold text-accent">
+          <span className="w-8 text-center font-mono text-sm font-semibold text-fg">
             {params.max_issues || "5"}
           </span>
         </div>

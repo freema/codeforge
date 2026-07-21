@@ -1,5 +1,21 @@
 import { useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router";
+import {
+  Building2,
+  ChartLine,
+  Check,
+  CircleCheck,
+  Copy,
+  KeyRound,
+  Loader2,
+  Plus,
+  Save,
+  SquarePen,
+  Trash2,
+  Users,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { usePageTitle } from "../hooks/usePageTitle";
 import {
   useTenants,
@@ -16,9 +32,9 @@ import type { CreateTenantResult, Tenant, TenantTier } from "../types";
 
 type Tab = "tenants" | "keypool";
 
-const tabs: { id: Tab; label: string; icon: string }[] = [
-  { id: "tenants", label: "Tenants", icon: "group" },
-  { id: "keypool", label: "Key Pool", icon: "key" },
+const tabs: { id: Tab; label: string; icon: LucideIcon }[] = [
+  { id: "tenants", label: "Tenants", icon: Users },
+  { id: "keypool", label: "Key pool", icon: KeyRound },
 ];
 
 const VALID_TABS = new Set<Tab>(["tenants", "keypool"]);
@@ -36,25 +52,25 @@ export default function Admin() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-fg">Admin</h1>
-        <p className="mt-1 text-sm text-fg-3">
-          Manage tenants and the operator key pool
-        </p>
+        <p className="eyebrow mb-1">Administration</p>
+        <h2 className="font-expanded text-2xl font-extrabold tracking-tight text-fg">
+          Admin
+        </h2>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-2 border-b border-edge pb-px">
-        {tabs.map(({ id, label, icon }) => (
+        {tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setActiveTab(id)}
             className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
               activeTab === id
-                ? "border-accent text-accent"
+                ? "border-accent text-fg"
                 : "border-transparent text-fg-3 hover:text-fg"
             }`}
           >
-            <span className="material-symbols-outlined text-lg">{icon}</span>
+            <Icon className="size-4" />
             {label}
           </button>
         ))}
@@ -67,7 +83,9 @@ export default function Admin() {
 }
 
 const inputCls =
-  "w-full rounded-lg border border-edge bg-surface px-3 py-2.5 text-sm text-fg font-mono placeholder-fg-4 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors";
+  "w-full rounded-md border border-edge bg-input px-3 py-2 text-sm text-fg placeholder-fg-4 transition-colors focus:border-accent focus:outline-none";
+
+const monoInputCls = `${inputCls} font-mono`;
 
 const TIERS: { value: TenantTier; label: string }[] = [
   { value: "free", label: "Free" },
@@ -75,19 +93,9 @@ const TIERS: { value: TenantTier; label: string }[] = [
   { value: "enterprise", label: "Enterprise" },
 ];
 
-const TIER_BADGE: Record<string, string> = {
-  free: "border-edge bg-surface text-fg-3",
-  pro: "border-cyan-500/30 bg-cyan-500/10 text-cyan-400",
-  enterprise: "border-purple-500/30 bg-purple-500/10 text-purple-400",
-};
-
 function TierBadge({ tier }: { tier: string }) {
   return (
-    <span
-      className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-        TIER_BADGE[tier] ?? "border-edge bg-surface text-fg-3"
-      }`}
-    >
+    <span className="rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-fg-3 uppercase">
       {tier}
     </span>
   );
@@ -114,37 +122,39 @@ function CreatedTokenPanel({
   }
 
   return (
-    <div className="rounded-xl border border-accent/30 bg-accent/5 p-5">
+    <div className="rounded-md border border-ok/30 bg-ok/10 p-5">
       <div className="flex items-center justify-between">
-        <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-          <span className="material-symbols-outlined text-accent text-base">
-            check_circle
-          </span>
-          Tenant &quot;{result.tenant.name}&quot; created
-        </h3>
+        <div className="flex items-center gap-2">
+          <CircleCheck className="size-4 text-ok" />
+          <h3 className="text-sm font-semibold text-fg">
+            Tenant &quot;{result.tenant.name}&quot; created
+          </h3>
+        </div>
         <button
           onClick={onDismiss}
-          className="rounded-md p-1 text-fg-4 transition-colors hover:text-fg"
+          className="rounded-md p-1.5 text-fg-4 transition-colors hover:bg-surface-alt hover:text-fg"
           title="Dismiss"
         >
-          <span className="material-symbols-outlined text-base">close</span>
+          <X className="size-4" />
         </button>
       </div>
-      <p className="mt-2 text-xs text-amber-400">
+      <p className="mt-2 text-xs text-warn">
         This API token is shown only once. Copy it now — it cannot be retrieved
         later.
       </p>
       <div className="mt-3 flex items-center gap-2">
-        <code className="flex-1 overflow-x-auto rounded-lg border border-edge bg-surface px-3 py-2.5 font-mono text-xs text-fg">
+        <code className="flex-1 overflow-x-auto rounded-md border border-edge bg-input px-3 py-2.5 font-mono text-xs text-fg">
           {result.api_token}
         </code>
         <button
           onClick={() => void handleCopy()}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-edge px-3 py-2 text-xs font-medium text-fg-3 transition-colors hover:border-accent/30 hover:text-accent"
+          className="flex shrink-0 items-center gap-1.5 rounded-md border border-edge bg-surface px-3 py-2 text-xs font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg"
         >
-          <span className="material-symbols-outlined text-sm">
-            {copied ? "check" : "content_copy"}
-          </span>
+          {copied ? (
+            <Check className="size-3.5 text-ok" />
+          ) : (
+            <Copy className="size-3.5" />
+          )}
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
@@ -159,20 +169,17 @@ function TenantUsagePanel({ tenantId }: { tenantId: string }) {
   return (
     <div className="mt-4 border-t border-edge pt-4">
       <div className="mb-3 flex items-center justify-between">
-        <h4 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-fg-2">
-          <span className="material-symbols-outlined text-sm text-accent">
-            monitoring
-          </span>
-          Usage
-        </h4>
-        <div className="flex gap-1 rounded-lg border border-edge bg-surface p-1">
+        <span className="eyebrow">Usage</span>
+        <div className="flex gap-1 rounded-md border border-edge bg-surface-alt p-1">
           {(["24h", "7d", "30d"] as const).map((p) => (
             <button
               key={p}
               type="button"
               onClick={() => setPeriod(p)}
-              className={`rounded-md px-3 py-1 text-xs font-bold uppercase tracking-wider transition-colors ${
-                period === p ? "bg-accent text-page" : "text-fg-3 hover:text-fg"
+              className={`rounded-[4px] px-3 py-1 font-mono text-[10px] tracking-wider uppercase transition-colors ${
+                period === p
+                  ? "bg-accent text-white"
+                  : "text-fg-3 hover:text-fg"
               }`}
             >
               {p}
@@ -182,7 +189,7 @@ function TenantUsagePanel({ tenantId }: { tenantId: string }) {
       </div>
 
       {isLoading || !usage ? (
-        <div className="h-14 animate-pulse rounded-lg bg-surface" />
+        <div className="h-14 animate-pulse rounded-md bg-surface-alt" />
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
@@ -199,11 +206,9 @@ function TenantUsagePanel({ tenantId }: { tenantId: string }) {
           ].map(({ label, value }) => (
             <div
               key={label}
-              className="rounded-lg border border-edge bg-surface px-3 py-2"
+              className="rounded-md border border-edge bg-surface-alt px-3 py-2"
             >
-              <p className="text-[10px] font-bold uppercase tracking-wider text-fg-4">
-                {label}
-              </p>
+              <p className="text-[11px] font-medium text-fg-3">{label}</p>
               <p className="mt-0.5 font-mono text-sm text-fg">{value}</p>
             </div>
           ))}
@@ -244,17 +249,15 @@ function TenantCard({ tenant }: { tenant: Tenant }) {
   }
 
   return (
-    <div className="rounded-xl border border-edge bg-surface-alt p-4">
+    <div className="px-5 py-4">
       <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-edge bg-surface">
-            <span className="material-symbols-outlined text-accent/60">
-              apartment
-            </span>
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-edge bg-surface-alt">
+            <Building2 className="size-4 text-fg-3" />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-fg">{tenant.name}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium text-fg">{tenant.name}</span>
               <span className="font-mono text-[10px] text-fg-4">
                 {tenant.slug}
               </span>
@@ -263,48 +266,55 @@ function TenantCard({ tenant }: { tenant: Tenant }) {
             <p className="mt-0.5 text-xs text-fg-4">
               Created {formatTimeAgo(tenant.created_at)}
               <span className="mx-1.5 text-fg-4">·</span>
-              {tenant.max_sessions_per_day} sessions/day
+              <span className="font-mono">
+                {tenant.max_sessions_per_day}
+              </span>{" "}
+              sessions/day
               <span className="mx-1.5 text-fg-4">·</span>
-              {tenant.max_concurrent_sessions} concurrent
+              <span className="font-mono">
+                {tenant.max_concurrent_sessions}
+              </span>{" "}
+              concurrent
               <span className="mx-1.5 text-fg-4">·</span>
-              {formatCost(tenant.max_budget_usd_per_session)}/session
+              <span className="font-mono">
+                {formatCost(tenant.max_budget_usd_per_session)}
+              </span>
+              /session
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
           <button
             onClick={() => setShowUsage((v) => !v)}
-            className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+            className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
               showUsage
-                ? "border-accent/30 text-accent"
-                : "border-edge text-fg-3 hover:border-accent/30 hover:text-accent"
+                ? "border-accent-muted bg-accent-soft text-accent"
+                : "border-edge bg-surface text-fg-2 hover:border-fg-4 hover:text-fg"
             }`}
           >
-            <span className="material-symbols-outlined text-sm">
-              monitoring
-            </span>
+            <ChartLine className="size-3.5" />
             Usage
           </button>
           <button
             onClick={startEdit}
-            className="rounded-md border border-edge p-1.5 text-fg-4 transition-colors hover:border-accent/30 hover:text-accent"
+            className="rounded-md p-2 text-fg-3 transition-colors hover:bg-surface-alt hover:text-fg"
             title="Edit tenant"
           >
-            <span className="material-symbols-outlined text-base">edit</span>
+            <SquarePen className="size-4" />
           </button>
           {confirmDelete ? (
             <span className="flex items-center gap-2">
               <button
                 onClick={() => void handleDelete()}
                 disabled={deleteTenant.isPending}
-                className="rounded-lg border border-red-900/50 bg-red-900/20 px-3 py-2 text-xs font-medium text-red-400"
+                className="rounded-md border border-danger/30 px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/10"
               >
                 Confirm
               </button>
               <button
                 onClick={() => setConfirmDelete(false)}
-                className="text-xs text-fg-3"
+                className="text-xs text-fg-3 transition-colors hover:text-fg"
               >
                 Cancel
               </button>
@@ -312,12 +322,10 @@ function TenantCard({ tenant }: { tenant: Tenant }) {
           ) : (
             <button
               onClick={() => setConfirmDelete(true)}
-              className="rounded-md border border-edge p-1.5 text-fg-4 transition-colors hover:border-red-900/50 hover:text-red-400"
+              className="rounded-md p-2 text-fg-4 transition-colors hover:bg-danger/10 hover:text-danger"
               title="Delete tenant"
             >
-              <span className="material-symbols-outlined text-base">
-                delete
-              </span>
+              <Trash2 className="size-4" />
             </button>
           )}
         </div>
@@ -353,14 +361,12 @@ function TenantCard({ tenant }: { tenant: Tenant }) {
             <button
               type="submit"
               disabled={updateTenant.isPending}
-              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-xs font-bold text-page transition-all hover:bg-accent-hover disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-md bg-accent px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
             >
               {updateTenant.isPending ? (
-                <span className="material-symbols-outlined animate-spin text-sm">
-                  progress_activity
-                </span>
+                <Loader2 className="size-3.5 animate-spin" />
               ) : (
-                <span className="material-symbols-outlined text-sm">save</span>
+                <Save className="size-3.5" />
               )}
               Save
             </button>
@@ -412,71 +418,74 @@ function TenantsTab() {
       {isLoading ? (
         <LoadingSkeleton />
       ) : tenants && tenants.length > 0 ? (
-        <div className="flex flex-col gap-3">
-          {tenants.map((t) => (
-            <TenantCard key={t.id} tenant={t} />
-          ))}
+        <div className="overflow-hidden rounded-md border border-edge bg-surface">
+          <div className="border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">Tenants</span>
+          </div>
+          <div className="divide-y divide-edge">
+            {tenants.map((t) => (
+              <TenantCard key={t.id} tenant={t} />
+            ))}
+          </div>
         </div>
       ) : (
-        <p className="py-8 text-center text-sm text-fg-4">
-          No tenants configured.
-        </p>
+        <div className="flex flex-col items-center rounded-md border border-edge bg-surface py-12 text-center">
+          <Users className="mb-3 size-6 text-fg-4" strokeWidth={1.75} />
+          <p className="text-sm text-fg-3">No tenants configured.</p>
+        </div>
       )}
 
-      {/* ── Create Tenant ── */}
+      {/* ── Create tenant ── */}
       <form
         onSubmit={(e) => void handleCreate(e)}
-        className="rounded-xl border border-edge bg-surface/50 p-5"
+        className="overflow-hidden rounded-md border border-edge bg-surface"
       >
-        <h3 className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-          <span className="material-symbols-outlined text-accent text-base">
-            add_circle
-          </span>
-          Add Tenant
-        </h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Name"
-            required
-            className={inputCls}
-          />
-          <input
-            type="text"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value)}
-            placeholder="Slug (e.g. acme-corp)"
-            required
-            className={inputCls}
-          />
-          <select
-            value={tier}
-            onChange={(e) => setTier(e.target.value as TenantTier)}
-            className={inputCls}
-          >
-            {TIERS.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
+        <div className="border-b border-edge px-5 py-3.5">
+          <span className="eyebrow">Add tenant</span>
         </div>
-        <button
-          type="submit"
-          disabled={createTenant.isPending}
-          className="mt-4 flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-bold text-page transition-all hover:bg-accent-hover disabled:opacity-50"
-        >
-          {createTenant.isPending ? (
-            <span className="material-symbols-outlined animate-spin text-base">
-              progress_activity
-            </span>
-          ) : (
-            <span className="material-symbols-outlined text-lg">add</span>
-          )}
-          Create Tenant
-        </button>
+        <div className="p-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Name"
+              required
+              className={inputCls}
+            />
+            <input
+              type="text"
+              value={slug}
+              onChange={(e) => setSlug(e.target.value)}
+              placeholder="Slug (e.g. acme-corp)"
+              required
+              className={monoInputCls}
+            />
+            <select
+              value={tier}
+              onChange={(e) => setTier(e.target.value as TenantTier)}
+              className={inputCls}
+            >
+              {TIERS.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="submit"
+            disabled={createTenant.isPending}
+            className="mt-4 flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+          >
+            {createTenant.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Plus className="size-4" />
+            )}
+            Create tenant
+          </button>
+        </div>
       </form>
     </div>
   );
@@ -522,136 +531,135 @@ function KeyPoolTab() {
       {isLoading ? (
         <LoadingSkeleton />
       ) : keys && keys.length > 0 ? (
-        <div className="flex flex-col gap-3">
-          {keys.map((k) => (
-            <div
-              key={k.id}
-              className="flex items-center justify-between gap-4 rounded-xl border border-edge bg-surface-alt p-4"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-edge bg-surface">
-                  <span className="material-symbols-outlined text-accent/60">
-                    key
-                  </span>
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full border border-edge bg-surface px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-fg-3">
-                      {k.provider}
-                    </span>
-                    <span
-                      className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                        k.active
-                          ? "border-accent/30 bg-accent/10 text-accent"
-                          : "border-red-500/30 bg-red-500/10 text-red-400"
-                      }`}
-                    >
-                      {k.active ? "Active" : "Inactive"}
-                    </span>
-                    <span className="font-mono text-[10px] text-fg-4">
-                      {k.id.slice(0, 12)}...
-                    </span>
+        <div className="overflow-hidden rounded-md border border-edge bg-surface">
+          <div className="border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">Key pool</span>
+          </div>
+          <div className="divide-y divide-edge">
+            {keys.map((k) => (
+              <div
+                key={k.id}
+                className="flex items-center justify-between gap-4 px-5 py-4"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-edge bg-surface-alt">
+                    <KeyRound className="size-4 text-fg-3" />
                   </div>
-                  <p className="mt-0.5 text-xs text-fg-4">
-                    Weight {k.weight}
-                    <span className="mx-1.5 text-fg-4">·</span>
-                    Added {formatTimeAgo(k.created_at)}
-                  </p>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-[4px] border border-edge px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-fg-3 uppercase">
+                        {k.provider}
+                      </span>
+                      <span
+                        className={`rounded-[4px] border px-1.5 py-0.5 font-mono text-[10px] tracking-wider uppercase ${
+                          k.active
+                            ? "border-ok/30 bg-ok/10 text-ok"
+                            : "border-danger/30 bg-danger/10 text-danger"
+                        }`}
+                      >
+                        {k.active ? "Active" : "Inactive"}
+                      </span>
+                      <span className="font-mono text-[10px] text-fg-4">
+                        {k.id.slice(0, 12)}...
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-fg-4">
+                      Weight <span className="font-mono">{k.weight}</span>
+                      <span className="mx-1.5 text-fg-4">·</span>
+                      Added {formatTimeAgo(k.created_at)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="shrink-0">
+                  {confirmDelete === k.id ? (
+                    <span className="flex items-center gap-2">
+                      <button
+                        onClick={() => void handleDelete(k.id)}
+                        disabled={deleteEntry.isPending}
+                        className="rounded-md border border-danger/30 px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/10"
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        onClick={() => setConfirmDelete(null)}
+                        className="text-xs text-fg-3 transition-colors hover:text-fg"
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmDelete(k.id)}
+                      className="rounded-md p-2 text-fg-4 transition-colors hover:bg-danger/10 hover:text-danger"
+                      title="Delete key"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  )}
                 </div>
               </div>
-
-              <div className="shrink-0">
-                {confirmDelete === k.id ? (
-                  <span className="flex items-center gap-2">
-                    <button
-                      onClick={() => void handleDelete(k.id)}
-                      disabled={deleteEntry.isPending}
-                      className="rounded-lg border border-red-900/50 bg-red-900/20 px-3 py-2 text-xs font-medium text-red-400"
-                    >
-                      Confirm
-                    </button>
-                    <button
-                      onClick={() => setConfirmDelete(null)}
-                      className="text-xs text-fg-3"
-                    >
-                      Cancel
-                    </button>
-                  </span>
-                ) : (
-                  <button
-                    onClick={() => setConfirmDelete(k.id)}
-                    className="rounded-md border border-edge p-1.5 text-fg-4 transition-colors hover:border-red-900/50 hover:text-red-400"
-                    title="Delete key"
-                  >
-                    <span className="material-symbols-outlined text-base">
-                      delete
-                    </span>
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       ) : (
-        <p className="py-8 text-center text-sm text-fg-4">
-          No keys in the pool.
-        </p>
+        <div className="flex flex-col items-center rounded-md border border-edge bg-surface py-12 text-center">
+          <KeyRound className="mb-3 size-6 text-fg-4" strokeWidth={1.75} />
+          <p className="text-sm text-fg-3">No keys in the pool.</p>
+        </div>
       )}
 
-      {/* ── Add Key ── */}
+      {/* ── Add key ── */}
       <form
         onSubmit={(e) => void handleAdd(e)}
-        className="rounded-xl border border-edge bg-surface/50 p-5"
+        className="overflow-hidden rounded-md border border-edge bg-surface"
       >
-        <h3 className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-          <span className="material-symbols-outlined text-accent text-base">
-            add_circle
-          </span>
-          Add Pool Key
-        </h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <select
-            value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-            className={inputCls}
-          >
-            {POOL_PROVIDERS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-          <input
-            type="password"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder="API Key"
-            required
-            className={inputCls}
-          />
-          <input
-            type="number"
-            min={1}
-            value={weight}
-            onChange={(e) => setWeight(e.target.value)}
-            placeholder="Weight (default: 1)"
-            className={inputCls}
-          />
+        <div className="border-b border-edge px-5 py-3.5">
+          <span className="eyebrow">Add pool key</span>
         </div>
-        <button
-          type="submit"
-          disabled={addEntry.isPending}
-          className="mt-4 flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-bold text-page transition-all hover:bg-accent-hover disabled:opacity-50"
-        >
-          {addEntry.isPending ? (
-            <span className="material-symbols-outlined animate-spin text-base">
-              progress_activity
-            </span>
-          ) : (
-            <span className="material-symbols-outlined text-lg">add</span>
-          )}
-          Add Key
-        </button>
+        <div className="p-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              className={inputCls}
+            >
+              {POOL_PROVIDERS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            <input
+              type="password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="API key"
+              required
+              className={monoInputCls}
+            />
+            <input
+              type="number"
+              min={1}
+              value={weight}
+              onChange={(e) => setWeight(e.target.value)}
+              placeholder="Weight (default: 1)"
+              className={monoInputCls}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={addEntry.isPending}
+            className="mt-4 flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+          >
+            {addEntry.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Plus className="size-4" />
+            )}
+            Add key
+          </button>
+        </div>
       </form>
     </div>
   );
@@ -661,7 +669,7 @@ function LoadingSkeleton() {
   return (
     <div className="space-y-3">
       {[1, 2, 3].map((i) => (
-        <div key={i} className="h-16 animate-pulse rounded-xl bg-surface-alt" />
+        <div key={i} className="h-16 animate-pulse rounded-md bg-surface-alt" />
       ))}
     </div>
   );

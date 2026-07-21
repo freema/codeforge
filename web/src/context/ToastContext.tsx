@@ -65,9 +65,9 @@ const iconMap = {
 };
 
 const colorMap = {
-  success: "border-green-800 bg-green-500/10 text-green-400",
-  error: "border-red-800 bg-red-500/10 text-red-400",
-  info: "border-emerald-800 bg-emerald-500/10 text-emerald-400",
+  success: "border-ok/40 text-ok",
+  error: "border-danger/40 text-danger",
+  info: "border-info/40 text-info",
 };
 
 function ToastItem({
@@ -81,10 +81,10 @@ function ToastItem({
 
   return (
     <div
-      className={`flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg ${colorMap[toast.type]}`}
+      className={`flex items-center gap-3 rounded-md border bg-surface px-4 py-3 shadow-lg shadow-black/20 ${colorMap[toast.type]}`}
     >
-      <Icon className="h-4 w-4 shrink-0" />
-      <p className="text-sm">{toast.message}</p>
+      <Icon className="size-4 shrink-0" />
+      <p className="text-sm text-fg">{toast.message}</p>
       <button
         onClick={onDismiss}
         className="ml-2 shrink-0 opacity-60 hover:opacity-100"

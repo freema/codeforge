@@ -1,6 +1,19 @@
 import { useState, useRef, useEffect } from "react";
 import { useParams, Link } from "react-router";
-import { Loader2 } from "lucide-react";
+import {
+  ArrowUp,
+  CircleAlert,
+  CircleCheck,
+  CircleStop,
+  ExternalLink,
+  FileDiff,
+  FolderGit2,
+  GitPullRequest,
+  Loader2,
+  MessageSquare,
+  SearchCheck,
+  Upload,
+} from "lucide-react";
 import { useSession } from "../hooks/useSession";
 import { useSessionStream } from "../hooks/useSessionStream";
 import {
@@ -62,7 +75,7 @@ export default function SessionDetail() {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-accent/50" />
+        <Loader2 className="size-8 animate-spin text-accent" />
       </div>
     );
   }
@@ -101,6 +114,7 @@ export default function SessionDetail() {
   const repoShort = session.repo_url
     .replace(/^https?:\/\//, "")
     .replace(/\.git$/, "");
+  const repoName = repoShort.split("/").pop() || "Session";
 
   async function handleCancel() {
     if (!id) return;
@@ -181,26 +195,34 @@ export default function SessionDetail() {
   return (
     <div className="-m-6 lg:-m-10 flex h-[calc(100vh-4rem)] flex-col overflow-hidden">
       {/* Header bar — session info + stats + actions */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-accent/20 bg-surface/80 px-6 py-3 backdrop-blur-sm z-10">
-        {/* Left: ID + status + session type + repo */}
-        <div className="flex items-center gap-3">
-          <span className="rounded border border-accent/30 px-1.5 py-0.5 font-mono text-xs text-accent/70">
-            {session.id.slice(0, 8)}
-          </span>
+      <div className="z-10 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-edge bg-surface px-6 py-3">
+        {/* Left: ID + title + status + session type */}
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="min-w-0">
+            <p className="font-mono text-[11px] tracking-[0.14em] text-fg-3 uppercase">
+              {session.id.slice(0, 8)}
+            </p>
+            <h2 className="truncate font-expanded text-lg leading-tight font-extrabold tracking-tight text-fg">
+              {repoName}
+            </h2>
+          </div>
           <StatusBadge status={session.status} />
           {session.session_type && (
-            <span className="rounded border border-fg-4/30 bg-surface px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-fg-3">
+            <span className="rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-fg-3 uppercase">
               {session.session_type}
             </span>
           )}
-          <span className="hidden sm:flex items-center gap-1.5 font-mono text-xs text-fg-3">
-            <span className="material-symbols-outlined text-sm">folder</span>
-            {repoShort}
-          </span>
         </div>
 
         {/* Center: stats */}
         <div className="flex items-center gap-4 font-mono text-xs text-fg-3">
+          <span
+            className="hidden items-center gap-1.5 sm:flex"
+            title="Repository"
+          >
+            <FolderGit2 className="size-3.5 text-fg-4" />
+            {repoShort}
+          </span>
           <span title="Tokens">
             <span className="text-fg-4">tok</span>{" "}
             <span className="text-fg">
@@ -221,9 +243,7 @@ export default function SessionDetail() {
           </span>
           {hasChanges && (
             <span title="Changes" className="flex items-center gap-1">
-              <span className="material-symbols-outlined text-sm text-cyan-400">
-                difference
-              </span>
+              <FileDiff className="size-3.5 text-info" />
               <span className="text-fg">
                 {session.changes_summary!.diff_stats ||
                   formatChangesSummary(session.changes_summary!)}
@@ -234,13 +254,11 @@ export default function SessionDetail() {
             <Link
               to={session.pr_url}
               target="_blank"
-              className="flex items-center gap-1 text-teal-500 transition-colors hover:text-teal-400"
-              title="Pull Request"
+              className="flex items-center gap-1 text-info transition-colors hover:text-accent"
+              title="Pull request"
               onClick={(e) => e.stopPropagation()}
             >
-              <span className="material-symbols-outlined text-sm">
-                call_merge
-              </span>
+              <GitPullRequest className="size-3.5" />
               PR{session.pr_number ? ` #${session.pr_number}` : ""}
             </Link>
           )}
@@ -250,8 +268,8 @@ export default function SessionDetail() {
         <div className="ml-auto flex items-center gap-2">
           {isActive && (
             <div className="flex items-center gap-1.5">
-              <div className="size-2 animate-pulse rounded-full bg-accent" />
-              <span className="font-mono text-xs uppercase tracking-widest text-accent">
+              <div className="animate-ember size-2 rounded-full bg-accent" />
+              <span className="font-mono text-[10px] tracking-[0.14em] text-accent uppercase">
                 Live
               </span>
             </div>
@@ -264,7 +282,7 @@ export default function SessionDetail() {
           {stream.error && (
             <button
               onClick={stream.reconnect}
-              className="font-mono text-xs text-red-400 hover:text-red-300 underline"
+              className="font-mono text-xs text-danger underline transition-colors hover:text-danger/80"
             >
               Reconnect
             </button>
@@ -274,13 +292,9 @@ export default function SessionDetail() {
 
       {/* Error banner */}
       {session.error && (
-        <div className="flex items-center gap-2 border-b border-red-900/30 bg-red-900/10 px-6 py-2">
-          <span className="material-symbols-outlined text-sm text-red-400">
-            error
-          </span>
-          <span className="font-mono text-xs text-red-300">
-            {session.error}
-          </span>
+        <div className="flex items-center gap-2 border-b border-danger/30 bg-danger/10 px-6 py-2">
+          <CircleAlert className="size-4 shrink-0 text-danger" />
+          <span className="font-mono text-xs text-danger">{session.error}</span>
         </div>
       )}
 
@@ -299,20 +313,17 @@ export default function SessionDetail() {
 
         {/* Stream events */}
         {stream.events.length === 0 && isActive ? (
-          <div className="flex items-center gap-3 text-fg-4 p-2 mt-2">
-            <Loader2 className="h-4 w-4 animate-spin text-accent/50" />
-            <span className="italic">Connecting to stream...</span>
+          <div className="mt-2 flex items-center gap-3 p-2 text-fg-4">
+            <Loader2 className="size-4 animate-spin text-fg-4" />
+            <span className="text-xs">Connecting to stream…</span>
           </div>
         ) : stream.events.length > 0 ? (
           <div className="mt-2 space-y-0.5">
             <StreamEvents events={stream.events} isActive={isActive} />
             {isActive && (
-              <div className="mt-3 flex items-center gap-2 px-2 text-accent/50">
-                <span
-                  className="inline-block w-2 animate-pulse bg-accent/60"
-                  style={{ height: "14px" }}
-                />
-                <span className="text-xs italic">Agent working...</span>
+              <div className="mt-3 flex items-center gap-2 px-2 text-fg-4">
+                <span className="animate-soft-pulse inline-block h-3.5 w-2 bg-accent" />
+                <span className="text-xs">Agent working…</span>
               </div>
             )}
           </div>
@@ -328,12 +339,10 @@ export default function SessionDetail() {
             )}
             {session.result &&
               !stream.events.some((e) => e.type === "result") && (
-                <div className="mt-3 rounded-lg border border-accent/20 bg-accent/5 px-3 py-2">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="material-symbols-outlined text-sm text-accent">
-                      check_circle
-                    </span>
-                    <span className="text-xs font-bold uppercase tracking-wider text-accent">
+                <div className="mt-3 rounded-md border border-ok/25 bg-ok/10 px-3 py-2">
+                  <div className="mb-1 flex items-center gap-2">
+                    <CircleCheck className="size-4 text-ok" />
+                    <span className="font-mono text-[10px] font-medium tracking-wider text-ok uppercase">
                       Result
                     </span>
                   </div>
@@ -352,8 +361,8 @@ export default function SessionDetail() {
             <textarea
               value={instructPrompt}
               onChange={(e) => setInstructPrompt(e.target.value)}
-              placeholder="Reply..."
-              className="w-full resize-none rounded-lg border border-edge bg-surface-alt py-2 pl-3 pr-10 font-mono text-sm text-fg placeholder-fg-4 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              placeholder="Reply…"
+              className="w-full resize-none rounded-md border border-edge bg-input py-2 pr-10 pl-3 text-sm text-fg placeholder-fg-4 focus:border-accent focus:outline-none"
               rows={1}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -364,14 +373,12 @@ export default function SessionDetail() {
             <button
               onClick={() => void handleInstruct()}
               disabled={instructSession.isPending || !instructPrompt.trim()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-md bg-accent text-page transition-opacity disabled:opacity-30"
+              className="absolute top-1/2 right-2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md bg-accent text-white transition-colors hover:bg-accent-hover disabled:opacity-30"
             >
               {instructSession.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="size-3.5 animate-spin" />
               ) : (
-                <span className="material-symbols-outlined text-base">
-                  arrow_upward
-                </span>
+                <ArrowUp className="size-4" />
               )}
             </button>
           </div>
@@ -384,46 +391,40 @@ export default function SessionDetail() {
               <button
                 onClick={() => void handleCancel()}
                 disabled={cancelSession.isPending}
-                className="flex items-center gap-1.5 rounded-lg border border-red-900/50 bg-red-900/20 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-900/30 disabled:opacity-50"
+                className="flex items-center gap-2 rounded-md border border-danger/30 bg-surface px-4 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"
               >
-                <span className="material-symbols-outlined text-sm">
-                  stop_circle
-                </span>
-                {cancelSession.isPending ? "Cancelling..." : "Cancel"}
+                <CircleStop className="size-4" />
+                {cancelSession.isPending ? "Canceling…" : "Cancel"}
               </button>
             )}
             {canReview && (
               <button
                 onClick={() => void handleReview()}
                 disabled={reviewSession.isPending}
-                className="flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-3 py-1.5 text-xs font-medium text-fg-3 transition-colors hover:border-accent/30 hover:text-accent disabled:opacity-50"
+                className="flex items-center gap-2 rounded-md border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg disabled:opacity-50"
               >
                 {reviewSession.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <span className="material-symbols-outlined text-sm">
-                    rate_review
-                  </span>
+                  <SearchCheck className="size-4" />
                 )}
-                {reviewSession.isPending ? "Reviewing..." : "Review"}
+                {reviewSession.isPending ? "Reviewing…" : "Review"}
               </button>
             )}
             {canPostComments && (
               <button
                 onClick={() => void handlePostComments()}
                 disabled={postReviewComments.isPending}
-                className="flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-50"
+                className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
               >
                 {postReviewComments.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <span className="material-symbols-outlined text-sm">
-                    comment
-                  </span>
+                  <MessageSquare className="size-4" />
                 )}
                 {postReviewComments.isPending
-                  ? "Posting..."
-                  : "Post Comments to MR"}
+                  ? "Posting…"
+                  : "Post comments to MR"}
               </button>
             )}
             {/* PR Actions */}
@@ -431,16 +432,14 @@ export default function SessionDetail() {
               <button
                 onClick={() => void handleCreatePR()}
                 disabled={createPR.isPending}
-                className="flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-50"
+                className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
               >
                 {createPR.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <span className="material-symbols-outlined text-sm">
-                    call_merge
-                  </span>
+                  <GitPullRequest className="size-4" />
                 )}
-                {createPR.isPending ? "Creating..." : "Create PR"}
+                {createPR.isPending ? "Creating…" : "Create PR"}
               </button>
             )}
             {session.pr_url &&
@@ -450,16 +449,14 @@ export default function SessionDetail() {
                 <button
                   onClick={() => void handlePushToPR()}
                   disabled={pushToPR.isPending}
-                  className="flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-50"
+                  className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
                 >
                   {pushToPR.isPending ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <Loader2 className="size-4 animate-spin" />
                   ) : (
-                    <span className="material-symbols-outlined text-sm">
-                      upload
-                    </span>
+                    <Upload className="size-4" />
                   )}
-                  {pushToPR.isPending ? "Pushing..." : "Push to PR"}
+                  {pushToPR.isPending ? "Pushing…" : "Push to PR"}
                 </button>
               )}
             {session.pr_url &&
@@ -469,36 +466,32 @@ export default function SessionDetail() {
                 <button
                   onClick={() => void handleCreatePR()}
                   disabled={createPR.isPending}
-                  className="flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-50"
+                  className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
                 >
                   {createPR.isPending ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <Loader2 className="size-4 animate-spin" />
                   ) : (
-                    <span className="material-symbols-outlined text-sm">
-                      call_merge
-                    </span>
+                    <GitPullRequest className="size-4" />
                   )}
-                  {createPR.isPending ? "Creating..." : "Create New PR"}
+                  {createPR.isPending ? "Creating…" : "Create new PR"}
                 </button>
               )}
             {session.pr_url && (
               <Link
                 to={session.pr_url}
                 target="_blank"
-                className="flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-3 py-1.5 text-xs font-medium text-fg-3 transition-colors hover:border-accent/30 hover:text-accent"
+                className="flex items-center gap-2 rounded-md border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg"
               >
-                <span className="material-symbols-outlined text-sm">
-                  open_in_new
-                </span>
+                <ExternalLink className="size-4" />
                 View PR
                 {prStatus && (
                   <span
-                    className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                    className={`ml-1 rounded-[4px] border px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase ${
                       prStatus.state === "merged"
-                        ? "bg-purple-500/20 text-purple-400"
+                        ? "border-info/30 bg-info/10 text-info"
                         : prStatus.state === "closed"
-                          ? "bg-red-500/20 text-red-400"
-                          : "bg-accent/20 text-accent"
+                          ? "border-danger/30 bg-danger/10 text-danger"
+                          : "border-ok/30 bg-ok/10 text-ok"
                     }`}
                   >
                     {prStatus.state}
@@ -511,10 +504,10 @@ export default function SessionDetail() {
           <div className="ml-auto flex items-center gap-3 text-[10px] text-fg-4">
             {canInstruct && <span>Cmd+Enter to send</span>}
             {!canInstruct && !isActive && session.status === "completed" && (
-              <span className="text-accent/60">Completed</span>
+              <span className="text-ok/70">Completed</span>
             )}
             {session.status === "failed" && (
-              <span className="text-red-400/60">Failed</span>
+              <span className="text-danger/70">Failed</span>
             )}
           </div>
         </div>

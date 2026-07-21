@@ -1,5 +1,33 @@
 import { useState, useMemo, type FormEvent } from "react";
 import { useSearchParams } from "react-router";
+import {
+  AppWindow,
+  ArrowLeft,
+  Bot,
+  Bug,
+  CircleCheck,
+  ClipboardCheck,
+  Cloud,
+  Folder,
+  FolderOpen,
+  GitCommitHorizontal,
+  Github,
+  Gitlab,
+  Globe,
+  KeyRound,
+  Loader2,
+  Lock,
+  Plus,
+  Puzzle,
+  Server,
+  ShieldCheck,
+  ShieldX,
+  Terminal,
+  Trash2,
+  TriangleAlert,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { usePageTitle } from "../hooks/usePageTitle";
 import {
   useKeys,
@@ -19,11 +47,11 @@ import { useToolsCatalog } from "../hooks/useTools";
 import { useWorkspaces, useDeleteWorkspace } from "../hooks/useWorkspaces";
 type Tab = "keys" | "ai" | "mcp" | "workspaces";
 
-const tabs: { id: Tab; label: string; icon: string }[] = [
-  { id: "keys", label: "Provider Keys", icon: "vpn_key" },
-  { id: "ai", label: "AI Providers", icon: "smart_toy" },
-  { id: "mcp", label: "MCP Servers", icon: "dns" },
-  { id: "workspaces", label: "Workspaces", icon: "folder_open" },
+const tabs: { id: Tab; label: string; icon: LucideIcon }[] = [
+  { id: "keys", label: "Provider keys", icon: KeyRound },
+  { id: "ai", label: "AI providers", icon: Bot },
+  { id: "mcp", label: "MCP servers", icon: Server },
+  { id: "workspaces", label: "Workspaces", icon: FolderOpen },
 ];
 
 const VALID_TABS = new Set<Tab>(["keys", "ai", "mcp", "workspaces"]);
@@ -41,28 +69,28 @@ export default function Settings() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-fg">Settings</h1>
-        <p className="mt-1 text-sm text-fg-3">
-          Manage your integrations and resources
-        </p>
+        <p className="eyebrow mb-1">Configuration</p>
+        <h2 className="font-expanded text-2xl font-extrabold tracking-tight text-fg">
+          Settings
+        </h2>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-2 border-b border-edge pb-px">
-        {tabs.map(({ id, label, icon }) => (
+        {tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setActiveTab(id)}
             className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
               activeTab === id
-                ? "border-accent text-accent"
+                ? "border-accent text-fg"
                 : "border-transparent text-fg-3 hover:text-fg"
             }`}
           >
             {id === "ai" ? (
-              <AnthropicLogo className="h-4 w-4" />
+              <AnthropicLogo className="size-4" />
             ) : (
-              <span className="material-symbols-outlined text-lg">{icon}</span>
+              <Icon className="size-4" />
             )}
             {label}
           </button>
@@ -78,25 +106,25 @@ export default function Settings() {
 }
 
 const inputCls =
-  "w-full rounded-lg border border-edge bg-surface px-3 py-2.5 text-sm text-fg font-mono placeholder-fg-4 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors";
+  "w-full rounded-md border border-edge bg-input px-3 py-2 font-mono text-sm text-fg placeholder-fg-4 transition-colors focus:border-accent focus:outline-none";
 
 const KEY_PROVIDERS = [
   {
     value: "github",
     label: "GitHub",
-    icon: "code",
+    icon: Github,
     description: "GitHub personal access token",
   },
   {
     value: "gitlab",
     label: "GitLab",
-    icon: "cloud",
+    icon: Gitlab,
     description: "GitLab personal access token",
   },
   {
     value: "sentry",
     label: "Sentry",
-    icon: "bug_report",
+    icon: Bug,
     description: "Sentry authentication token",
   },
 ] as const;
@@ -144,9 +172,7 @@ function AIProviderIcon({
 }) {
   if (provider === "anthropic") return <AnthropicLogo className={className} />;
   if (provider === "openai") return <OpenAILogo className={className} />;
-  return (
-    <span className={`material-symbols-outlined ${className}`}>smart_toy</span>
-  );
+  return <Bot className={className} />;
 }
 
 function KeysTab() {
@@ -241,54 +267,51 @@ function KeysTab() {
       {isLoading ? (
         <LoadingSkeleton />
       ) : keys && keys.length > 0 ? (
-        <div className="flex flex-col gap-3">
-          {keys.map((k) => {
-            const vr = verifyResults[k.name];
-            const isVerifying = verifying === k.name;
+        <div className="overflow-hidden rounded-md border border-edge bg-surface">
+          <div className="border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">Provider keys</span>
+          </div>
+          <div className="divide-y divide-edge">
+            {keys.map((k) => {
+              const vr = verifyResults[k.name];
+              const isVerifying = verifying === k.name;
 
-            return (
-              <div
-                key={k.name}
-                className={`rounded-xl border p-4 transition-colors ${
-                  vr
-                    ? vr.valid
-                      ? "border-accent/30 bg-accent/5"
-                      : "border-red-500/30 bg-red-500/5"
-                    : "border-edge bg-surface-alt"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3 min-w-0">
+              return (
+                <div
+                  key={k.name}
+                  className="flex items-center justify-between gap-4 px-5 py-4"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
                     <div
-                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+                      className={`flex size-9 shrink-0 items-center justify-center rounded-md border ${
                         vr
                           ? vr.valid
-                            ? "bg-accent/10 border border-accent/30"
-                            : "bg-red-500/10 border border-red-500/30"
-                          : "bg-surface border border-edge"
+                            ? "border-ok/30 bg-ok/10"
+                            : "border-danger/30 bg-danger/10"
+                          : "border-edge bg-surface-alt"
                       }`}
                     >
-                      <span
-                        className={`material-symbols-outlined ${
-                          vr
-                            ? vr.valid
-                              ? "text-accent"
-                              : "text-red-400"
-                            : "text-fg-3"
-                        }`}
-                      >
-                        {vr ? (vr.valid ? "verified" : "gpp_bad") : "vpn_key"}
-                      </span>
+                      {vr ? (
+                        vr.valid ? (
+                          <ShieldCheck className="size-4 text-ok" />
+                        ) : (
+                          <ShieldX className="size-4 text-danger" />
+                        )
+                      ) : (
+                        <KeyRound className="size-4 text-fg-3" />
+                      )}
                     </div>
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-fg">{k.name}</span>
-                        <span className="rounded-full border border-edge bg-surface px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-fg-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-sm font-medium text-fg">
+                          {k.name}
+                        </span>
+                        <span className="rounded-[4px] border border-edge px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-fg-3 uppercase">
                           {k.provider}
                         </span>
                         {k.source === "env" && (
-                          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">
-                            ENV
+                          <span className="rounded-[4px] border border-warn/30 bg-warn/10 px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-warn uppercase">
+                            env
                           </span>
                         )}
                         {k.base_url && (
@@ -297,14 +320,14 @@ function KeysTab() {
                           </span>
                         )}
                         {k.scope && (
-                          <span className="text-xs text-fg-4">{k.scope}</span>
+                          <span className="font-mono text-xs text-fg-4">
+                            {k.scope}
+                          </span>
                         )}
                       </div>
                       {vr && vr.valid && vr.username && (
-                        <div className="mt-1 flex items-center gap-2 text-xs text-fg-3">
-                          <span className="material-symbols-outlined text-sm text-accent">
-                            check_circle
-                          </span>
+                        <div className="mt-1 flex items-center gap-1.5 text-xs text-fg-3">
+                          <CircleCheck className="size-3.5 text-ok" />
                           <span className="font-medium text-fg-2">
                             {vr.username}
                           </span>
@@ -321,7 +344,7 @@ function KeysTab() {
                           {vr.scopes.split(",").map((s) => (
                             <span
                               key={s.trim()}
-                              className="rounded border border-accent/20 bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] text-accent"
+                              className="rounded-[4px] border border-ok/30 bg-ok/10 px-1.5 py-0.5 font-mono text-[10px] text-ok"
                             >
                               {s.trim()}
                             </span>
@@ -329,52 +352,46 @@ function KeysTab() {
                         </div>
                       )}
                       {vr && !vr.valid && (
-                        <p className="mt-1 text-xs text-red-400">
+                        <p className="mt-1 text-xs text-danger">
                           {vr.error || "Token is invalid or expired"}
                         </p>
                       )}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex shrink-0 items-center gap-2">
                     <button
                       onClick={() => void handleVerify(k.name)}
                       disabled={isVerifying}
-                      className="flex items-center gap-1.5 rounded-lg border border-edge px-3 py-2 text-xs font-medium text-fg-3 transition-colors hover:border-accent/30 hover:text-accent disabled:opacity-50"
+                      className="flex items-center gap-1.5 rounded-md border border-edge bg-surface px-3 py-1.5 text-xs font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg disabled:opacity-50"
                     >
                       {isVerifying ? (
-                        <span className="material-symbols-outlined animate-spin text-sm">
-                          progress_activity
-                        </span>
+                        <Loader2 className="size-3.5 animate-spin" />
                       ) : (
-                        <span className="material-symbols-outlined text-sm">
-                          verified
-                        </span>
+                        <ShieldCheck className="size-3.5" />
                       )}
                       {isVerifying ? "Checking" : vr ? "Re-check" : "Verify"}
                     </button>
 
                     {k.source === "env" ? (
                       <span
-                        className="rounded-md border border-edge p-1.5 text-fg-4 opacity-30 cursor-not-allowed"
+                        className="cursor-not-allowed rounded-md p-2 text-fg-4 opacity-40"
                         title="Environment keys cannot be deleted"
                       >
-                        <span className="material-symbols-outlined text-base">
-                          lock
-                        </span>
+                        <Lock className="size-4" />
                       </span>
                     ) : confirmDelete === k.name ? (
                       <span className="flex items-center gap-2">
                         <button
                           onClick={() => void handleDelete(k.name)}
                           disabled={deleteKey.isPending}
-                          className="rounded-lg border border-red-900/50 bg-red-900/20 px-3 py-2 text-xs font-medium text-red-400"
+                          className="rounded-md border border-danger/30 px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/10"
                         >
                           Confirm
                         </button>
                         <button
                           onClick={() => setConfirmDelete(null)}
-                          className="text-xs text-fg-3"
+                          className="text-xs text-fg-3 transition-colors hover:text-fg"
                         >
                           Cancel
                         </button>
@@ -382,45 +399,39 @@ function KeysTab() {
                     ) : (
                       <button
                         onClick={() => setConfirmDelete(k.name)}
-                        className="rounded-md border border-edge p-1.5 text-fg-4 transition-colors hover:border-red-900/50 hover:text-red-400"
+                        className="rounded-md p-2 text-fg-4 transition-colors hover:bg-danger/10 hover:text-danger"
                       >
-                        <span className="material-symbols-outlined text-base">
-                          delete
-                        </span>
+                        <Trash2 className="size-4" />
                       </button>
                     )}
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       ) : (
-        <p className="py-8 text-center text-sm text-fg-4">
-          No keys configured.
-        </p>
+        <div className="flex flex-col items-center rounded-md border border-edge bg-surface py-12 text-center">
+          <KeyRound className="mb-3 size-6 text-fg-4" strokeWidth={1.75} />
+          <p className="text-sm text-fg-3">No provider keys configured.</p>
+        </div>
       )}
 
-      {/* ── Provider Picker ── */}
+      {/* ── Provider picker ── */}
       {formMode === "select" && (
-        <div className="rounded-xl border border-edge bg-surface/50 p-5">
-          <h3 className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-            <span className="material-symbols-outlined text-accent text-base">
-              add_circle
-            </span>
-            Add Provider Key
-          </h3>
-          <div className="grid grid-cols-3 gap-3">
+        <div className="overflow-hidden rounded-md border border-edge bg-surface">
+          <div className="border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">Add provider key</span>
+          </div>
+          <div className="grid grid-cols-3 gap-3 p-5">
             {KEY_PROVIDERS.map((p) => (
               <button
                 key={p.value}
                 type="button"
                 onClick={() => selectProvider(p.value)}
-                className="group flex flex-col items-start gap-2 rounded-lg border border-edge bg-surface-alt p-4 text-left transition-colors hover:border-accent/40 hover:bg-accent/5"
+                className="group flex flex-col items-start gap-2 rounded-md border border-edge bg-surface-alt p-4 text-left transition-colors hover:border-accent-muted hover:bg-accent-soft"
               >
-                <span className="material-symbols-outlined text-xl text-fg-3 group-hover:text-accent">
-                  {p.icon}
-                </span>
+                <p.icon className="size-5 text-fg-3 transition-colors group-hover:text-accent" />
                 <div>
                   <p className="text-sm font-medium text-fg">{p.label}</p>
                   <p className="mt-0.5 text-xs text-fg-4">{p.description}</p>
@@ -431,83 +442,77 @@ function KeysTab() {
         </div>
       )}
 
-      {/* ── Key Form ── */}
+      {/* ── Key form ── */}
       {formMode === "form" && (
         <form
           onSubmit={(e) => void handleAdd(e)}
-          className="rounded-xl border border-edge bg-surface/50 p-5"
+          className="overflow-hidden rounded-md border border-edge bg-surface"
         >
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-              <span className="material-symbols-outlined text-accent text-base">
-                {KEY_PROVIDERS.find((p) => p.value === provider)?.icon ??
-                  "vpn_key"}
-              </span>
-              {KEY_PROVIDERS.find((p) => p.value === provider)?.label}
-            </h3>
+          <div className="flex items-center justify-between border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">
+              {KEY_PROVIDERS.find((p) => p.value === provider)?.label} key
+            </span>
             <button
               type="button"
               onClick={goBack}
-              className="flex items-center gap-1 text-xs text-fg-3 transition-colors hover:text-accent"
+              className="flex items-center gap-1 text-xs font-medium text-fg-3 transition-colors hover:text-fg"
             >
-              <span className="material-symbols-outlined text-sm">
-                arrow_back
-              </span>
+              <ArrowLeft className="size-3.5" />
               Back
             </button>
           </div>
 
-          <div className="space-y-3">
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Name"
-              required
-              className={inputCls}
-            />
-            <input
-              type="password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="Token"
-              required
-              className={inputCls}
-            />
-            <input
-              type="url"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder={`Base URL for self-hosted (e.g. https://${provider === "sentry" ? "sentry" : provider === "gitlab" ? "gitlab" : "github"}.example.com)`}
-              className={inputCls}
-            />
-            <input
-              type="text"
-              value={scope}
-              onChange={(e) => setScope(e.target.value)}
-              placeholder="Scope (optional)"
-              className={inputCls}
-            />
-          </div>
+          <div className="p-5">
+            <div className="space-y-3">
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Name"
+                required
+                className={inputCls}
+              />
+              <input
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="Token"
+                required
+                className={inputCls}
+              />
+              <input
+                type="url"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder={`Base URL for self-hosted (e.g. https://${provider === "sentry" ? "sentry" : provider === "gitlab" ? "gitlab" : "github"}.example.com)`}
+                className={inputCls}
+              />
+              <input
+                type="text"
+                value={scope}
+                onChange={(e) => setScope(e.target.value)}
+                placeholder="Scope (optional)"
+                className={inputCls}
+              />
+            </div>
 
-          {validationError && (
-            <p className="mt-3 text-xs text-red-400">{validationError}</p>
-          )}
-
-          <button
-            type="submit"
-            disabled={createKey.isPending}
-            className="mt-4 flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-bold text-page transition-all hover:bg-accent-hover disabled:opacity-50"
-          >
-            {createKey.isPending ? (
-              <span className="material-symbols-outlined animate-spin text-base">
-                progress_activity
-              </span>
-            ) : (
-              <span className="material-symbols-outlined text-lg">add</span>
+            {validationError && (
+              <p className="mt-3 text-xs text-danger">{validationError}</p>
             )}
-            Add Key
-          </button>
+
+            <button
+              type="submit"
+              disabled={createKey.isPending}
+              className="mt-4 flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+            >
+              {createKey.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              Add key
+            </button>
+          </div>
         </form>
       )}
     </div>
@@ -606,21 +611,19 @@ function AIProvidersTab() {
     <div className="space-y-6">
       {/* Warning if no AI keys */}
       {!isLoading && aiKeys.length === 0 && (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
-          <span className="material-symbols-outlined mt-0.5 text-amber-400">
-            warning
-          </span>
+        <div className="flex items-start gap-3 rounded-md border border-warn/30 bg-warn/10 p-4">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" />
           <div>
-            <p className="text-sm font-medium text-amber-300">
+            <p className="text-sm font-medium text-warn">
               No AI provider keys configured
             </p>
-            <p className="mt-1 text-xs text-amber-400/80">
+            <p className="mt-1 text-xs text-fg-3">
               Sessions will fail unless{" "}
-              <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">
+              <code className="rounded-[4px] border border-edge bg-surface-alt px-1 py-0.5 font-mono text-fg-2">
                 ANTHROPIC_API_KEY
               </code>{" "}
               or{" "}
-              <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">
+              <code className="rounded-[4px] border border-edge bg-surface-alt px-1 py-0.5 font-mono text-fg-2">
                 OPENAI_API_KEY
               </code>{" "}
               is set as an environment variable on the server.
@@ -633,56 +636,55 @@ function AIProvidersTab() {
       {isLoading ? (
         <LoadingSkeleton />
       ) : aiKeys.length > 0 ? (
-        <div className="flex flex-col gap-3">
-          {aiKeys.map((k) => {
-            const vr = verifyResults[k.name];
-            const isVerifying = verifying === k.name;
-            const cliName = CLI_FOR_PROVIDER[k.provider] ?? k.provider;
+        <div className="overflow-hidden rounded-md border border-edge bg-surface">
+          <div className="border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">AI provider keys</span>
+          </div>
+          <div className="divide-y divide-edge">
+            {aiKeys.map((k) => {
+              const vr = verifyResults[k.name];
+              const isVerifying = verifying === k.name;
+              const cliName = CLI_FOR_PROVIDER[k.provider] ?? k.provider;
 
-            return (
-              <div
-                key={k.name}
-                className={`rounded-xl border p-4 transition-colors ${
-                  vr
-                    ? vr.valid
-                      ? "border-accent/30 bg-accent/5"
-                      : "border-red-500/30 bg-red-500/5"
-                    : "border-edge bg-surface-alt"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3 min-w-0">
+              return (
+                <div
+                  key={k.name}
+                  className="flex items-center justify-between gap-4 px-5 py-4"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
                     <div
-                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+                      className={`flex size-9 shrink-0 items-center justify-center rounded-md border ${
                         vr
                           ? vr.valid
-                            ? "bg-accent/10 border border-accent/30"
-                            : "bg-red-500/10 border border-red-500/30"
-                          : "bg-surface border border-edge"
+                            ? "border-ok/30 bg-ok/10"
+                            : "border-danger/30 bg-danger/10"
+                          : "border-edge bg-surface-alt"
                       }`}
                     >
                       {vr ? (
-                        <span
-                          className={`material-symbols-outlined ${vr.valid ? "text-accent" : "text-red-400"}`}
-                        >
-                          {vr.valid ? "verified" : "gpp_bad"}
-                        </span>
+                        vr.valid ? (
+                          <ShieldCheck className="size-4 text-ok" />
+                        ) : (
+                          <ShieldX className="size-4 text-danger" />
+                        )
                       ) : (
                         <AIProviderIcon
                           provider={k.provider}
-                          className={`h-5 w-5 text-fg-3`}
+                          className="size-4 text-fg-3"
                         />
                       )}
                     </div>
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-fg">{k.name}</span>
-                        <span className="rounded-full border border-edge bg-surface px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-fg-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-sm font-medium text-fg">
+                          {k.name}
+                        </span>
+                        <span className="rounded-[4px] border border-edge px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-fg-3 uppercase">
                           {k.provider}
                         </span>
                         {k.source === "env" && (
-                          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">
-                            ENV
+                          <span className="rounded-[4px] border border-warn/30 bg-warn/10 px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-warn uppercase">
+                            env
                           </span>
                         )}
                       </div>
@@ -691,62 +693,54 @@ function AIProvidersTab() {
                         <span className="font-mono text-fg-3">{cliName}</span>
                       </p>
                       {vr && vr.valid && (
-                        <div className="mt-1 flex items-center gap-2 text-xs text-fg-3">
-                          <span className="material-symbols-outlined text-sm text-accent">
-                            check_circle
-                          </span>
+                        <div className="mt-1 flex items-center gap-1.5 text-xs text-fg-3">
+                          <CircleCheck className="size-3.5 text-ok" />
                           <span className="font-medium text-fg-2">
                             {vr.scopes || "Valid"}
                           </span>
                         </div>
                       )}
                       {vr && !vr.valid && (
-                        <p className="mt-1 text-xs text-red-400">
+                        <p className="mt-1 text-xs text-danger">
                           {vr.error || "Token is invalid or expired"}
                         </p>
                       )}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex shrink-0 items-center gap-2">
                     <button
                       onClick={() => void handleVerify(k.name)}
                       disabled={isVerifying}
-                      className="flex items-center gap-1.5 rounded-lg border border-edge px-3 py-2 text-xs font-medium text-fg-3 transition-colors hover:border-accent/30 hover:text-accent disabled:opacity-50"
+                      className="flex items-center gap-1.5 rounded-md border border-edge bg-surface px-3 py-1.5 text-xs font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg disabled:opacity-50"
                     >
                       {isVerifying ? (
-                        <span className="material-symbols-outlined animate-spin text-sm">
-                          progress_activity
-                        </span>
+                        <Loader2 className="size-3.5 animate-spin" />
                       ) : (
-                        <span className="material-symbols-outlined text-sm">
-                          verified
-                        </span>
+                        <ShieldCheck className="size-3.5" />
                       )}
                       {isVerifying ? "Checking" : vr ? "Re-check" : "Verify"}
                     </button>
 
                     {k.source === "env" ? (
                       <span
-                        className="rounded-md border border-edge p-1.5 text-fg-4 opacity-30 cursor-not-allowed"
+                        className="cursor-not-allowed rounded-md p-2 text-fg-4 opacity-40"
                         title="Environment keys cannot be deleted"
                       >
-                        <span className="material-symbols-outlined text-base">
-                          lock
-                        </span>
+                        <Lock className="size-4" />
                       </span>
                     ) : confirmDelete === k.name ? (
                       <span className="flex items-center gap-2">
                         <button
                           onClick={() => void handleDelete(k.name)}
                           disabled={deleteKey.isPending}
-                          className="rounded-lg border border-red-900/50 bg-red-900/20 px-3 py-2 text-xs font-medium text-red-400"
+                          className="rounded-md border border-danger/30 px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/10"
                         >
                           Confirm
                         </button>
                         <button
                           onClick={() => setConfirmDelete(null)}
-                          className="text-xs text-fg-3"
+                          className="text-xs text-fg-3 transition-colors hover:text-fg"
                         >
                           Cancel
                         </button>
@@ -754,31 +748,26 @@ function AIProvidersTab() {
                     ) : (
                       <button
                         onClick={() => setConfirmDelete(k.name)}
-                        className="rounded-md border border-edge p-1.5 text-fg-4 transition-colors hover:border-red-900/50 hover:text-red-400"
+                        className="rounded-md p-2 text-fg-4 transition-colors hover:bg-danger/10 hover:text-danger"
                       >
-                        <span className="material-symbols-outlined text-base">
-                          delete
-                        </span>
+                        <Trash2 className="size-4" />
                       </button>
                     )}
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       ) : null}
 
       {/* Provider picker */}
       {formMode === "select" && (
-        <div className="rounded-xl border border-edge bg-surface/50 p-5">
-          <h3 className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-            <span className="material-symbols-outlined text-accent text-base">
-              add_circle
-            </span>
-            Add AI Provider Key
-          </h3>
-          <div className="grid grid-cols-2 gap-3">
+        <div className="overflow-hidden rounded-md border border-edge bg-surface">
+          <div className="border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">Add AI provider key</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 p-5">
             {AI_PROVIDERS.map((p) => {
               const alreadyHas = aiKeys.some((k) => k.provider === p.value);
               return (
@@ -787,22 +776,18 @@ function AIProvidersTab() {
                   type="button"
                   disabled={alreadyHas}
                   onClick={() => selectProvider(p.value)}
-                  className={`group flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors ${
+                  className={`group flex flex-col items-start gap-2 rounded-md border p-4 text-left transition-colors ${
                     alreadyHas
-                      ? "cursor-default border-accent/20 bg-accent/5 opacity-60"
-                      : "border-edge bg-surface-alt hover:border-accent/40 hover:bg-accent/5"
+                      ? "cursor-default border-ok/25 bg-ok/10 opacity-70"
+                      : "border-edge bg-surface-alt hover:border-accent-muted hover:bg-accent-soft"
                   }`}
                 >
                   <div className="flex w-full items-center justify-between">
                     <AIProviderIcon
                       provider={p.value}
-                      className={`h-5 w-5 ${alreadyHas ? "text-accent" : "text-fg-3 group-hover:text-accent"}`}
+                      className={`size-5 ${alreadyHas ? "text-ok" : "text-fg-3 transition-colors group-hover:text-accent"}`}
                     />
-                    {alreadyHas && (
-                      <span className="material-symbols-outlined text-sm text-accent">
-                        check_circle
-                      </span>
-                    )}
+                    {alreadyHas && <CircleCheck className="size-3.5 text-ok" />}
                   </div>
                   <div>
                     <p className="text-sm font-medium text-fg">{p.label}</p>
@@ -820,68 +805,62 @@ function AIProvidersTab() {
       {formMode === "form" && (
         <form
           onSubmit={(e) => void handleAdd(e)}
-          className="rounded-xl border border-edge bg-surface/50 p-5"
+          className="overflow-hidden rounded-md border border-edge bg-surface"
         >
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-              <AIProviderIcon
-                provider={provider}
-                className="h-4 w-4 text-accent"
-              />
-              {AI_PROVIDERS.find((p) => p.value === provider)?.label}
-            </h3>
+          <div className="flex items-center justify-between border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">
+              {AI_PROVIDERS.find((p) => p.value === provider)?.label} key
+            </span>
             <button
               type="button"
               onClick={goBack}
-              className="flex items-center gap-1 text-xs text-fg-3 transition-colors hover:text-accent"
+              className="flex items-center gap-1 text-xs font-medium text-fg-3 transition-colors hover:text-fg"
             >
-              <span className="material-symbols-outlined text-sm">
-                arrow_back
-              </span>
+              <ArrowLeft className="size-3.5" />
               Back
             </button>
           </div>
 
-          <div className="space-y-3">
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Name"
-              required
-              className={inputCls}
-            />
-            <input
-              type="password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder={
-                AI_PROVIDERS.find((p) => p.value === provider)?.placeholder ??
-                "API Key"
-              }
-              required
-              className={inputCls}
-            />
-          </div>
+          <div className="p-5">
+            <div className="space-y-3">
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Name"
+                required
+                className={inputCls}
+              />
+              <input
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder={
+                  AI_PROVIDERS.find((p) => p.value === provider)?.placeholder ??
+                  "API key"
+                }
+                required
+                className={inputCls}
+              />
+            </div>
 
-          {validationError && (
-            <p className="mt-3 text-xs text-red-400">{validationError}</p>
-          )}
-
-          <button
-            type="submit"
-            disabled={createKey.isPending}
-            className="mt-4 flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-bold text-page transition-all hover:bg-accent-hover disabled:opacity-50"
-          >
-            {createKey.isPending ? (
-              <span className="material-symbols-outlined animate-spin text-base">
-                progress_activity
-              </span>
-            ) : (
-              <span className="material-symbols-outlined text-lg">add</span>
+            {validationError && (
+              <p className="mt-3 text-xs text-danger">{validationError}</p>
             )}
-            Add Key
-          </button>
+
+            <button
+              type="submit"
+              disabled={createKey.isPending}
+              className="mt-4 flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+            >
+              {createKey.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              Add key
+            </button>
+          </div>
         </form>
       )}
     </div>
@@ -910,90 +889,88 @@ function MCPServerCard({
   }
 
   return (
-    <div className="rounded-xl border border-edge bg-surface-alt p-4">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-edge bg-surface">
-            <span className="material-symbols-outlined text-accent/60">
-              {transport === "http" ? "cloud" : "dns"}
-            </span>
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-fg">{server.name}</span>
-              <span
-                className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                  transport === "http"
-                    ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-400"
-                    : "border-purple-500/30 bg-purple-500/10 text-purple-400"
-                }`}
-              >
-                {transport}
-              </span>
-            </div>
-            <p className="mt-0.5 truncate font-mono text-xs text-fg-4">
-              {transport === "http"
-                ? server.url
-                : [server.command, server.package].filter(Boolean).join(" ")}
-            </p>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              {envCount > 0 && (
-                <span className="flex items-center gap-1 text-[10px] text-fg-4">
-                  <span className="material-symbols-outlined text-xs">key</span>
-                  {envCount} env var{envCount !== 1 && "s"}
-                  <span className="ml-1 font-mono text-fg-4/60">
-                    ({Object.keys(server.env!).join(", ")} = {"•••••"})
-                  </span>
-                </span>
-              )}
-              {headerCount > 0 && (
-                <span className="flex items-center gap-1 text-[10px] text-fg-4">
-                  <span className="material-symbols-outlined text-xs">
-                    http
-                  </span>
-                  {headerCount} header{headerCount !== 1 && "s"}
-                  <span className="ml-1 font-mono text-fg-4/60">
-                    ({Object.keys(server.headers!).join(", ")} = {"•••••"})
-                  </span>
-                </span>
-              )}
-              {server.created_at && (
-                <span className="text-[10px] text-fg-4">
-                  {formatTimeAgo(server.created_at)}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="shrink-0">
-          {confirmDelete ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleDelete}
-                disabled={isDeleting}
-                className="rounded-lg border border-red-900/50 bg-red-900/20 px-3 py-1.5 text-xs font-medium text-red-400"
-              >
-                Delete
-              </button>
-              <button
-                onClick={() => setConfirmDelete(false)}
-                className="text-xs text-fg-3"
-              >
-                Cancel
-              </button>
-            </div>
+    <div className="flex items-center justify-between gap-4 px-5 py-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-edge bg-surface-alt">
+          {transport === "http" ? (
+            <Cloud className="size-4 text-fg-3" />
           ) : (
-            <button
-              onClick={() => setConfirmDelete(true)}
-              className="rounded-md border border-edge p-1.5 text-fg-4 transition-colors hover:border-red-900/50 hover:text-red-400"
-            >
-              <span className="material-symbols-outlined text-base">
-                delete
-              </span>
-            </button>
+            <Server className="size-4 text-fg-3" />
           )}
         </div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-sm font-medium text-fg">
+              {server.name}
+            </span>
+            <span
+              className={`rounded-[4px] border px-1.5 py-0.5 font-mono text-[10px] tracking-wider uppercase ${
+                transport === "http"
+                  ? "border-info/30 bg-info/10 text-info"
+                  : "border-edge bg-surface-alt text-fg-3"
+              }`}
+            >
+              {transport}
+            </span>
+          </div>
+          <p className="mt-0.5 truncate font-mono text-xs text-fg-4">
+            {transport === "http"
+              ? server.url
+              : [server.command, server.package].filter(Boolean).join(" ")}
+          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            {envCount > 0 && (
+              <span className="flex items-center gap-1 text-[10px] text-fg-4">
+                <KeyRound className="size-3" />
+                {envCount} env var{envCount !== 1 && "s"}
+                <span className="ml-1 font-mono text-fg-4/60">
+                  ({Object.keys(server.env!).join(", ")} = {"•••••"})
+                </span>
+              </span>
+            )}
+            {headerCount > 0 && (
+              <span className="flex items-center gap-1 text-[10px] text-fg-4">
+                <Globe className="size-3" />
+                {headerCount} header{headerCount !== 1 && "s"}
+                <span className="ml-1 font-mono text-fg-4/60">
+                  ({Object.keys(server.headers!).join(", ")} = {"•••••"})
+                </span>
+              </span>
+            )}
+            {server.created_at && (
+              <span className="text-[10px] text-fg-4">
+                {formatTimeAgo(server.created_at)}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="shrink-0">
+        {confirmDelete ? (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="rounded-md border border-danger/30 px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/10"
+            >
+              Delete
+            </button>
+            <button
+              onClick={() => setConfirmDelete(false)}
+              className="text-xs text-fg-3 transition-colors hover:text-fg"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="rounded-md p-2 text-fg-4 transition-colors hover:bg-danger/10 hover:text-danger"
+          >
+            <Trash2 className="size-4" />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1048,30 +1025,30 @@ function KeyValueEditor({
           <button
             type="button"
             onClick={() => removeRow(i)}
-            className="shrink-0 rounded-lg border border-edge p-2 text-fg-4 transition-colors hover:border-red-900/50 hover:text-red-400"
+            className="shrink-0 rounded-md p-2 text-fg-4 transition-colors hover:bg-danger/10 hover:text-danger"
           >
-            <span className="material-symbols-outlined text-base">close</span>
+            <X className="size-4" />
           </button>
         </div>
       ))}
       <button
         type="button"
         onClick={addRow}
-        className="flex items-center gap-1 text-xs text-fg-3 transition-colors hover:text-accent"
+        className="flex items-center gap-1 text-xs font-medium text-fg-3 transition-colors hover:text-fg"
       >
-        <span className="material-symbols-outlined text-sm">add</span>
+        <Plus className="size-3.5" />
         Add
       </button>
     </div>
   );
 }
 
-const TOOL_ICONS: Record<string, string> = {
-  sentry: "bug_report",
-  jira: "task_alt",
-  git: "commit",
-  github: "code",
-  playwright: "web",
+const TOOL_ICONS: Record<string, LucideIcon> = {
+  sentry: Bug,
+  jira: ClipboardCheck,
+  git: GitCommitHorizontal,
+  github: Github,
+  playwright: AppWindow,
 };
 
 // Extracts provider_key values from a tool's required_config fields.
@@ -1297,42 +1274,33 @@ function MCPTab() {
     <div className="space-y-6">
       {/* ── Ready to use ── */}
       {!isLoading && !catalogLoading && readyTools.length > 0 && (
-        <div>
-          <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-            <span className="material-symbols-outlined text-accent text-base">
-              check_circle
-            </span>
-            Ready to Use
-          </h3>
-          <div className="flex flex-col gap-3">
+        <div className="overflow-hidden rounded-md border border-edge bg-surface">
+          <div className="border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">Ready to use</span>
+          </div>
+          <div className="divide-y divide-edge">
             {readyTools.map((tool) => {
               const providerKeys = getToolProviderKeys(tool);
               const matchingKey = allKeys?.find((k) =>
                 providerKeys.includes(k.provider),
               );
               const hasKey = !!matchingKey;
+              const ToolIcon = TOOL_ICONS[tool.name] ?? Puzzle;
               return (
-                <div
-                  key={tool.name}
-                  className="rounded-xl border border-accent/20 bg-accent/5 p-4"
-                >
+                <div key={tool.name} className="px-5 py-4">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-accent/30 bg-accent/10">
-                      <span className="material-symbols-outlined text-accent">
-                        {TOOL_ICONS[tool.name] ?? "extension"}
-                      </span>
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-ok/30 bg-ok/10">
+                      <ToolIcon className="size-4 text-ok" />
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-fg capitalize">
+                        <span className="text-sm font-medium text-fg capitalize">
                           {tool.name}
                         </span>
-                        <span className="material-symbols-outlined text-sm text-accent">
-                          check_circle
-                        </span>
+                        <CircleCheck className="size-3.5 text-ok" />
                         {matchingKey?.source === "env" && (
-                          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">
-                            ENV
+                          <span className="rounded-[4px] border border-warn/30 bg-warn/10 px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-warn uppercase">
+                            env
                           </span>
                         )}
                       </div>
@@ -1340,13 +1308,11 @@ function MCPTab() {
                         {tool.description}
                       </p>
                       {hasKey && (
-                        <p className="mt-1 flex items-center gap-1 text-[10px] text-accent/80">
-                          <span className="material-symbols-outlined text-xs">
-                            vpn_key
-                          </span>
+                        <p className="mt-1 flex items-center gap-1 text-[10px] text-fg-3">
+                          <KeyRound className="size-3" />
                           {matchingKey.source === "env"
                             ? `Using ${matchingKey.scope} environment variable`
-                            : `Using key "${matchingKey.name}" from Provider Keys`}
+                            : `Using key "${matchingKey.name}" from Provider keys`}
                         </p>
                       )}
                     </div>
@@ -1362,14 +1328,11 @@ function MCPTab() {
       {isLoading ? (
         <LoadingSkeleton />
       ) : servers && servers.length > 0 ? (
-        <div>
-          <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-            <span className="material-symbols-outlined text-fg-3 text-base">
-              dns
-            </span>
-            Custom Servers
-          </h3>
-          <div className="flex flex-col gap-3">
+        <div className="overflow-hidden rounded-md border border-edge bg-surface">
+          <div className="border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">Custom servers</span>
+          </div>
+          <div className="divide-y divide-edge">
             {servers.map((s) => (
               <MCPServerCard
                 key={s.name}
@@ -1384,364 +1347,332 @@ function MCPTab() {
 
       {/* ── Add more ── */}
       {formMode === "select" && (availableTools.length > 0 || true) && (
-        <div className="rounded-xl border border-edge bg-surface/50 p-5">
-          <h3 className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-            <span className="material-symbols-outlined text-accent text-base">
-              add_circle
-            </span>
-            Add MCP Server
-          </h3>
+        <div className="overflow-hidden rounded-md border border-edge bg-surface">
+          <div className="border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">Add MCP server</span>
+          </div>
 
-          {catalogLoading ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="h-24 animate-pulse rounded-lg bg-surface-alt"
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {mcpTools.map((tool) => {
-                const alreadyReady = readyTools.some(
-                  (r) => r.name === tool.name,
-                );
-                const alreadyAdded = serverNames.has(tool.name);
-                const isDisabled = alreadyAdded || alreadyReady;
-                const needsConfig = (tool.required_config?.length ?? 0) > 0;
-                const providerKeys = getToolProviderKeys(tool);
-                const hasKey = providerKeys.some((p) =>
-                  configuredProviders.has(p),
-                );
-                return (
-                  <button
-                    key={tool.name}
-                    type="button"
-                    disabled={isDisabled}
-                    onClick={() => selectPreset(tool)}
-                    className={`group relative flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors ${
-                      isDisabled
-                        ? "cursor-default border-accent/20 bg-accent/5 opacity-60"
-                        : "border-edge bg-surface-alt hover:border-accent/40 hover:bg-accent/5"
-                    }`}
-                  >
-                    <div className="flex w-full items-center justify-between">
-                      <span
-                        className={`material-symbols-outlined text-xl ${isDisabled ? "text-accent" : "text-fg-3 group-hover:text-accent"}`}
-                      >
-                        {TOOL_ICONS[tool.name] ?? "extension"}
-                      </span>
-                      {isDisabled && (
-                        <span className="material-symbols-outlined text-sm text-accent">
-                          check_circle
+          <div className="p-5">
+            {catalogLoading ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {[1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    className="h-24 animate-pulse rounded-md bg-surface-alt"
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {mcpTools.map((tool) => {
+                  const alreadyReady = readyTools.some(
+                    (r) => r.name === tool.name,
+                  );
+                  const alreadyAdded = serverNames.has(tool.name);
+                  const isDisabled = alreadyAdded || alreadyReady;
+                  const needsConfig = (tool.required_config?.length ?? 0) > 0;
+                  const providerKeys = getToolProviderKeys(tool);
+                  const hasKey = providerKeys.some((p) =>
+                    configuredProviders.has(p),
+                  );
+                  const ToolIcon = TOOL_ICONS[tool.name] ?? Puzzle;
+                  return (
+                    <button
+                      key={tool.name}
+                      type="button"
+                      disabled={isDisabled}
+                      onClick={() => selectPreset(tool)}
+                      className={`group relative flex flex-col items-start gap-2 rounded-md border p-4 text-left transition-colors ${
+                        isDisabled
+                          ? "cursor-default border-ok/25 bg-ok/10 opacity-70"
+                          : "border-edge bg-surface-alt hover:border-accent-muted hover:bg-accent-soft"
+                      }`}
+                    >
+                      <div className="flex w-full items-center justify-between">
+                        <ToolIcon
+                          className={`size-5 ${isDisabled ? "text-ok" : "text-fg-3 transition-colors group-hover:text-accent"}`}
+                        />
+                        {isDisabled && (
+                          <CircleCheck className="size-3.5 text-ok" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-fg capitalize">
+                          {tool.name}
+                        </p>
+                        <p className="mt-0.5 line-clamp-2 text-xs text-fg-4">
+                          {tool.description}
+                        </p>
+                      </div>
+                      {!isDisabled && needsConfig && !hasKey && (
+                        <span className="text-[10px] text-fg-4">
+                          {tool.required_config!.length} config field
+                          {tool.required_config!.length !== 1 && "s"}
                         </span>
                       )}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-fg capitalize">
-                        {tool.name}
-                      </p>
-                      <p className="mt-0.5 text-xs text-fg-4 line-clamp-2">
-                        {tool.description}
-                      </p>
-                    </div>
-                    {!isDisabled && needsConfig && !hasKey && (
-                      <span className="text-[10px] text-fg-4">
-                        {tool.required_config!.length} config field
-                        {tool.required_config!.length !== 1 && "s"}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                })}
 
-              {/* Custom card */}
-              <button
-                type="button"
-                onClick={() => setFormMode("custom")}
-                className="group flex flex-col items-start gap-2 rounded-lg border border-dashed border-edge p-4 text-left transition-colors hover:border-accent/40 hover:bg-accent/5"
-              >
-                <span className="material-symbols-outlined text-xl text-fg-3 group-hover:text-accent">
-                  dns
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-fg">Custom</p>
-                  <p className="mt-0.5 text-xs text-fg-4">
-                    Manual server configuration
-                  </p>
-                </div>
-              </button>
-            </div>
-          )}
+                {/* Custom card */}
+                <button
+                  type="button"
+                  onClick={() => setFormMode("custom")}
+                  className="group flex flex-col items-start gap-2 rounded-md border border-dashed border-edge p-4 text-left transition-colors hover:border-accent-muted hover:bg-accent-soft"
+                >
+                  <Server className="size-5 text-fg-3 transition-colors group-hover:text-accent" />
+                  <div>
+                    <p className="text-sm font-medium text-fg">Custom</p>
+                    <p className="mt-0.5 text-xs text-fg-4">
+                      Manual server configuration
+                    </p>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* ── Preset Form ── */}
+      {/* ── Preset form ── */}
       {formMode === "preset" && selectedTool && (
         <form
           onSubmit={(e) => void handlePresetSubmit(e)}
-          className="rounded-xl border border-edge bg-surface/50 p-5"
+          className="overflow-hidden rounded-md border border-edge bg-surface"
         >
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-              <span className="material-symbols-outlined text-accent text-base">
-                {TOOL_ICONS[selectedTool.name] ?? "extension"}
-              </span>
-              {selectedTool.name}
-            </h3>
+          <div className="flex items-center justify-between border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">{selectedTool.name}</span>
             <button
               type="button"
               onClick={goBack}
-              className="flex items-center gap-1 text-xs text-fg-3 transition-colors hover:text-accent"
+              className="flex items-center gap-1 text-xs font-medium text-fg-3 transition-colors hover:text-fg"
             >
-              <span className="material-symbols-outlined text-sm">
-                arrow_back
-              </span>
+              <ArrowLeft className="size-3.5" />
               Back
             </button>
           </div>
 
-          {/* Connection info */}
-          {selectedTool.mcp_transport === "http" ? (
-            <div className="mb-4">
-              <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-3">
-                <span className="material-symbols-outlined text-sm text-cyan-400">
-                  cloud
-                </span>
-                Server URL
-                <span
-                  className={`ml-auto rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border-cyan-500/30 bg-cyan-500/10 text-cyan-400`}
-                >
-                  http
-                </span>
-              </label>
-              <input
-                type="url"
-                value={presetUrl}
-                onChange={(e) => setPresetUrl(e.target.value)}
-                placeholder="https://mcp.sentry.dev/mcp"
-                required
-                className={inputCls}
-              />
-            </div>
-          ) : selectedTool.mcp_package ? (
-            <div className="mb-4 flex items-center gap-2 rounded-lg border border-edge bg-surface px-3 py-2">
-              <span className="material-symbols-outlined text-sm text-purple-400">
-                terminal
-              </span>
-              <p className="font-mono text-xs text-fg-3">
-                {selectedTool.mcp_command ?? "npx"} {selectedTool.mcp_package}
-              </p>
-              <span className="ml-auto rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border-purple-500/30 bg-purple-500/10 text-purple-400">
-                stdio
-              </span>
-            </div>
-          ) : null}
-
-          {selectedTool.required_config &&
-          selectedTool.required_config.length > 0 ? (
-            <div className="space-y-3">
-              {selectedTool.required_config.map((field) => (
-                <div key={field.name}>
-                  <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-3">
-                    {field.sensitive && (
-                      <span className="material-symbols-outlined text-sm">
-                        key
-                      </span>
-                    )}
-                    {field.name}
-                    <span className="text-fg-4 font-normal">
-                      — {field.description}
-                    </span>
-                  </label>
-                  <input
-                    type={field.sensitive ? "password" : "text"}
-                    value={presetEnv[field.name] ?? ""}
-                    onChange={(e) =>
-                      setPresetEnv((prev) => ({
-                        ...prev,
-                        [field.name]: e.target.value,
-                      }))
-                    }
-                    placeholder={field.env_var ?? field.name}
-                    className={inputCls}
-                  />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="py-4 text-center text-sm text-fg-4">
-              No configuration needed
-            </p>
-          )}
-
-          {validationError && (
-            <p className="mt-3 text-xs text-red-400">{validationError}</p>
-          )}
-
-          <button
-            type="submit"
-            disabled={createServer.isPending}
-            className="mt-4 flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-bold text-page transition-all hover:bg-accent-hover disabled:opacity-50"
-          >
-            {createServer.isPending ? (
-              <span className="material-symbols-outlined animate-spin text-base">
-                progress_activity
-              </span>
-            ) : (
-              <span className="material-symbols-outlined text-lg">add</span>
-            )}
-            Add Server
-          </button>
-        </form>
-      )}
-
-      {/* ── Custom Form ── */}
-      {formMode === "custom" && (
-        <form
-          onSubmit={(e) => void handleCustomSubmit(e)}
-          className="rounded-xl border border-edge bg-surface/50 p-5"
-        >
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-fg-2">
-              <span className="material-symbols-outlined text-accent text-base">
-                add_circle
-              </span>
-              Add MCP Server
-            </h3>
-            <button
-              type="button"
-              onClick={goBack}
-              className="flex items-center gap-1 text-xs text-fg-3 transition-colors hover:text-accent"
-            >
-              <span className="material-symbols-outlined text-sm">
-                arrow_back
-              </span>
-              Back
-            </button>
-          </div>
-
-          {/* Transport toggle */}
-          <div className="mb-4 flex gap-1 rounded-lg border border-edge bg-surface p-1 w-fit">
-            {(["stdio", "http"] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => {
-                  setTransport(t);
-                  setValidationError("");
-                }}
-                className={`rounded-md px-4 py-1.5 text-xs font-bold uppercase tracking-wider transition-colors ${
-                  transport === t
-                    ? "bg-accent text-page"
-                    : "text-fg-3 hover:text-fg"
-                }`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-
-          <div className="space-y-3">
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Name"
-              required
-              className={inputCls}
-            />
-
-            {transport === "stdio" ? (
-              <>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <input
-                    type="text"
-                    value={pkg}
-                    onChange={(e) => setPkg(e.target.value)}
-                    placeholder="Package (required)"
-                    required
-                    className={inputCls}
-                  />
-                  <input
-                    type="text"
-                    value={command}
-                    onChange={(e) => setCommand(e.target.value)}
-                    placeholder="Command (default: npx)"
-                    className={inputCls}
-                  />
-                  <input
-                    type="text"
-                    value={args}
-                    onChange={(e) => setArgs(e.target.value)}
-                    placeholder="Args (comma-separated or JSON)"
-                    className={inputCls}
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-3">
-                    <span className="material-symbols-outlined text-sm">
-                      key
-                    </span>
-                    Environment Variables
-                  </label>
-                  <KeyValueEditor
-                    entries={envEntries}
-                    onChange={setEnvEntries}
-                    keyPlaceholder="ENV_VAR"
-                    valuePlaceholder="value"
-                  />
-                </div>
-              </>
-            ) : (
-              <>
+          <div className="p-5">
+            {/* Connection info */}
+            {selectedTool.mcp_transport === "http" ? (
+              <div className="mb-4">
+                <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-2">
+                  <Cloud className="size-3.5 text-info" />
+                  Server URL
+                  <span className="ml-auto rounded-[4px] border border-info/30 bg-info/10 px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-info uppercase">
+                    http
+                  </span>
+                </label>
                 <input
                   type="url"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder="URL (required)"
+                  value={presetUrl}
+                  onChange={(e) => setPresetUrl(e.target.value)}
+                  placeholder="https://mcp.sentry.dev/mcp"
                   required
                   className={inputCls}
                 />
+              </div>
+            ) : selectedTool.mcp_package ? (
+              <div className="mb-4 flex items-center gap-2 rounded-md border border-edge bg-surface-alt px-3 py-2">
+                <Terminal className="size-3.5 shrink-0 text-fg-3" />
+                <p className="font-mono text-xs text-fg-3">
+                  {selectedTool.mcp_command ?? "npx"} {selectedTool.mcp_package}
+                </p>
+                <span className="ml-auto rounded-[4px] border border-edge bg-surface px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-fg-3 uppercase">
+                  stdio
+                </span>
+              </div>
+            ) : null}
 
-                <div>
-                  <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-3">
-                    <span className="material-symbols-outlined text-sm">
-                      http
-                    </span>
-                    Headers
-                  </label>
-                  <KeyValueEditor
-                    entries={headerEntries}
-                    onChange={setHeaderEntries}
-                    keyPlaceholder="Header-Name"
-                    valuePlaceholder="value"
-                  />
-                </div>
-              </>
+            {selectedTool.required_config &&
+            selectedTool.required_config.length > 0 ? (
+              <div className="space-y-3">
+                {selectedTool.required_config.map((field) => (
+                  <div key={field.name}>
+                    <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-2">
+                      {field.sensitive && (
+                        <KeyRound className="size-3 text-fg-4" />
+                      )}
+                      <span className="font-mono">{field.name}</span>
+                      <span className="font-normal text-fg-4">
+                        — {field.description}
+                      </span>
+                    </label>
+                    <input
+                      type={field.sensitive ? "password" : "text"}
+                      value={presetEnv[field.name] ?? ""}
+                      onChange={(e) =>
+                        setPresetEnv((prev) => ({
+                          ...prev,
+                          [field.name]: e.target.value,
+                        }))
+                      }
+                      placeholder={field.env_var ?? field.name}
+                      className={inputCls}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="py-4 text-center text-sm text-fg-4">
+                No configuration needed
+              </p>
             )}
+
+            {validationError && (
+              <p className="mt-3 text-xs text-danger">{validationError}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={createServer.isPending}
+              className="mt-4 flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+            >
+              {createServer.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              Add server
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* ── Custom form ── */}
+      {formMode === "custom" && (
+        <form
+          onSubmit={(e) => void handleCustomSubmit(e)}
+          className="overflow-hidden rounded-md border border-edge bg-surface"
+        >
+          <div className="flex items-center justify-between border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">Add MCP server</span>
+            <button
+              type="button"
+              onClick={goBack}
+              className="flex items-center gap-1 text-xs font-medium text-fg-3 transition-colors hover:text-fg"
+            >
+              <ArrowLeft className="size-3.5" />
+              Back
+            </button>
           </div>
 
-          {validationError && (
-            <p className="mt-3 text-xs text-red-400">{validationError}</p>
-          )}
+          <div className="p-5">
+            {/* Transport toggle */}
+            <div className="mb-4 flex w-fit gap-1 rounded-md border border-edge bg-surface-alt p-1">
+              {(["stdio", "http"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => {
+                    setTransport(t);
+                    setValidationError("");
+                  }}
+                  className={`rounded-[4px] px-4 py-1.5 font-mono text-xs tracking-wider uppercase transition-colors ${
+                    transport === t
+                      ? "bg-accent text-white"
+                      : "text-fg-3 hover:text-fg"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
 
-          <button
-            type="submit"
-            disabled={createServer.isPending}
-            className="mt-4 flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-bold text-page transition-all hover:bg-accent-hover disabled:opacity-50"
-          >
-            {createServer.isPending ? (
-              <span className="material-symbols-outlined animate-spin text-base">
-                progress_activity
-              </span>
-            ) : (
-              <span className="material-symbols-outlined text-lg">add</span>
+            <div className="space-y-3">
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Name"
+                required
+                className={inputCls}
+              />
+
+              {transport === "stdio" ? (
+                <>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <input
+                      type="text"
+                      value={pkg}
+                      onChange={(e) => setPkg(e.target.value)}
+                      placeholder="Package (required)"
+                      required
+                      className={inputCls}
+                    />
+                    <input
+                      type="text"
+                      value={command}
+                      onChange={(e) => setCommand(e.target.value)}
+                      placeholder="Command (default: npx)"
+                      className={inputCls}
+                    />
+                    <input
+                      type="text"
+                      value={args}
+                      onChange={(e) => setArgs(e.target.value)}
+                      placeholder="Args (comma-separated or JSON)"
+                      className={inputCls}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-2">
+                      <KeyRound className="size-3 text-fg-4" />
+                      Environment variables
+                    </label>
+                    <KeyValueEditor
+                      entries={envEntries}
+                      onChange={setEnvEntries}
+                      keyPlaceholder="ENV_VAR"
+                      valuePlaceholder="value"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <input
+                    type="url"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    placeholder="URL (required)"
+                    required
+                    className={inputCls}
+                  />
+
+                  <div>
+                    <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-2">
+                      <Globe className="size-3 text-fg-4" />
+                      Headers
+                    </label>
+                    <KeyValueEditor
+                      entries={headerEntries}
+                      onChange={setHeaderEntries}
+                      keyPlaceholder="Header-Name"
+                      valuePlaceholder="value"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+
+            {validationError && (
+              <p className="mt-3 text-xs text-danger">{validationError}</p>
             )}
-            Add Server
-          </button>
+
+            <button
+              type="submit"
+              disabled={createServer.isPending}
+              className="mt-4 flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+            >
+              {createServer.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              Add server
+            </button>
+          </div>
         </form>
       )}
     </div>
@@ -1767,70 +1698,72 @@ function WorkspacesTab() {
       {!isLoading && workspaces && workspaces.length > 0 && (
         <p className="text-sm text-fg-3">
           Total disk usage:{" "}
-          <span className="font-mono font-bold text-accent">{totalMB} MB</span>
+          <span className="font-mono font-semibold text-fg">{totalMB} MB</span>
         </p>
       )}
 
       {isLoading ? (
         <LoadingSkeleton />
       ) : workspaces && workspaces.length > 0 ? (
-        <div className="flex flex-col gap-3">
-          {workspaces.map((w) => (
-            <div
-              key={w.session_id}
-              className="flex items-center justify-between rounded-xl border border-edge bg-surface-alt p-4"
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-edge bg-surface">
-                  <span className="material-symbols-outlined text-accent/60">
-                    folder
-                  </span>
-                </div>
-                <div>
-                  <span className="font-mono text-sm text-fg">
-                    {w.session_id.slice(0, 12)}...
-                  </span>
-                  <p className="text-xs text-fg-4">{w.path}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-4">
-                <span className="font-mono text-sm text-fg-3">
-                  {Math.round(w.size_mb * 10) / 10} MB
-                </span>
-                {confirmDelete === w.session_id ? (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => void handleDelete(w.session_id)}
-                      disabled={deleteWorkspace.isPending}
-                      className="rounded-lg border border-red-900/50 bg-red-900/20 px-3 py-1.5 text-xs font-medium text-red-400"
-                    >
-                      Delete
-                    </button>
-                    <button
-                      onClick={() => setConfirmDelete(null)}
-                      className="text-xs text-fg-3"
-                    >
-                      Cancel
-                    </button>
+        <div className="overflow-hidden rounded-md border border-edge bg-surface">
+          <div className="border-b border-edge px-5 py-3.5">
+            <span className="eyebrow">Workspaces</span>
+          </div>
+          <div className="divide-y divide-edge">
+            {workspaces.map((w) => (
+              <div
+                key={w.session_id}
+                className="flex items-center justify-between px-5 py-4"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex size-9 items-center justify-center rounded-md border border-edge bg-surface-alt">
+                    <Folder className="size-4 text-fg-3" />
                   </div>
-                ) : (
-                  <button
-                    onClick={() => setConfirmDelete(w.session_id)}
-                    className="rounded-md border border-edge p-1.5 text-fg-4 transition-colors hover:border-red-900/50 hover:text-red-400"
-                  >
-                    <span className="material-symbols-outlined text-base">
-                      delete
+                  <div>
+                    <span className="font-mono text-sm text-fg">
+                      {w.session_id.slice(0, 12)}...
                     </span>
-                  </button>
-                )}
+                    <p className="font-mono text-xs text-fg-4">{w.path}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="font-mono text-sm text-fg-3">
+                    {Math.round(w.size_mb * 10) / 10} MB
+                  </span>
+                  {confirmDelete === w.session_id ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => void handleDelete(w.session_id)}
+                        disabled={deleteWorkspace.isPending}
+                        className="rounded-md border border-danger/30 px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/10"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => setConfirmDelete(null)}
+                        className="text-xs text-fg-3 transition-colors hover:text-fg"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmDelete(w.session_id)}
+                      className="rounded-md p-2 text-fg-4 transition-colors hover:bg-danger/10 hover:text-danger"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       ) : (
-        <p className="py-8 text-center text-sm text-fg-4">
-          No workspaces found.
-        </p>
+        <div className="flex flex-col items-center rounded-md border border-edge bg-surface py-12 text-center">
+          <FolderOpen className="mb-3 size-6 text-fg-4" strokeWidth={1.75} />
+          <p className="text-sm text-fg-3">No workspaces found.</p>
+        </div>
       )}
     </div>
   );
@@ -1840,7 +1773,7 @@ function LoadingSkeleton() {
   return (
     <div className="space-y-3">
       {[1, 2, 3].map((i) => (
-        <div key={i} className="h-16 animate-pulse rounded-xl bg-surface-alt" />
+        <div key={i} className="h-16 animate-pulse rounded-md bg-surface-alt" />
       ))}
     </div>
   );

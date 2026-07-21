@@ -3,11 +3,17 @@
 /* Enable class-based dark mode for Tailwind v4 */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ─── Theme tokens ─── */
+/* ═══════════════════════════════════════════════════════════════
+   CodeForge — "The Forge" design system
+   Warm iron charcoal, ivory text, one ember accent.
+   Rule 1: machine data (ids, repos, logs, versions) is mono;
+           human UI is Archivo.
+   Rule 2: the only thing that glows is what is running.
+   ═══════════════════════════════════════════════════════════════ */
+
 @theme {
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --font-display: "Space Grotesk", system-ui, sans-serif;
-  --color-neon: #00ff41;
+  --font-sans: "Archivo", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
   /* Dynamic semantic colors — resolved via CSS vars set in :root / .dark */
   --color-page: var(--th-page);
@@ -20,60 +26,96 @@
   --color-fg-2: var(--th-fg-2);
   --color-fg-3: var(--th-fg-3);
   --color-fg-4: var(--th-fg-4);
+
+  /* Ember — the single accent */
   --color-accent: var(--th-accent);
   --color-accent-bold: var(--th-accent-bold);
   --color-accent-hover: var(--th-accent-hover);
   --color-accent-soft: var(--th-accent-soft);
   --color-accent-muted: var(--th-accent-muted);
+
+  /* Status semantics: ok = tempered green, danger = rust,
+     warn = amber, info = cold steel */
+  --color-ok: var(--th-ok);
+  --color-danger: var(--th-danger);
+  --color-warn: var(--th-warn);
+  --color-info: var(--th-info);
 }
 
-/* ─── Light mode (default) ─── */
+/* ─── Light mode: workshop daylight ─── */
 :root {
-  --th-page: #f6f8fa;
-  --th-surface: #ffffff;
-  --th-surface-alt: #f0f3f6;
-  --th-surface-glass: rgba(255, 255, 255, 0.92);
-  --th-input: #f0f3f6;
-  --th-edge: #d1d9e0;
-  --th-fg: #1f2328;
-  --th-fg-2: #59636e;
-  --th-fg-3: #818b98;
-  --th-fg-4: #afb8c1;
-  --th-accent: #0d7a4a;
-  --th-accent-bold: #16a34a;
-  --th-accent-hover: #15803d;
-  --th-accent-soft: #dcfce7;
-  --th-accent-muted: #0d7a4a20;
-  --th-grid-line: #d1d9e012;
-  --th-scrollbar: #d1d9e0;
-  --th-scrollbar-hover: #b1b8c0;
+  --th-page: #f2ede3;
+  --th-surface: #faf7f0;
+  --th-surface-alt: #f6f1e7;
+  --th-surface-glass: rgba(250, 247, 240, 0.92);
+  --th-input: #efe9dd;
+  --th-edge: #ddd2c0;
+  --th-fg: #241d14;
+  --th-fg-2: #5c5245;
+  --th-fg-3: #8a7d6b;
+  --th-fg-4: #b3a794;
+  --th-accent: #c14a10;
+  --th-accent-bold: #a83d0c;
+  --th-accent-hover: #d95a1c;
+  --th-accent-soft: rgba(193, 74, 16, 0.09);
+  --th-accent-muted: rgba(193, 74, 16, 0.3);
+  --th-ok: #2f7d50;
+  --th-danger: #b3402f;
+  --th-warn: #96690f;
+  --th-info: #47708c;
+  --th-ember-glow: rgba(193, 74, 16, 0.35);
+  --th-scrollbar: #d5c9b6;
+  --th-scrollbar-hover: #bfb19b;
 }
 
-/* ─── Dark mode ─── */
+/* ─── Dark mode: forge at night ─── */
 .dark {
-  --th-page: #050a06;
-  --th-surface: #0f1611;
-  --th-surface-alt: #161b18;
-  --th-surface-glass: rgba(16, 24, 18, 0.7);
-  --th-input: #0f1611;
-  --th-edge: #273a2c;
-  --th-fg: #f1f5f9;
-  --th-fg-2: #cbd5e1;
-  --th-fg-3: #94a3b8;
-  --th-fg-4: #64748b;
-  --th-accent: #00ff40;
-  --th-accent-bold: #00cc33;
-  --th-accent-hover: #33ff66;
-  --th-accent-soft: #00ff4015;
-  --th-accent-muted: #00ff4025;
-  --th-grid-line: #1a2e20;
-  --th-scrollbar: #273a2c;
-  --th-scrollbar-hover: #3a5440;
+  --th-page: #16110d;
+  --th-surface: #1d1712;
+  --th-surface-alt: #241d16;
+  --th-surface-glass: rgba(24, 18, 13, 0.88);
+  --th-input: #191410;
+  --th-edge: #372c21;
+  --th-fg: #f3ede2;
+  --th-fg-2: #cfc4b4;
+  --th-fg-3: #9c8f7d;
+  --th-fg-4: #6b5f50;
+  --th-accent: #ff6d2e;
+  --th-accent-bold: #e5581c;
+  --th-accent-hover: #ff8a52;
+  --th-accent-soft: rgba(255, 109, 46, 0.1);
+  --th-accent-muted: rgba(255, 109, 46, 0.3);
+  --th-ok: #58b57c;
+  --th-danger: #e0604f;
+  --th-warn: #dca23f;
+  --th-info: #7fa9c9;
+  --th-ember-glow: rgba(255, 109, 46, 0.5);
+  --th-scrollbar: #372c21;
+  --th-scrollbar-hover: #4d3e2e;
+}
+
+/* ─── Typography utilities ─── */
+
+/* Page titles: industrial signage — wide, heavy Archivo */
+.font-expanded {
+  font-stretch: 118%;
+  letter-spacing: -0.015em;
+}
+
+/* Eyebrow: small mono label above titles / on card headers */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--th-fg-3);
 }
 
 /* ─── Scrollbar ─── */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -86,182 +128,82 @@
   background: var(--th-scrollbar-hover);
 }
 
-/* ─── Animations ─── */
-@keyframes scanline {
-  0% {
-    transform: translateY(-100%);
-  }
-  100% {
-    transform: translateY(100vh);
-  }
+/* ─── Focus ───
+   Form fields signal focus via border-color; everything else gets a ring. */
+:focus-visible:not(input):not(textarea):not(select) {
+  outline: 2px solid var(--th-accent);
+  outline-offset: 2px;
 }
 
-@keyframes pulse-glow {
+/* ─── The ember: the one glow in the whole app ───
+   Applied to the small dot/indicator of anything that is
+   actively working (running, cloning, reviewing, live stream). */
+@keyframes ember-breathe {
   0%,
   100% {
     box-shadow:
-      0 0 8px #00ff4120,
-      0 0 20px #00ff4108;
+      0 0 4px 0 var(--th-ember-glow),
+      0 0 14px 2px color-mix(in srgb, var(--th-ember-glow) 40%, transparent);
+    opacity: 0.85;
   }
   50% {
     box-shadow:
-      0 0 12px #00ff4130,
-      0 0 30px #00ff4110;
+      0 0 8px 2px var(--th-ember-glow),
+      0 0 24px 6px color-mix(in srgb, var(--th-ember-glow) 55%, transparent);
+    opacity: 1;
   }
 }
+.animate-ember {
+  animation: ember-breathe 2.6s ease-in-out infinite;
+}
 
-@keyframes blink {
+/* Live dots in non-accent colors breathe without the glow */
+@keyframes soft-pulse {
   0%,
   100% {
     opacity: 1;
   }
   50% {
-    opacity: 0;
+    opacity: 0.45;
   }
 }
+.animate-soft-pulse {
+  animation: soft-pulse 2.2s ease-in-out infinite;
+}
 
+/* ─── Entry animation ─── */
 @keyframes fade-in-up {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
-
-.animate-scanline {
-  animation: scanline 8s linear infinite;
-}
-.animate-pulse-glow {
-  animation: pulse-glow 3s ease-in-out infinite;
-}
-.animate-blink {
-  animation: blink 1.2s step-end infinite;
-}
 .animate-fade-in-up {
-  animation: fade-in-up 0.5s ease-out both;
+  animation: fade-in-up 0.45s ease-out both;
 }
 
-/* ─── Theme-aware glow utilities ─── */
-.glow-border {
-  border-color: var(--th-accent-muted);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-}
-.dark .glow-border {
-  box-shadow:
-    0 0 10px #00ff4110,
-    inset 0 0 10px #00ff4105;
-}
-
-.glow-border-strong {
-  border-color: var(--th-accent-muted);
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1);
-}
-.dark .glow-border-strong {
-  border-color: #00ff4140;
-  box-shadow:
-    0 0 15px #00ff4118,
-    inset 0 0 15px #00ff4108;
-}
-
-.text-glow {
-  /* no glow in light mode */
-}
-.dark .text-glow {
-  text-shadow:
-    0 0 10px #00ff4160,
-    0 0 30px #00ff4120;
-}
-
-.text-glow-strong {
-  /* no glow in light mode */
-}
-.dark .text-glow-strong {
-  text-shadow:
-    0 0 8px #00ff4180,
-    0 0 20px #00ff4140,
-    0 0 40px #00ff4120;
-}
-
-/* ─── Login page: CRT scanline overlay ─── */
-.crt-overlay {
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0) 50%,
-    rgba(0, 0, 0, 0.2) 50%,
-    rgba(0, 0, 0, 0.2) 100%
-  );
-  background-size: 100% 4px;
-}
-
-/* ─── Login page: Cyber card clip-path ─── */
-.cyber-card {
-  clip-path: polygon(
-    20px 0,
-    100% 0,
-    100% calc(100% - 20px),
-    calc(100% - 20px) 100%,
-    0 100%,
-    0 20px
-  );
-}
-
-/* ─── Login page: Neon effects ─── */
-.neon-text {
-  text-shadow:
-    0 0 10px rgba(0, 255, 64, 0.7),
-    0 0 20px rgba(0, 255, 64, 0.5);
-}
-
-.neon-border {
-  box-shadow:
-    0 0 15px rgba(0, 255, 64, 0.3),
-    inset 0 0 15px rgba(0, 255, 64, 0.1);
-}
-
-@keyframes cursor-blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
-}
-.animate-cursor-blink {
-  animation: cursor-blink 1s step-end infinite;
-}
-
-@keyframes shimmer {
+/* Login: molten line sweeping across the divider */
+@keyframes molten-sweep {
   0% {
-    transform: translateX(-200%) skewX(-12deg);
+    transform: translateX(-100%);
   }
   100% {
-    transform: translateX(400%) skewX(-12deg);
+    transform: translateX(400%);
   }
 }
-
-/* ─── Grid pattern background ─── */
-.bg-grid {
-  background-image:
-    linear-gradient(var(--th-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--th-grid-line) 1px, transparent 1px);
-  background-size: 40px 40px;
+.animate-molten-sweep {
+  animation: molten-sweep 3.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-/* ─── Noise texture overlay — dark mode only ─── */
-.bg-noise::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  opacity: 0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
-  pointer-events: none;
-  z-index: 0;
-}
-.dark .bg-noise::before {
-  opacity: 0.015;
+@media (prefers-reduced-motion: reduce) {
+  .animate-ember,
+  .animate-soft-pulse,
+  .animate-fade-in-up,
+  .animate-molten-sweep {
+    animation: none;
+  }
 }

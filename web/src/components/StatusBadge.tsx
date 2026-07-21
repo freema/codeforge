@@ -1,96 +1,64 @@
 import type { SessionStatus } from "../types";
 
+/* Heat semantics: running is hot (ember, the one glow in the app),
+   cold machine processes are steel, waiting is amber, success is
+   tempered green, failure is rust, canceled is cooled ash. */
 const statusConfig: Record<
   SessionStatus,
   {
     label: string;
-    color: string;
-    bg: string;
-    border: string;
-    icon: string;
-    animated?: boolean;
+    tone: string;
+    dot?: "ember" | "pulse";
   }
 > = {
   pending: {
-    label: "QUEUED",
-    color: "text-yellow-500",
-    bg: "bg-yellow-500/10",
-    border: "border-yellow-500/20",
-    icon: "pending",
+    label: "Queued",
+    tone: "border-warn/30 bg-warn/10 text-warn",
   },
   cloning: {
-    label: "CLONING",
-    color: "text-emerald-400",
-    bg: "bg-emerald-400/10",
-    border: "border-emerald-400/20",
-    icon: "download",
-    animated: true,
+    label: "Cloning",
+    tone: "border-info/30 bg-info/10 text-info",
+    dot: "pulse",
   },
   running: {
-    label: "RUNNING",
-    color: "text-accent",
-    bg: "bg-accent/10",
-    border: "border-accent/20",
-    icon: "terminal",
-    animated: true,
+    label: "Running",
+    tone: "border-accent-muted bg-accent-soft text-accent",
+    dot: "ember",
   },
   completed: {
-    label: "DONE",
-    color: "text-fg-3",
-    bg: "bg-surface",
-    border: "border-edge",
-    icon: "check",
+    label: "Done",
+    tone: "border-ok/30 bg-ok/10 text-ok",
   },
   failed: {
-    label: "FAILED",
-    color: "text-red-500",
-    bg: "bg-red-500/10",
-    border: "border-red-500/20",
-    icon: "close",
+    label: "Failed",
+    tone: "border-danger/30 bg-danger/10 text-danger",
   },
   awaiting_instruction: {
-    label: "AWAITING",
-    color: "text-purple-400",
-    bg: "bg-purple-400/10",
-    border: "border-purple-400/20",
-    icon: "chat_bubble",
+    label: "Awaiting input",
+    tone: "border-accent-muted bg-accent-soft text-accent",
   },
   reviewing: {
-    label: "REVIEWING",
-    color: "text-blue-400",
-    bg: "bg-blue-400/10",
-    border: "border-blue-400/20",
-    icon: "rate_review",
-    animated: true,
+    label: "Reviewing",
+    tone: "border-info/30 bg-info/10 text-info",
+    dot: "pulse",
   },
   creating_pr: {
-    label: "CREATING PR",
-    color: "text-teal-400",
-    bg: "bg-teal-400/10",
-    border: "border-teal-400/20",
-    icon: "call_merge",
-    animated: true,
+    label: "Creating PR",
+    tone: "border-info/30 bg-info/10 text-info",
+    dot: "pulse",
   },
   pr_created: {
-    label: "PR CREATED",
-    color: "text-teal-400",
-    bg: "bg-teal-400/10",
-    border: "border-teal-400/20",
-    icon: "call_merge",
+    label: "PR created",
+    tone: "border-info/30 bg-info/10 text-info",
   },
   cancelling: {
-    label: "CANCELLING",
-    color: "text-orange-400",
-    bg: "bg-orange-400/10",
-    border: "border-orange-400/20",
-    icon: "cancel",
+    label: "Canceling",
+    tone: "border-warn/30 bg-warn/10 text-warn",
+    dot: "pulse",
   },
   canceled: {
-    label: "CANCELED",
-    color: "text-orange-400",
-    bg: "bg-orange-400/10",
-    border: "border-orange-400/20",
-    icon: "cancel",
+    label: "Canceled",
+    tone: "border-edge bg-surface-alt text-fg-3",
   },
 };
 
@@ -99,16 +67,17 @@ export default function StatusBadge({ status }: { status: SessionStatus }) {
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-bold uppercase tracking-wider ${config.bg} ${config.border} ${config.color} border`}
+      className={`inline-flex items-center gap-1.5 rounded-[4px] border px-2 py-0.5 font-mono text-[10px] font-medium tracking-[0.08em] uppercase ${config.tone}`}
     >
-      {config.animated && (
-        <span className={`size-1.5 rounded-full bg-current animate-pulse`} />
-      )}
-      {!config.animated && (
-        <span className="material-symbols-outlined text-[14px]">
-          {config.icon}
-        </span>
-      )}
+      <span
+        className={`size-1.5 rounded-full bg-current ${
+          config.dot === "ember"
+            ? "animate-ember"
+            : config.dot === "pulse"
+              ? "animate-soft-pulse"
+              : ""
+        }`}
+      />
       {config.label}
     </span>
   );

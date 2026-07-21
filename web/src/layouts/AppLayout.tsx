@@ -1,22 +1,46 @@
 import { useState } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router";
+import {
+  Anvil,
+  LayoutDashboard,
+  SquareTerminal,
+  Network,
+  CalendarClock,
+  Settings,
+  ShieldCheck,
+  Gauge,
+  Building2,
+  Sun,
+  Moon,
+  LogOut,
+  Menu,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { useHealth } from "../hooks/useHealth";
 
-const operatorNavItems = [
-  { to: "/", label: "Dashboard", icon: "dashboard", end: true },
-  { to: "/sessions", label: "Sessions", icon: "task", end: false },
-  { to: "/workflows", label: "Workflows", icon: "account_tree", end: false },
-  { to: "/schedules", label: "Schedules", icon: "schedule", end: false },
-  { to: "/settings", label: "Settings", icon: "settings", end: false },
-  { to: "/admin", label: "Admin", icon: "admin_panel_settings", end: false },
+interface NavItem {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  end: boolean;
+}
+
+const operatorNavItems: NavItem[] = [
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/sessions", label: "Sessions", icon: SquareTerminal, end: false },
+  { to: "/workflows", label: "Workflows", icon: Network, end: false },
+  { to: "/schedules", label: "Schedules", icon: CalendarClock, end: false },
+  { to: "/settings", label: "Settings", icon: Settings, end: false },
+  { to: "/admin", label: "Admin", icon: ShieldCheck, end: false },
 ];
 
-const tenantNavItems = [
-  { to: "/", label: "Dashboard", icon: "dashboard", end: true },
-  { to: "/sessions", label: "Sessions", icon: "task", end: false },
-  { to: "/usage", label: "Usage", icon: "monitoring", end: false },
+const tenantNavItems: NavItem[] = [
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/sessions", label: "Sessions", icon: SquareTerminal, end: false },
+  { to: "/usage", label: "Usage", icon: Gauge, end: false },
 ];
 
 export default function AppLayout() {
@@ -35,98 +59,84 @@ export default function AppLayout() {
 
   return (
     <div className="relative flex h-screen w-full overflow-hidden bg-page">
-      {/* Grid background */}
-      <div
-        className="pointer-events-none absolute inset-0 z-0 opacity-20"
-        style={{
-          backgroundImage:
-            "linear-gradient(to right, var(--th-grid-line) 1px, transparent 1px), linear-gradient(to bottom, var(--th-grid-line) 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
-          maskImage:
-            "linear-gradient(to bottom, rgba(0,0,0,1) 80%, rgba(0,0,0,0))",
-          WebkitMaskImage:
-            "linear-gradient(to bottom, rgba(0,0,0,1) 80%, rgba(0,0,0,0))",
-        }}
-      />
-
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-20 bg-page/80 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-20 bg-page/70 backdrop-blur-sm lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-30 flex w-72 flex-col border-r border-edge backdrop-blur-xl transition-transform lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-edge bg-surface transition-transform lg:static lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
-        style={{ background: "var(--th-surface-glass)" }}
       >
         <div className="flex h-full flex-col justify-between p-4">
           {/* Top section */}
-          <div className="flex flex-col gap-6">
-            {/* Logo */}
-            <div className="flex items-center gap-3 px-2 py-2">
-              <div className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-accent/30 bg-surface-alt shadow-[0_0_15px_rgba(0,255,64,0.15)]">
-                <span className="material-symbols-outlined text-2xl text-accent">
-                  terminal
-                </span>
+          <div className="flex flex-col gap-7">
+            {/* Mark + wordmark */}
+            <div className="flex items-center gap-3 px-2 pt-1">
+              <div className="flex size-9 items-center justify-center rounded-md border border-accent-muted bg-accent-soft">
+                <Anvil className="size-5 text-accent" strokeWidth={1.75} />
               </div>
               <div className="flex flex-col">
-                <h1
-                  className="text-lg font-bold tracking-tight text-fg"
-                  style={{ textShadow: "0 0 10px rgba(0,255,64,0.5)" }}
-                >
+                <span className="font-expanded text-base leading-tight font-extrabold tracking-tight text-fg">
                   CodeForge
-                </h1>
+                </span>
                 {health?.version && (
-                  <p className="font-mono text-xs text-accent/70">
+                  <span className="font-mono text-[10px] text-fg-4">
                     {health.version}
-                  </p>
+                  </span>
                 )}
               </div>
             </div>
 
             {/* Navigation */}
-            <nav className="flex flex-col gap-2">
-              {navItems.map(({ to, label, icon, end }) => (
+            <nav className="flex flex-col gap-1">
+              {navItems.map(({ to, label, icon: Icon, end }) => (
                 <NavLink
                   key={to}
                   to={to}
                   end={end}
                   onClick={() => setSidebarOpen(false)}
                   className={({ isActive }) =>
-                    `group flex items-center gap-3 rounded-lg px-3 py-3 transition-all duration-200 ${
+                    `relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors ${
                       isActive
-                        ? "border border-accent/20 bg-accent/10 text-accent"
-                        : "text-fg-3 hover:bg-surface-alt hover:text-fg"
+                        ? "bg-surface-alt font-semibold text-fg"
+                        : "font-medium text-fg-3 hover:bg-surface-alt hover:text-fg"
                     }`
                   }
                 >
-                  <span className="material-symbols-outlined transition-colors group-hover:text-accent">
-                    {icon}
-                  </span>
-                  <p className="text-sm font-medium tracking-wide">{label}</p>
+                  {({ isActive }) => (
+                    <>
+                      {/* Hot rail — the ember marks where you are */}
+                      {isActive && (
+                        <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-accent" />
+                      )}
+                      <Icon
+                        className={`size-4.5 ${isActive ? "text-accent" : ""}`}
+                      />
+                      {label}
+                    </>
+                  )}
                 </NavLink>
               ))}
             </nav>
           </div>
 
           {/* Bottom section */}
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             {/* Tenant identity */}
             {role === "tenant" && tenantName && (
               <div className="flex items-center gap-2 px-3">
-                <span className="material-symbols-outlined text-sm text-fg-4">
-                  apartment
-                </span>
+                <Building2 className="size-3.5 shrink-0 text-fg-4" />
                 <span className="min-w-0 truncate text-xs text-fg-3">
                   {tenantName}
                 </span>
                 {tier && (
-                  <span className="shrink-0 rounded-full border border-edge bg-surface px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-fg-3">
+                  <span className="shrink-0 rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-fg-3 uppercase">
                     {tier}
                   </span>
                 )}
@@ -134,25 +144,25 @@ export default function AppLayout() {
             )}
 
             {/* User actions */}
-            <div className="flex items-center gap-2 rounded-xl border border-edge bg-surface-alt p-3">
+            <div className="flex items-center gap-1 border-t border-edge px-1 pt-3">
               <button
                 onClick={toggle}
-                className="flex items-center justify-center rounded-lg p-2 text-fg-3 transition-colors hover:bg-edge hover:text-fg"
+                className="rounded-md p-2 text-fg-3 transition-colors hover:bg-surface-alt hover:text-fg"
                 title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
               >
-                <span className="material-symbols-outlined text-lg">
-                  {theme === "dark" ? "light_mode" : "dark_mode"}
-                </span>
+                {theme === "dark" ? (
+                  <Sun className="size-4" />
+                ) : (
+                  <Moon className="size-4" />
+                )}
               </button>
               <div className="flex-1" />
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-2 rounded-lg border border-red-900/50 bg-red-900/10 px-4 py-2 font-mono text-xs font-bold text-red-400 transition-all hover:bg-red-900/20 hover:text-red-300"
+                className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-fg-3 transition-colors hover:bg-surface-alt hover:text-fg"
               >
-                <span className="material-symbols-outlined text-sm">
-                  logout
-                </span>
-                LOGOUT
+                <LogOut className="size-4" />
+                Log out
               </button>
             </div>
           </div>
@@ -161,31 +171,21 @@ export default function AppLayout() {
 
       {/* Main area */}
       <main className="relative z-10 flex h-full flex-1 flex-col overflow-y-auto">
-        {/* Top header bar */}
-        <header
-          className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-edge px-6 py-3 backdrop-blur-md"
-          style={{ background: "var(--th-surface-glass)" }}
-        >
-          {/* Mobile menu */}
-          <div className="flex items-center gap-4 lg:hidden">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="text-fg-3 hover:text-accent"
-            >
-              <span className="material-symbols-outlined">
-                {sidebarOpen ? "close" : "menu"}
-              </span>
-            </button>
-            <span className="text-lg font-bold text-fg">CodeForge</span>
-          </div>
-
-          <div className="hidden lg:block" />
-
-          <div className="ml-auto flex items-center gap-4">
-            <button className="relative rounded-full p-2 text-fg-3 transition-colors hover:bg-surface-alt hover:text-fg">
-              <span className="material-symbols-outlined">notifications</span>
-            </button>
-          </div>
+        {/* Mobile top bar */}
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b border-edge bg-surface-glass px-4 backdrop-blur-md lg:hidden">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="rounded-md p-2 text-fg-3 hover:text-fg"
+          >
+            {sidebarOpen ? (
+              <X className="size-5" />
+            ) : (
+              <Menu className="size-5" />
+            )}
+          </button>
+          <span className="font-expanded text-base font-extrabold text-fg">
+            CodeForge
+          </span>
         </header>
 
         {/* Content */}

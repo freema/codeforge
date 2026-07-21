@@ -1,15 +1,28 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import {
+  BookOpen,
+  Bug,
+  ChevronDown,
+  ChevronUp,
+  Code,
+  Network,
+  Play,
+  Plus,
+  Search,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useToast } from "../context/ToastContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApi } from "../hooks/useApi";
 
-const workflowIcons: Record<string, string> = {
-  "sentry-fixer": "bug_report",
-  "github-issue-fixer": "code",
-  "gitlab-issue-fixer": "code",
-  "knowledge-update": "menu_book",
+const workflowIcons: Record<string, LucideIcon> = {
+  "sentry-fixer": Bug,
+  "github-issue-fixer": Code,
+  "gitlab-issue-fixer": Code,
+  "knowledge-update": BookOpen,
 };
 
 export default function WorkflowList() {
@@ -54,54 +67,45 @@ export default function WorkflowList() {
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-fg">
+          <p className="eyebrow mb-1">Automation</p>
+          <h2 className="font-expanded text-2xl font-extrabold tracking-tight text-fg">
             Workflows
-          </h1>
-          <p className="mt-1 text-sm text-fg-3">
-            Saved workflow configurations
-          </p>
+          </h2>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => void navigate("/workflows/new")}
-            className="flex h-10 items-center gap-2 rounded-lg bg-accent px-5 text-sm font-bold text-page shadow-[0_0_15px_rgba(0,255,64,0.3)] transition-all hover:bg-accent-hover"
-          >
-            <span className="material-symbols-outlined text-lg">add</span>
-            Create Workflow
-          </button>
-        </div>
+        <button
+          onClick={() => void navigate("/workflows/new")}
+          className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover"
+        >
+          <Plus className="size-4" />
+          New workflow
+        </button>
       </div>
 
       {/* Search */}
-      <div className="group relative">
-        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-fg-4 transition-colors group-focus-within:text-accent">
-          <span className="material-symbols-outlined">search</span>
-        </div>
+      <div className="relative">
+        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-4" />
         <input
           type="text"
-          placeholder="> Search workflows..."
+          placeholder="Search workflows"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="h-12 w-full rounded-lg border border-edge bg-surface-alt pl-10 pr-4 font-mono text-sm text-fg placeholder-fg-4 transition-all focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          className="w-full rounded-md border border-edge bg-input py-2 pr-3 pl-9 text-sm text-fg placeholder-fg-4 transition-colors focus:border-accent focus:outline-none"
         />
       </div>
 
       {/* Content */}
       {!configsLoading && configs.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20">
-          <span className="material-symbols-outlined mb-4 text-5xl text-slate-700">
-            account_tree
-          </span>
-          <p className="mb-1 text-lg font-medium text-fg-3">No workflows yet</p>
-          <p className="mb-4 text-sm text-fg-4">
-            Create your first workflow by picking a template and configuring it.
+        <div className="flex flex-col items-center justify-center rounded-md border border-edge bg-surface py-16 text-center">
+          <Network className="mb-3 size-6 text-fg-4" strokeWidth={1.75} />
+          <p className="mb-4 text-sm text-fg-3">
+            No workflows yet. Create one from a template.
           </p>
           <button
             onClick={() => void navigate("/workflows/new")}
-            className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-bold text-page shadow-[0_0_15px_rgba(0,255,64,0.3)] transition-all hover:bg-accent-hover"
+            className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover"
           >
-            <span className="material-symbols-outlined text-lg">add</span>
-            Create Workflow
+            <Plus className="size-4" />
+            New workflow
           </button>
         </div>
       ) : filteredConfigs.length === 0 ? (
@@ -111,23 +115,23 @@ export default function WorkflowList() {
       ) : (
         <div className="flex flex-col gap-3">
           {filteredConfigs.map((cfg) => {
-            const icon = workflowIcons[cfg.workflow] || "account_tree";
+            const Icon = workflowIcons[cfg.workflow] ?? Network;
             return (
               <div
                 key={cfg.id}
-                className="group rounded-xl border border-edge bg-surface-alt p-4 transition-colors hover:border-accent/30"
+                className="rounded-md border border-edge bg-surface p-4"
               >
                 <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface border border-edge">
-                      <span className="material-symbols-outlined text-xl text-accent/60 group-hover:text-accent">
-                        {icon}
-                      </span>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-md border border-edge bg-surface-alt">
+                      <Icon className="size-5 text-fg-3" strokeWidth={1.75} />
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-fg">{cfg.name}</span>
-                        <span className="rounded-full border border-edge bg-surface px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-fg-3">
+                        <span className="font-mono text-sm font-medium text-fg">
+                          {cfg.name}
+                        </span>
+                        <span className="rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-fg-3 uppercase">
                           {cfg.workflow}
                         </span>
                       </div>
@@ -148,24 +152,24 @@ export default function WorkflowList() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex shrink-0 items-center gap-2">
                     <button
                       onClick={() =>
                         setExpandedConfig(
                           expandedConfig === cfg.id ? null : cfg.id,
                         )
                       }
-                      className={`flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                      className={`flex items-center gap-1 rounded-md border px-3 py-2 text-xs font-medium transition-colors ${
                         expandedConfig === cfg.id
-                          ? "border-accent/30 text-accent"
-                          : "border-edge text-fg-3 hover:border-accent/30 hover:text-accent"
+                          ? "border-accent-muted bg-accent-soft text-accent"
+                          : "border-edge bg-surface text-fg-2 hover:border-fg-4 hover:text-fg"
                       }`}
                     >
-                      <span className="material-symbols-outlined text-sm">
-                        {expandedConfig === cfg.id
-                          ? "expand_less"
-                          : "expand_more"}
-                      </span>
+                      {expandedConfig === cfg.id ? (
+                        <ChevronUp className="size-4" />
+                      ) : (
+                        <ChevronDown className="size-4" />
+                      )}
                       Detail
                     </button>
                     <button
@@ -176,11 +180,9 @@ export default function WorkflowList() {
                         });
                       }}
                       disabled={runConfig.isPending}
-                      className="flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-xs font-bold text-page transition-all hover:bg-accent-hover disabled:opacity-50"
+                      className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
                     >
-                      <span className="material-symbols-outlined text-sm">
-                        play_arrow
-                      </span>
+                      <Play className="size-4" />
                       Run
                     </button>
                     {confirmDelete === cfg.id ? (
@@ -194,13 +196,13 @@ export default function WorkflowList() {
                               },
                             });
                           }}
-                          className="rounded-lg border border-red-900/50 bg-red-900/20 px-3 py-2 text-xs font-medium text-red-400"
+                          className="rounded-md border border-danger/30 bg-surface px-3 py-2 text-xs font-medium text-danger transition-colors hover:bg-danger/10"
                         >
                           Confirm
                         </button>
                         <button
                           onClick={() => setConfirmDelete(null)}
-                          className="text-xs text-fg-3"
+                          className="text-xs text-fg-3 transition-colors hover:text-fg"
                         >
                           Cancel
                         </button>
@@ -208,11 +210,10 @@ export default function WorkflowList() {
                     ) : (
                       <button
                         onClick={() => setConfirmDelete(cfg.id)}
-                        className="rounded-md border border-edge p-1.5 text-fg-4 transition-colors hover:border-red-900/50 hover:text-red-400"
+                        className="rounded-md p-2 text-fg-3 transition-colors hover:bg-danger/10 hover:text-danger"
+                        title="Delete workflow"
                       >
-                        <span className="material-symbols-outlined text-base">
-                          delete
-                        </span>
+                        <Trash2 className="size-4" />
                       </button>
                     )}
                   </div>
@@ -231,7 +232,7 @@ export default function WorkflowList() {
                           >
                             <span className="font-medium text-fg-3">{k}</span>
                             <span
-                              className="font-mono text-fg truncate"
+                              className="truncate font-mono text-fg"
                               title={v}
                             >
                               {v}
@@ -239,7 +240,7 @@ export default function WorkflowList() {
                           </div>
                         ))}
                     </div>
-                    <div className="mt-2 text-[10px] text-fg-4">
+                    <div className="mt-2 text-xs text-fg-4">
                       Template:{" "}
                       <span className="font-mono text-fg-3">
                         {cfg.workflow}
@@ -249,7 +250,7 @@ export default function WorkflowList() {
                           {" "}
                           &middot; Timeout:{" "}
                           <span className="font-mono text-fg-3">
-                            {Math.round(cfg.timeout_seconds / 60)}min
+                            {Math.round(cfg.timeout_seconds / 60)} min
                           </span>
                         </>
                       ) : null}
@@ -257,7 +258,9 @@ export default function WorkflowList() {
                         <>
                           {" "}
                           &middot; Created:{" "}
-                          {new Date(cfg.created_at).toLocaleDateString()}
+                          <span className="font-mono text-fg-3">
+                            {new Date(cfg.created_at).toLocaleDateString()}
+                          </span>
                         </>
                       )}
                     </div>
