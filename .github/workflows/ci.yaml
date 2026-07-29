@@ -127,6 +127,8 @@ jobs:
           CODEFORGE_ENCRYPTION__KEY: "dGVzdC1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcyF4eHg="
           CODEFORGE_WEBHOOKS__HMAC_SECRET: ci-secret
           CODEFORGE_CLI__CLAUDE_CODE__PATH: ./bin/mock-claude
+          # The e2e suite creates well over 10 sessions/minute.
+          CODEFORGE_RATE_LIMIT__ENABLED: "false"
           CODEFORGE_SESSIONS__WORKSPACE_BASE: /data/workspaces
           CODEFORGE_SQLITE__PATH: /tmp/codeforge-data/codeforge.db
           CODEFORGE_LOGGING__LEVEL: debug

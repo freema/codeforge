@@ -18,6 +18,10 @@ import (
 	"github.com/freema/codeforge/internal/session"
 )
 
+// defaultReviewCLI is the CLI used for webhook-triggered reviews when no
+// default is configured.
+const defaultReviewCLI = "claude-code"
+
 // WebhookReceiverHandler handles incoming webhooks from GitHub/GitLab.
 type WebhookReceiverHandler struct {
 	sessionService *session.Service
@@ -193,7 +197,7 @@ func (h *WebhookReceiverHandler) handleGitHubPR(w http.ResponseWriter, r *http.R
 
 	cli := h.cfg.DefaultCLI
 	if cli == "" {
-		cli = "claude-code"
+		cli = defaultReviewCLI
 	}
 
 	prNumber := event.PullRequest.Number
@@ -300,7 +304,7 @@ func (h *WebhookReceiverHandler) handleGitHubComment(w http.ResponseWriter, r *h
 
 	cli := h.cfg.DefaultCLI
 	if cli == "" {
-		cli = "claude-code"
+		cli = defaultReviewCLI
 	}
 
 	switch cmd {
@@ -447,7 +451,7 @@ func (h *WebhookReceiverHandler) handleGitLabMR(w http.ResponseWriter, r *http.R
 
 	cli := h.cfg.DefaultCLI
 	if cli == "" {
-		cli = "claude-code"
+		cli = defaultReviewCLI
 	}
 
 	repoURL := event.Project.HTTPURLToRepo
@@ -541,7 +545,7 @@ func (h *WebhookReceiverHandler) handleGitLabNote(w http.ResponseWriter, r *http
 
 	cli := h.cfg.DefaultCLI
 	if cli == "" {
-		cli = "claude-code"
+		cli = defaultReviewCLI
 	}
 
 	switch cmd {
