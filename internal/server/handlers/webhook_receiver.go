@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -16,6 +17,7 @@ import (
 	"github.com/freema/codeforge/internal/config"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/session"
+	"github.com/freema/codeforge/internal/settings"
 )
 
 // defaultReviewCLI is the CLI used for webhook-triggered reviews when no
@@ -27,15 +29,41 @@ type WebhookReceiverHandler struct {
 	sessionService *session.Service
 	redis          *redisclient.Client
 	cfg            config.CodeReviewConfig
+	settings       *settings.Store // optional, nil = runtime overrides disabled
 }
 
 // NewWebhookReceiverHandler creates a new webhook receiver handler.
-func NewWebhookReceiverHandler(sessionService *session.Service, redis *redisclient.Client, cfg config.CodeReviewConfig) *WebhookReceiverHandler {
+// settingsStore is optional (nil disables runtime review-setting overrides).
+func NewWebhookReceiverHandler(sessionService *session.Service, redis *redisclient.Client, cfg config.CodeReviewConfig, settingsStore *settings.Store) *WebhookReceiverHandler {
 	return &WebhookReceiverHandler{
 		sessionService: sessionService,
 		redis:          redis,
 		cfg:            cfg,
+		settings:       settingsStore,
 	}
+}
+
+// reviewDefaults resolves the CLI and model for a webhook-triggered review:
+// runtime settings (Redis, set via the Settings UI) → code_review.default_cli
+// config → built-in default. The model comes from runtime settings only
+// (empty = the CLI's own default).
+func (h *WebhookReceiverHandler) reviewDefaults(ctx context.Context) (cli, model string) {
+	if h.settings != nil {
+		rs, err := h.settings.GetReview(ctx)
+		if err != nil {
+			slog.Warn("review settings lookup failed, falling back to config", "error", err)
+		} else {
+			cli = rs.DefaultCLI
+			model = rs.DefaultModel
+		}
+	}
+	if cli == "" {
+		cli = h.cfg.DefaultCLI
+	}
+	if cli == "" {
+		cli = defaultReviewCLI
+	}
+	return cli, model
 }
 
 // --- GitHub webhook types ---
@@ -195,10 +223,7 @@ func (h *WebhookReceiverHandler) handleGitHubPR(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	cli := h.cfg.DefaultCLI
-	if cli == "" {
-		cli = defaultReviewCLI
-	}
+	cli, model := h.reviewDefaults(r.Context())
 
 	prNumber := event.PullRequest.Number
 	if prNumber == 0 {
@@ -229,6 +254,7 @@ func (h *WebhookReceiverHandler) handleGitHubPR(w http.ResponseWriter, r *http.R
 		SessionType: "pr_review",
 		Config: &session.Config{
 			CLI:          cli,
+			AIModel:      model,
 			SourceBranch: event.PullRequest.Head.Ref,
 			TargetBranch: event.PullRequest.Base.Ref,
 			PRNumber:     prNumber,
@@ -302,10 +328,7 @@ func (h *WebhookReceiverHandler) handleGitHubComment(w http.ResponseWriter, r *h
 		return
 	}
 
-	cli := h.cfg.DefaultCLI
-	if cli == "" {
-		cli = defaultReviewCLI
-	}
+	cli, model := h.reviewDefaults(r.Context())
 
 	switch cmd {
 	case "review":
@@ -313,7 +336,7 @@ func (h *WebhookReceiverHandler) handleGitHubComment(w http.ResponseWriter, r *h
 		existing, _ := h.sessionService.FindByPR(r.Context(), repoURL, prNumber)
 		if existing != nil {
 			// Start review on existing session
-			t, err := h.sessionService.StartReviewAsync(r.Context(), existing.ID, cli, "")
+			t, err := h.sessionService.StartReviewAsync(r.Context(), existing.ID, cli, model)
 			if err != nil {
 				log.Error("github webhook: failed to start review", "task_id", existing.ID, "error", err)
 				writeError(w, http.StatusInternalServerError, "failed to start review")
@@ -333,6 +356,7 @@ func (h *WebhookReceiverHandler) handleGitHubComment(w http.ResponseWriter, r *h
 			SessionType: "pr_review",
 			Config: &session.Config{
 				CLI:            cli,
+				AIModel:        model,
 				PRNumber:       prNumber,
 				OutputMode:     "post_comments",
 				AutoPostReview: true,
@@ -449,10 +473,7 @@ func (h *WebhookReceiverHandler) handleGitLabMR(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	cli := h.cfg.DefaultCLI
-	if cli == "" {
-		cli = defaultReviewCLI
-	}
+	cli, model := h.reviewDefaults(r.Context())
 
 	repoURL := event.Project.HTTPURLToRepo
 	mrIID := event.ObjectAttributes.IID
@@ -481,6 +502,7 @@ func (h *WebhookReceiverHandler) handleGitLabMR(w http.ResponseWriter, r *http.R
 		SessionType: "pr_review",
 		Config: &session.Config{
 			CLI:          cli,
+			AIModel:      model,
 			SourceBranch: event.ObjectAttributes.SourceBranch,
 			TargetBranch: event.ObjectAttributes.TargetBranch,
 			PRNumber:     mrIID,
@@ -543,16 +565,13 @@ func (h *WebhookReceiverHandler) handleGitLabNote(w http.ResponseWriter, r *http
 		return
 	}
 
-	cli := h.cfg.DefaultCLI
-	if cli == "" {
-		cli = defaultReviewCLI
-	}
+	cli, model := h.reviewDefaults(r.Context())
 
 	switch cmd {
 	case "review":
 		existing, _ := h.sessionService.FindByPR(r.Context(), repoURL, mrIID)
 		if existing != nil {
-			t, err := h.sessionService.StartReviewAsync(r.Context(), existing.ID, cli, "")
+			t, err := h.sessionService.StartReviewAsync(r.Context(), existing.ID, cli, model)
 			if err != nil {
 				log.Error("gitlab webhook: failed to start review", "task_id", existing.ID, "error", err)
 				writeError(w, http.StatusInternalServerError, "failed to start review")
@@ -571,6 +590,7 @@ func (h *WebhookReceiverHandler) handleGitLabNote(w http.ResponseWriter, r *http
 			SessionType: "pr_review",
 			Config: &session.Config{
 				CLI:            cli,
+				AIModel:        model,
 				SourceBranch:   event.MergeRequest.SourceBranch,
 				TargetBranch:   event.MergeRequest.TargetBranch,
 				PRNumber:       mrIID,

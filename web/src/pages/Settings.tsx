@@ -1,4 +1,4 @@
-import { useState, useMemo, type FormEvent } from "react";
+import { useState, useMemo, useEffect, type FormEvent } from "react";
 import { useSearchParams } from "react-router";
 import {
   AppWindow,
@@ -19,6 +19,7 @@ import {
   Lock,
   Plus,
   Puzzle,
+  Save,
   Server,
   ShieldCheck,
   ShieldX,
@@ -45,6 +46,12 @@ import {
 } from "../hooks/useMCPServers";
 import { useToolsCatalog } from "../hooks/useTools";
 import { useWorkspaces, useDeleteWorkspace } from "../hooks/useWorkspaces";
+import { useCLIs } from "../hooks/useCLIs";
+import {
+  useReviewSettings,
+  useUpdateReviewSettings,
+} from "../hooks/useReviewSettings";
+import { useToast } from "../context/ToastContext";
 type Tab = "keys" | "ai" | "mcp" | "workspaces";
 
 const tabs: { id: Tab; label: string; icon: LucideIcon }[] = [
@@ -863,7 +870,157 @@ function AIProvidersTab() {
           </div>
         </form>
       )}
+
+      <ReviewSettingsCard />
     </div>
+  );
+}
+
+const selectLabelCls = "mb-1.5 block text-xs font-medium text-fg-2";
+
+function ReviewSettingsCard() {
+  const { toast } = useToast();
+  const { data: settings, isLoading } = useReviewSettings();
+  const { data: clis } = useCLIs();
+  const updateSettings = useUpdateReviewSettings();
+
+  const availableClis = useMemo(
+    () => clis?.filter((c) => c.available) ?? [],
+    [clis],
+  );
+
+  const [cli, setCli] = useState("");
+  const [model, setModel] = useState("");
+  const [initialized, setInitialized] = useState(false);
+
+  // Seed the form once the stored settings arrive.
+  useEffect(() => {
+    if (settings && !initialized) {
+      setCli(settings.default_cli);
+      setModel(settings.default_model);
+      setInitialized(true);
+    }
+  }, [settings, initialized]);
+
+  // Model options follow the chosen CLI; with "(inherit config)" selected,
+  // show the models of the CLI that currently applies.
+  const modelCli = cli || settings?.effective_cli || "";
+  const models = useMemo(
+    () => clis?.find((c) => c.name === modelCli)?.models ?? [],
+    [clis, modelCli],
+  );
+
+  function handleCliChange(value: string) {
+    setCli(value);
+    const nextModels =
+      clis?.find((c) => c.name === (value || settings?.effective_cli))
+        ?.models ?? [];
+    if (model && !nextModels.includes(model)) {
+      setModel("");
+    }
+  }
+
+  async function handleSave(e: FormEvent) {
+    e.preventDefault();
+    try {
+      await updateSettings.mutateAsync({
+        default_cli: cli,
+        default_model: model,
+      });
+      toast("success", "Review defaults saved");
+    } catch (err) {
+      toast(
+        "error",
+        `Save failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  return (
+    <form
+      onSubmit={(e) => void handleSave(e)}
+      className="overflow-hidden rounded-md border border-edge bg-surface"
+    >
+      <div className="border-b border-edge px-5 py-3.5">
+        <span className="eyebrow">Code review</span>
+      </div>
+
+      <div className="p-5">
+        <p className="text-xs text-fg-4">
+          Default CLI and model for webhook-triggered PR reviews. Empty values
+          inherit the server configuration.
+        </p>
+
+        {settings && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-md border border-edge bg-surface-alt px-3 py-2">
+            <span className="text-xs text-fg-4">Currently applies</span>
+            <span className="flex items-center gap-1.5 text-xs">
+              <span className="text-fg-4">cli</span>
+              <span className="font-mono text-fg-2">
+                {settings.effective_cli}
+              </span>
+            </span>
+            <span className="flex items-center gap-1.5 text-xs">
+              <span className="text-fg-4">model</span>
+              <span className="font-mono text-fg-2">
+                {settings.effective_model || "(auto)"}
+              </span>
+            </span>
+          </div>
+        )}
+
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className={selectLabelCls}>CLI</label>
+            <select
+              value={cli}
+              onChange={(e) => handleCliChange(e.target.value)}
+              disabled={isLoading}
+              className={inputCls}
+            >
+              <option value="">(inherit config)</option>
+              {availableClis.map((c) => (
+                <option key={c.name} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={selectLabelCls}>Model</label>
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              disabled={isLoading}
+              className={inputCls}
+            >
+              <option value="">(auto)</option>
+              {model && !models.includes(model) && (
+                <option value={model}>{model}</option>
+              )}
+              {models.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          disabled={updateSettings.isPending || isLoading}
+          className="mt-4 flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+        >
+          {updateSettings.isPending ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Save className="size-4" />
+          )}
+          Save
+        </button>
+      </div>
+    </form>
   );
 }
 

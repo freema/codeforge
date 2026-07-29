@@ -27,6 +27,7 @@ export type { StreamEventType, StreamEvent } from "./stream";
 export type { HealthResponse } from "./health";
 export type { ProviderKey, CreateKeyRequest, KeyVerifyResult } from "./keys";
 export type { MCPServer, CreateMCPServerRequest } from "./mcp";
+export type { ReviewSettings, UpdateReviewSettingsRequest } from "./settings";
 export type { Workspace } from "./workspace";
 export type {
   StepType,

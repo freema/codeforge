@@ -22,6 +22,7 @@ import (
 	"github.com/freema/codeforge/internal/server/handlers"
 	"github.com/freema/codeforge/internal/server/middleware"
 	"github.com/freema/codeforge/internal/session"
+	"github.com/freema/codeforge/internal/settings"
 	"github.com/freema/codeforge/internal/tenant"
 	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/tool/runner"
@@ -86,6 +87,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 	workflowHandler := handlers.NewWorkflowHandler(workflowRegistry, sessionService, keyRegistry)
 	workflowConfigHandler := handlers.NewWorkflowConfigHandler(workflowConfigStore, workflowRegistry, sessionService, keyRegistry)
 	presetHandler := handlers.NewPresetHandler(preset.NewService(preset.NewStore(sqliteDB.Unwrap())), sessionHandler)
+	settingsHandler := handlers.NewSettingsHandler(settings.NewStore(redis), cliRegistry, cfg.CodeReview)
 
 	// Protected API routes.
 	// Dual-auth when the subscription model is enabled: operator token OR tenant
@@ -165,6 +167,11 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 				})
 
 				r.Get("/tools/catalog", toolHandler.Catalog)
+
+				r.Route("/settings", func(r chi.Router) {
+					r.Get("/review", settingsHandler.GetReview)
+					r.Put("/review", settingsHandler.UpdateReview)
+				})
 
 				r.Route("/workspaces", func(r chi.Router) {
 					r.Get("/", wsHandler.List)

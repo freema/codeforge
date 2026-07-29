@@ -39,6 +39,8 @@ import type {
   UpdateScheduleRequest,
   RunScheduleResult,
   ScheduleRun,
+  ReviewSettings,
+  UpdateReviewSettingsRequest,
 } from "../types";
 
 export class ApiError extends Error {
@@ -91,6 +93,11 @@ export function createApiClient(serverUrl: string, token: string) {
   const patch = <T>(path: string, body?: unknown) =>
     request<T>(serverUrl, path, token, {
       method: "PATCH",
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  const put = <T>(path: string, body?: unknown) =>
+    request<T>(serverUrl, path, token, {
+      method: "PUT",
       body: body ? JSON.stringify(body) : undefined,
     });
 
@@ -277,6 +284,11 @@ export function createApiClient(serverUrl: string, token: string) {
       post<RunScheduleResult>(`/schedules/${id}/run`),
     listScheduleRuns: (id: string) =>
       get<{ runs: ScheduleRun[] }>(`/schedules/${id}/runs`).then((r) => r.runs),
+
+    // Runtime settings (operator-only)
+    getReviewSettings: () => get<ReviewSettings>("/settings/review"),
+    updateReviewSettings: (req: UpdateReviewSettingsRequest) =>
+      put<ReviewSettings>("/settings/review", req),
 
     // Health
     getHealth: () => get<HealthResponse>("/health"),

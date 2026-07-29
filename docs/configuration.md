@@ -128,6 +128,11 @@ Chat notifications for terminal session events. Disabled unless at least one web
 | `CODEFORGE_CODE_REVIEW__WEBHOOK_SECRETS__GITHUB` | *(empty)* | HMAC-SHA256 secret for GitHub webhook verification |
 | `CODEFORGE_CODE_REVIEW__WEBHOOK_SECRETS__GITLAB` | *(empty)* | Secret token for GitLab webhook verification |
 
+> The review CLI and model can also be overridden at runtime from the UI
+> (Settings → AI providers → Code review) or via `PUT /api/v1/settings/review`.
+> The runtime override takes precedence over `code_review.default_cli`; an
+> empty override falls back to this config.
+
 ### Tracing
 
 | Variable | Default | Description |

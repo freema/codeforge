@@ -24,6 +24,7 @@ import (
 	"github.com/freema/codeforge/internal/server"
 	"github.com/freema/codeforge/internal/server/handlers"
 	"github.com/freema/codeforge/internal/session"
+	"github.com/freema/codeforge/internal/settings"
 	"github.com/freema/codeforge/internal/tenant"
 	"github.com/freema/codeforge/internal/tool/mcp"
 	"github.com/freema/codeforge/internal/tool/runner"
@@ -256,10 +257,11 @@ func run() error {
 		return fmt.Errorf("seeding builtin workflows: %w", err)
 	}
 
-	// Initialize webhook receiver handler for PR review
+	// Initialize webhook receiver handler for PR review. Review defaults
+	// (CLI/model) can be overridden at runtime via the settings store.
 	var webhookReceiverHandler *handlers.WebhookReceiverHandler
 	if cfg.CodeReview.WebhookSecrets.GitHub != "" || cfg.CodeReview.WebhookSecrets.GitLab != "" {
-		webhookReceiverHandler = handlers.NewWebhookReceiverHandler(sessionService, rdb, cfg.CodeReview)
+		webhookReceiverHandler = handlers.NewWebhookReceiverHandler(sessionService, rdb, cfg.CodeReview, settings.NewStore(rdb))
 	}
 
 	// Initialize tenant service and handler
