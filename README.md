@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="CodeForge" width="720"/>
+  <img src="assets/logo.png" alt="CodeForge" width="720"/>
 </p>
 
 <p align="center">
