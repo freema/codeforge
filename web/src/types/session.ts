@@ -47,6 +47,7 @@ export interface Session {
   changes_summary?: ChangesSummary;
   usage?: UsageInfo;
   review_result?: ReviewResult;
+  review_posted_at?: string;
   config?: SessionConfig;
   iteration: number;
   current_prompt?: string;

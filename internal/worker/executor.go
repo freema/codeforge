@@ -1389,6 +1389,10 @@ func (e *Executor) handlePRReviewCompletion(ctx context.Context, t *session.Sess
 		return
 	}
 
+	if err := e.sessionService.SetReviewPosted(ctx, t.ID, time.Now()); err != nil {
+		log.Warn("pr_review: failed to record review posted", "error", err)
+	}
+
 	e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "review_posted", map[string]interface{}{
 		"review_url":      postResult.ReviewURL,
 		"comments_posted": postResult.CommentsPosted,
@@ -1661,6 +1665,10 @@ func (e *Executor) autoPostReviewToPR(ctx context.Context, t *session.Session, p
 			"error": err.Error(),
 		}), log, "auto_review_post_failed", t.ID)
 		return
+	}
+
+	if err := e.sessionService.SetReviewPosted(ctx, t.ID, time.Now()); err != nil {
+		log.Warn("auto-post: failed to record review posted", "error", err)
 	}
 
 	e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "auto_review_posted", map[string]interface{}{

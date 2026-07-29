@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
@@ -605,6 +607,10 @@ func (h *SessionHandler) PostReviewComments(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to post review comments: %v", err))
 		return
+	}
+
+	if err := h.service.SetReviewPosted(r.Context(), t.ID, time.Now()); err != nil {
+		slog.Warn("post-review: failed to record review posted", "session_id", t.ID, "error", err)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{

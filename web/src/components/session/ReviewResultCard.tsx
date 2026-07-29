@@ -75,8 +75,10 @@ export function ReviewResultCard({ review }: { review: ReviewResult }) {
         )}
 
         <p className="text-xs text-fg-4">
-          Reviewed by {review.reviewed_by} in{" "}
-          {review.duration_seconds.toFixed(1)}s
+          Reviewed by {review.reviewed_by}
+          {review.duration_seconds > 0 && (
+            <> in {review.duration_seconds.toFixed(1)}s</>
+          )}
         </p>
       </div>
     </div>

@@ -122,8 +122,16 @@ export default function SessionDetail() {
   const isReview = session.session_type === "review";
   const canReview =
     session.status === "completed" && !isPlan && !isPrReview && !isReview;
+  const reviewPosted = !!session.review_posted_at;
+  // Sessions in post_comments mode post their review automatically; older
+  // sessions predate the review_posted_at flag, so offer only a quiet
+  // re-post there instead of the primary call-to-action.
+  const autoPostMode = session.config?.output_mode === "post_comments";
   const canPostComments =
-    isPrReview && session.status === "completed" && !!session.review_result;
+    isPrReview &&
+    session.status === "completed" &&
+    !!session.review_result &&
+    !reviewPosted;
   const canShowChanges =
     session.status === "completed" ||
     session.status === "awaiting_instruction" ||
@@ -458,7 +466,11 @@ export default function SessionDetail() {
               <button
                 onClick={() => void handlePostComments()}
                 disabled={postReviewComments.isPending}
-                className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+                className={
+                  autoPostMode
+                    ? "flex items-center gap-2 rounded-md border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg disabled:opacity-50"
+                    : "flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+                }
               >
                 {postReviewComments.isPending ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -467,8 +479,16 @@ export default function SessionDetail() {
                 )}
                 {postReviewComments.isPending
                   ? "Posting…"
-                  : "Post comments to MR"}
+                  : autoPostMode
+                    ? "Re-post comments"
+                    : "Post comments to MR"}
               </button>
+            )}
+            {isPrReview && !!session.review_result && reviewPosted && (
+              <span className="flex items-center gap-1.5 px-2 text-xs text-fg-4">
+                <CircleCheck className="size-3.5 text-ok" />
+                Comments posted to PR
+              </span>
             )}
             {/* PR Actions */}
             {canCreatePR && !session.pr_url && hasChanges && (

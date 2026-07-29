@@ -686,6 +686,15 @@ func (s *Service) SetCLISessionID(ctx context.Context, sessionID, cliSessionID s
 	return nil
 }
 
+// SetReviewPosted records that review comments were posted to the PR/MR.
+func (s *Service) SetReviewPosted(ctx context.Context, sessionID string, at time.Time) error {
+	stateKey := s.redis.Key("session", sessionID, "state")
+	if err := s.redis.Unwrap().HSet(ctx, stateKey, "review_posted_at", at.Format(time.RFC3339Nano)).Err(); err != nil {
+		return fmt.Errorf("setting review posted at: %w", err)
+	}
+	return nil
+}
+
 // SetError stores an error message on the session.
 func (s *Service) SetError(ctx context.Context, sessionID string, errMsg string) error {
 	stateKey := s.redis.Key("session", sessionID, "state")
@@ -740,6 +749,9 @@ func (s *Service) sessionToHash(t *Session) map[string]interface{} {
 	if t.CLISessionID != "" {
 		fields["cli_session_id"] = t.CLISessionID
 	}
+	if t.ReviewPostedAt != nil {
+		fields["review_posted_at"] = t.ReviewPostedAt.Format(time.RFC3339Nano)
+	}
 	if len(t.Metadata) > 0 {
 		b, _ := json.Marshal(t.Metadata)
 		fields["metadata"] = string(b)
@@ -785,6 +797,10 @@ func (s *Service) hashToSession(fields map[string]string) *Session {
 	if v := fields["finished_at"]; v != "" {
 		ts, _ := time.Parse(time.RFC3339Nano, v)
 		t.FinishedAt = &ts
+	}
+	if v := fields["review_posted_at"]; v != "" {
+		ts, _ := time.Parse(time.RFC3339Nano, v)
+		t.ReviewPostedAt = &ts
 	}
 
 	t.Config = UnmarshalConfig(fields["config"])

@@ -44,6 +44,11 @@ type Session struct {
 	Usage          *UsageInfo             `json:"usage,omitempty"`
 	ReviewResult   *review.ReviewResult   `json:"review_result,omitempty"`
 
+	// ReviewPostedAt is set once review comments were posted to the PR/MR,
+	// either automatically (output_mode post_comments / auto_post_review)
+	// or via POST /sessions/{id}/post-review.
+	ReviewPostedAt *time.Time `json:"review_posted_at,omitempty"`
+
 	// Iteration tracking
 	Iteration     int         `json:"iteration"`
 	CurrentPrompt string      `json:"current_prompt,omitempty"` // follow-up prompt for current iteration (set by Instruct)

@@ -2359,6 +2359,60 @@ paths:
         "204":
           description: Key pool entry deleted
 
+  /api/v1/settings/review:
+    get:
+      summary: Get runtime code-review settings
+      operationId: getReviewSettings
+      tags: [Settings]
+      description: |
+        Returns the stored runtime overrides for webhook-triggered PR reviews
+        together with the effective values after the fallback chain
+        (runtime settings → code_review.default_cli config → built-in default).
+        The model applies only when set here; empty means the CLI's own
+        default. Requires the operator token.
+      responses:
+        "200":
+          description: Review settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      summary: Update runtime code-review settings
+      operationId: updateReviewSettings
+      tags: [Settings]
+      description: |
+        Overrides the CLI and model used for webhook-triggered PR reviews at
+        runtime, without a server restart. Empty strings clear the override
+        (fall back to the static config). default_cli must be a registered
+        CLI when non-empty. Requires the operator token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                default_cli:
+                  type: string
+                  description: CLI for webhook-triggered reviews (e.g. claude-code, codex); empty = inherit code_review.default_cli config
+                default_model:
+                  type: string
+                  description: Model for webhook-triggered reviews; empty = the CLI's own default
+      responses:
+        "200":
+          description: Updated review settings (including effective values)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
 components:
   securitySchemes:
     BearerAuth:
@@ -2608,6 +2662,13 @@ components:
           $ref: "#/components/schemas/UsageInfo"
         review_result:
           $ref: "#/components/schemas/ReviewResult"
+        review_posted_at:
+          type: string
+          format: date-time
+          description: >
+            Set once review comments were posted to the PR/MR, either
+            automatically (post_comments output mode, auto_post_review)
+            or via POST /sessions/{sessionID}/post-review.
         iteration:
           type: integer
         current_prompt:
@@ -3367,3 +3428,26 @@ components:
           type: integer
         total_cost_usd:
           type: number
+
+    ReviewSettings:
+      type: object
+      description: Runtime defaults for webhook-triggered PR reviews, plus the effective values after the fallback chain
+      properties:
+        default_cli:
+          type: string
+          description: Stored CLI override (empty = inherit code_review.default_cli config)
+          example: codex
+        default_model:
+          type: string
+          description: Stored model override (empty = the CLI's own default)
+          example: gpt-5.2-codex
+        effective_cli:
+          type: string
+          readOnly: true
+          description: CLI that actually applies (runtime settings → config → built-in default)
+          example: codex
+        effective_model:
+          type: string
+          readOnly: true
+          description: Model that actually applies (empty = the CLI's own default)
+          example: gpt-5.2-codex
