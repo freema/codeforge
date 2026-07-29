@@ -4,11 +4,11 @@ import "testing"
 
 func TestBuiltinCatalog_HasAllTools(t *testing.T) {
 	catalog := BuiltinCatalog()
-	if len(catalog) != 5 {
-		t.Fatalf("expected 5 built-in tools, got %d", len(catalog))
+	if len(catalog) != 6 {
+		t.Fatalf("expected 6 built-in tools, got %d", len(catalog))
 	}
 
-	expected := []string{"sentry", "jira", "git", "github", "playwright"}
+	expected := []string{"sentry", "jira", "git", "github", "gitlab", "playwright"}
 	for i, name := range expected {
 		if catalog[i].Name != name {
 			t.Errorf("catalog[%d].Name = %q, want %q", i, catalog[i].Name, name)
@@ -55,6 +55,69 @@ func TestBuiltinCatalog_SensitiveFieldsHaveEnvVar(t *testing.T) {
 				t.Errorf("tool %q: sensitive optional field %q has no EnvVar", def.Name, f.Name)
 			}
 		}
+	}
+}
+
+func TestBuiltinCatalog_ProviderKeyWiring(t *testing.T) {
+	tests := []struct {
+		tool        string
+		field       string
+		envVar      string
+		providerKey string
+	}{
+		{tool: "github", field: "token", envVar: "GITHUB_PERSONAL_ACCESS_TOKEN", providerKey: "github"},
+		{tool: "gitlab", field: "token", envVar: "GITLAB_PERSONAL_ACCESS_TOKEN", providerKey: "gitlab"},
+		{tool: "sentry", field: "auth_token", envVar: "SENTRY_ACCESS_TOKEN", providerKey: "sentry"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.tool, func(t *testing.T) {
+			def := BuiltinByName(tt.tool)
+			if def == nil {
+				t.Fatalf("built-in tool %q not found", tt.tool)
+			}
+			var field *ConfigField
+			for i := range def.RequiredConfig {
+				if def.RequiredConfig[i].Name == tt.field {
+					field = &def.RequiredConfig[i]
+					break
+				}
+			}
+			if field == nil {
+				t.Fatalf("tool %q: required field %q not found", tt.tool, tt.field)
+			}
+			if field.EnvVar != tt.envVar {
+				t.Errorf("EnvVar = %q, want %q", field.EnvVar, tt.envVar)
+			}
+			if field.ProviderKey != tt.providerKey {
+				t.Errorf("ProviderKey = %q, want %q", field.ProviderKey, tt.providerKey)
+			}
+			if !field.Sensitive {
+				t.Errorf("tool %q: field %q should be Sensitive", tt.tool, tt.field)
+			}
+		})
+	}
+}
+
+func TestBuiltinCatalog_GitLabAPIURLOptional(t *testing.T) {
+	def := BuiltinByName("gitlab")
+	if def == nil {
+		t.Fatal("built-in tool gitlab not found")
+	}
+	var found bool
+	for _, f := range def.OptionalConfig {
+		if f.Name == "api_url" {
+			found = true
+			if f.EnvVar != "GITLAB_API_URL" {
+				t.Errorf("api_url EnvVar = %q, want GITLAB_API_URL", f.EnvVar)
+			}
+			if f.Sensitive {
+				t.Error("api_url should not be Sensitive")
+			}
+		}
+	}
+	if !found {
+		t.Error("gitlab tool missing optional api_url field")
 	}
 }
 

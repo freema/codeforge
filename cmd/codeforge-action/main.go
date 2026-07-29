@@ -16,6 +16,16 @@ const (
 	cliCodex      = "codex"
 )
 
+// Provider token sources — tracked so platform-specific limitations
+// (e.g. GitLab CI job tokens cannot post MR discussions) surface as clear
+// errors instead of silent 401s.
+const (
+	tokenSourceInput      = "input"        // INPUT_PROVIDER_TOKEN
+	tokenSourceGitHubEnv  = "github_token" // GITHUB_TOKEN
+	tokenSourceGitLabEnv  = "gitlab_token" // GITLAB_TOKEN
+	tokenSourceCIJobToken = "ci_job_token" // CI_JOB_TOKEN (clone-only on GitLab)
+)
+
 // Config holds all configuration for a CI Action run.
 type Config struct {
 	SessionType          string // pr_review, code_review, knowledge_update, custom
@@ -24,6 +34,7 @@ type Config struct {
 	Model                string // AI model override
 	APIKey               string // AI provider API key
 	ProviderToken        string // GitHub/GitLab token for PR operations
+	ProviderTokenSource  string // where ProviderToken came from (tokenSource* consts)
 	MCPConfig            string // JSON string or path to .mcp.json
 	PostComments         bool   // post review as PR comments
 	OutputFormat         string // json, markdown, text
@@ -81,12 +92,25 @@ func parseConfig() Config {
 		cfg.APIKey = envDefault("INPUT_API_KEY", os.Getenv("OPENAI_API_KEY"))
 	}
 
-	// Resolve provider token from platform-specific env vars
-	if cfg.ProviderToken == "" {
-		cfg.ProviderToken = os.Getenv("GITHUB_TOKEN")
+	// Resolve provider token from platform-specific env vars, tracking the
+	// source so token-capability checks can produce actionable errors.
+	if cfg.ProviderToken != "" {
+		cfg.ProviderTokenSource = tokenSourceInput
 	}
 	if cfg.ProviderToken == "" {
-		cfg.ProviderToken = envDefault("GITLAB_TOKEN", os.Getenv("CI_JOB_TOKEN"))
+		if v := os.Getenv("GITHUB_TOKEN"); v != "" {
+			cfg.ProviderToken = v
+			cfg.ProviderTokenSource = tokenSourceGitHubEnv
+		}
+	}
+	if cfg.ProviderToken == "" {
+		if v := os.Getenv("GITLAB_TOKEN"); v != "" {
+			cfg.ProviderToken = v
+			cfg.ProviderTokenSource = tokenSourceGitLabEnv
+		} else if v := os.Getenv("CI_JOB_TOKEN"); v != "" {
+			cfg.ProviderToken = v
+			cfg.ProviderTokenSource = tokenSourceCIJobToken
+		}
 	}
 
 	return cfg

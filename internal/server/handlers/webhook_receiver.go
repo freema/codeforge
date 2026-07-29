@@ -120,6 +120,7 @@ type gitlabNoteEvent struct {
 	ObjectAttributes struct {
 		Note         string `json:"note"`
 		NoteableType string `json:"noteable_type"` //nolint:misspell // GitLab API uses "noteable_type"
+		System       bool   `json:"system"`
 	} `json:"object_attributes"`
 	MergeRequest *struct {
 		IID          int    `json:"iid"`
@@ -534,6 +535,13 @@ func (h *WebhookReceiverHandler) handleGitLabNote(w http.ResponseWriter, r *http
 	var event gitlabNoteEvent
 	if err := json.Unmarshal(body, &event); err != nil {
 		writeError(w, http.StatusBadRequest, "failed to parse note webhook")
+		return
+	}
+
+	// GitLab emits system notes (pushes, assignments, status changes) with
+	// system: true — these are never user commands, so never dispatch on them.
+	if event.ObjectAttributes.System {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored", "reason": "system note"})
 		return
 	}
 

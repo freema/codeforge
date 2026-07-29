@@ -47,6 +47,13 @@ func (e *CIExecutor) Execute(ctx context.Context) int {
 		"work_dir", ciCtx.WorkDir,
 	)
 
+	// Fail fast on tokens that cannot perform the requested operations,
+	// before spending minutes on AI execution.
+	if err := validateProviderToken(e.cfg, ciCtx); err != nil {
+		slog.Error("provider token cannot perform requested operations", "error", err)
+		return 1
+	}
+
 	// Ensure CLI is available
 	if err := e.ensureCLI(ctx); err != nil {
 		slog.Error("failed to install CLI", "cli", e.cfg.CLI, "error", err)
@@ -316,16 +323,21 @@ func (e *CIExecutor) handleReviewResult(ctx context.Context, ciCtx *CIContext, r
 	reviewResult.DurationSeconds = duration.Seconds()
 	reviewResult.ReviewedBy = e.cfg.CLI + ":" + e.cfg.Model
 
-	// Write output based on format
-	e.writeOutput(ciCtx, reviewResult, result.Output, result.InputTokens, result.OutputTokens)
-
-	// Post comments if enabled and we have a PR
+	// Post comments first (if enabled and we have a PR) so the review URL
+	// can be included in the CI outputs.
+	var reviewURL string
 	if e.cfg.PostComments && ciCtx.PRNumber > 0 && e.cfg.ProviderToken != "" {
-		if err := e.postReviewComments(ctx, ciCtx, reviewResult); err != nil {
+		url, err := e.postReviewComments(ctx, ciCtx, reviewResult)
+		if err != nil {
 			slog.Error("failed to post review comments", "error", err)
 			// Don't fail the action for comment posting failures
+		} else {
+			reviewURL = url
 		}
 	}
+
+	// Write output based on format
+	e.writeOutput(ciCtx, reviewResult, result.Output, result.InputTokens, result.OutputTokens, reviewURL)
 
 	// Exit code based on verdict (only fail if explicitly configured)
 	if e.cfg.FailOnRequestChanges && reviewResult.Verdict == review.VerdictRequestChanges {
@@ -338,7 +350,7 @@ func (e *CIExecutor) handleKnowledgeResult(_ context.Context, ciCtx *CIContext, 
 	slog.Info("knowledge update completed", "output_length", len(result.Output))
 
 	// Write output
-	e.writeOutput(ciCtx, nil, result.Output, result.InputTokens, result.OutputTokens)
+	e.writeOutput(ciCtx, nil, result.Output, result.InputTokens, result.OutputTokens, "")
 
 	if result.ExitCode != 0 {
 		return 1
@@ -347,7 +359,7 @@ func (e *CIExecutor) handleKnowledgeResult(_ context.Context, ciCtx *CIContext, 
 }
 
 func (e *CIExecutor) handleCustomResult(ciCtx *CIContext, result *runner.RunResult) int {
-	e.writeOutput(ciCtx, nil, result.Output, result.InputTokens, result.OutputTokens)
+	e.writeOutput(ciCtx, nil, result.Output, result.InputTokens, result.OutputTokens, "")
 
 	if result.ExitCode != 0 {
 		return 1
@@ -356,12 +368,12 @@ func (e *CIExecutor) handleCustomResult(ciCtx *CIContext, result *runner.RunResu
 }
 
 // writeOutput writes results to the appropriate CI output mechanism.
-func (e *CIExecutor) writeOutput(ciCtx *CIContext, reviewResult *review.ReviewResult, rawOutput string, inputTokens, outputTokens int) {
+func (e *CIExecutor) writeOutput(ciCtx *CIContext, reviewResult *review.ReviewResult, rawOutput string, inputTokens, outputTokens int, reviewURL string) {
 	switch ciCtx.Platform {
 	case PlatformGitHub:
-		writeGitHubOutput(ciCtx, reviewResult, rawOutput, e.cfg.OutputFormat, inputTokens, outputTokens)
+		writeGitHubOutput(ciCtx, reviewResult, rawOutput, e.cfg.OutputFormat, inputTokens, outputTokens, reviewURL)
 	case PlatformGitLab:
-		writeGitLabOutput(reviewResult, rawOutput, e.cfg.OutputFormat)
+		writeGitLabOutput(reviewResult, rawOutput, e.cfg.OutputFormat, inputTokens, outputTokens, reviewURL)
 	default:
 		// Fallback: write to stdout
 		if reviewResult != nil && e.cfg.OutputFormat == "json" {
@@ -373,16 +385,20 @@ func (e *CIExecutor) writeOutput(ciCtx *CIContext, reviewResult *review.ReviewRe
 	}
 }
 
-// postReviewComments posts review results as PR/MR comments.
-func (e *CIExecutor) postReviewComments(ctx context.Context, ciCtx *CIContext, reviewResult *review.ReviewResult) error {
+// postReviewComments posts review results as PR/MR comments and returns the
+// review URL when the provider reports one.
+func (e *CIExecutor) postReviewComments(ctx context.Context, ciCtx *CIContext, reviewResult *review.ReviewResult) (string, error) {
 	repoURL := ciCtx.RepoURL
 	if repoURL == "" {
-		return fmt.Errorf("repo URL not available")
+		return "", fmt.Errorf("repo URL not available")
 	}
 
-	repoInfo, err := git.ParseRepoURL(repoURL, nil)
+	// Provider domains from CI env (CI_SERVER_URL & co.) so self-managed
+	// instances resolve to the right provider. The action has no key
+	// registry — env is the only domain source here.
+	repoInfo, err := git.ParseRepoURL(repoURL, envProviderDomains())
 	if err != nil {
-		return fmt.Errorf("parsing repo URL: %w", err)
+		return "", fmt.Errorf("parsing repo URL: %w", err)
 	}
 
 	postResult, err := git.PostReviewComments(
@@ -395,12 +411,29 @@ func (e *CIExecutor) postReviewComments(ctx context.Context, ciCtx *CIContext, r
 		review.FormatIssueComment,
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	slog.Info("review comments posted",
 		"review_url", postResult.ReviewURL,
 		"comments_posted", postResult.CommentsPosted,
 	)
+	return postResult.ReviewURL, nil
+}
+
+// validateProviderToken fails fast when the resolved provider token cannot
+// perform the operations the run will attempt. GitLab CI job tokens
+// (CI_JOB_TOKEN) are not accepted as PRIVATE-TOKEN by the MR discussions
+// API — posting would fail with silent 401s after minutes of AI execution.
+func validateProviderToken(cfg Config, ciCtx *CIContext) error {
+	if !cfg.PostComments || ciCtx.PRNumber == 0 || ciCtx.Platform != PlatformGitLab {
+		return nil
+	}
+	if cfg.SessionType != "pr_review" && cfg.SessionType != "code_review" {
+		return nil
+	}
+	if cfg.ProviderTokenSource == tokenSourceCIJobToken {
+		return fmt.Errorf("GitLab CI job tokens cannot post MR discussions; set GITLAB_TOKEN to a project access token with api scope, or set post_comments=false (CI_JOB_TOKEN works for cloning only)")
+	}
 	return nil
 }

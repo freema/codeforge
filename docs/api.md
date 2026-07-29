@@ -1073,7 +1073,7 @@ High-level tool abstraction over MCP. When a session requests a tool by name, Co
 GET /api/v1/tools/catalog
 ```
 
-Returns built-in tools: `sentry`, `jira`, `git`, `github`, `playwright`. Each entry lists its `required_config` fields (e.g. auth tokens) that a session must supply when enabling the tool.
+Returns built-in tools: `sentry`, `jira`, `git`, `github`, `gitlab`, `playwright`. Each entry lists its `required_config` fields (e.g. auth tokens) that a session must supply when enabling the tool. The `github`/`gitlab` tokens auto-fill from the matching provider key when not supplied; the `gitlab` tool's optional `api_url` points it at a self-hosted instance (`GITLAB_API_URL`).
 
 ---
 
@@ -1329,11 +1329,11 @@ POST /api/v1/webhooks/github
 - **Payload URL:** `https://your-codeforge.com/api/v1/webhooks/github`
 - **Content type:** `application/json`
 - **Secret:** same as `CODEFORGE_CODE_REVIEW__WEBHOOK_SECRETS__GITHUB`
-- **Events:** select "Pull requests"
+- **Events:** select "Pull requests" (add "Issue comments" to enable the `/review`, `/fix-cr`, `/fix` commands)
 
 **Verification:** HMAC-SHA256 via `X-Hub-Signature-256` header.
 
-**Handled events:** `pull_request` with actions `opened`, `synchronize`, `reopened`.
+**Handled events:** `pull_request` with actions `opened`, `synchronize`, `reopened`; `issue_comment` (action `created`) for `/review`, `/fix-cr`, `/fix <instruction>` commands on PRs.
 
 **Draft PRs:** Skipped unless `code_review.review_drafts` is `true`.
 
@@ -1368,13 +1368,15 @@ POST /api/v1/webhooks/gitlab
 **Setup:** In your GitLab project → Settings → Webhooks → Add webhook:
 - **URL:** `https://your-codeforge.com/api/v1/webhooks/gitlab`
 - **Secret token:** same as `CODEFORGE_CODE_REVIEW__WEBHOOK_SECRETS__GITLAB`
-- **Trigger:** "Merge request events"
+- **Trigger:** "Merge request events" **and** "Comments" (Note events — required for the `/review`, `/fix-cr`, `/fix` commands)
 
 **Verification:** Constant-time comparison of `X-Gitlab-Token` header.
 
-**Handled events:** `Merge Request Hook` with actions `open`, `update`, `reopen`.
+**Handled events:** `Merge Request Hook` with actions `open`, `update`, `reopen`; `Note Hook` for `/review`, `/fix-cr`, `/fix <instruction>` commands on MRs. System notes (`system: true`) are ignored.
 
 **Draft/WIP MRs:** Skipped unless `code_review.review_drafts` is `true`.
+
+**Self-hosted GitLab:** supported out of the box — register a provider key with the instance's `base_url`, or configure `GITLAB_URL` / `git.provider_domains`. See [configuration](configuration.md#self-hosted-gitlab--github-enterprise).
 
 Response `201`:
 ```json

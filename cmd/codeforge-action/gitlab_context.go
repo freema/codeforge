@@ -32,6 +32,21 @@ func ParseGitLabContext() (*CIContext, error) {
 		}
 	}
 
+	// Manual override for pipelines triggered outside an MR context
+	// (e.g. web/trigger pipelines with variables). INPUT_MR_IID is the
+	// GitLab-native name; INPUT_PR_NUMBER is accepted as a cross-platform
+	// alias matching the GitHub pr_number input.
+	if ctx.PRNumber == 0 {
+		for _, key := range []string{"INPUT_MR_IID", "INPUT_PR_NUMBER"} {
+			if s := os.Getenv(key); s != "" {
+				if n, err := strconv.Atoi(s); err == nil && n > 0 {
+					ctx.PRNumber = n
+					break
+				}
+			}
+		}
+	}
+
 	ctx.PRBranch = os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_NAME")
 	ctx.BaseBranch = envDefault("CI_MERGE_REQUEST_TARGET_BRANCH_NAME", envDefault("CI_DEFAULT_BRANCH", defaultBranch))
 

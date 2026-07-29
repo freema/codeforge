@@ -187,7 +187,7 @@ The `pr_review` session type creates a review session for a specific pull reques
 ### Fork PR Handling
 
 Fork PRs are handled automatically. The executor:
-1. Clones the **target branch** (not the source branch, which may not exist on origin)
+1. Clones the **target branch** (not the source branch, which may not exist on origin). When no target branch is known (e.g. comment-triggered reviews), it clones the repository's **default branch** — whatever it is named — and records it as the review base.
 2. Fetches the PR ref via `git fetch origin pull/{N}/head:pr-{N}`
 3. Checks out the local `pr-{N}` branch
 
@@ -234,9 +234,12 @@ curl -X POST http://localhost:8080/api/v1/sessions/$SESSION_ID/post-review \
 - Summary body with score, verdict, and general issues
 
 **GitLab:** Uses the Discussions API (`POST /projects/{id}/merge_requests/{iid}/discussions`):
-- Position-based comments with MR version SHAs (fetched from `/versions` endpoint)
+- Position-based comments with MR version SHAs (fetched from `/versions` endpoint), max 20 per review
+- Inline comments are pre-validated against the MR diff (`/diffs` endpoint); issues on lines outside the diff fold into the summary comment
+- Comments on unchanged (context) lines include `old_path`/`old_line` in the position payload, which GitLab requires for such lines
+- Verdict mapping: `approve` calls the MR approvals API (best-effort — failures are logged, never fatal); `request_changes` has no core GitLab equivalent, so unlike GitHub's `REQUEST_CHANGES` it stays text in the summary comment
 - Falls back to summary-only comment if versions are unavailable
-- Summary posted as top-level discussion
+- Summary posted as top-level discussion; `review_url` links to it (`.../-/merge_requests/{iid}#note_{id}`)
 
 ### Comment Formatting (`internal/review/format.go`)
 
@@ -261,7 +264,14 @@ GitHub/GitLab can send webhooks to CodeForge when PRs/MRs are opened or updated.
 1. Go to project → Settings → Webhooks → Add webhook
 2. URL: `https://your-codeforge.com/api/v1/webhooks/gitlab`
 3. Secret token: set to match `CODEFORGE_CODE_REVIEW__WEBHOOK_SECRETS__GITLAB`
-4. Enable "Merge request events"
+4. Enable "Merge request events" (auto-review on MR open/update)
+5. Enable "Comments" (Note events) — required for the `/review`, `/fix-cr`, and `/fix` commands; without it MR comments never reach CodeForge
+
+**Self-hosted GitLab:** works out of the box — register a provider key with the
+instance's `base_url` (e.g. provider `gitlab`, `base_url: https://gitlab.example.com`);
+`GITLAB_URL` or `git.provider_domains` config also remain supported. In GitLab CI,
+the CI action detects the instance automatically from `CI_SERVER_URL`. See
+[Self-hosted GitLab / GitHub Enterprise](configuration.md#self-hosted-gitlab--github-enterprise).
 
 ### Configuration
 
@@ -292,6 +302,7 @@ code_review:
 | GitLab | `Note Hook` | `/review`, `/fix-cr`, `/fix <instruction>` commands |
 
 Draft PRs and WIP MRs are skipped unless `review_drafts` is `true`.
+GitLab system notes (`system: true` — pushes, assignments, status changes) are always ignored.
 
 ### Reviewing Your Own PRs
 

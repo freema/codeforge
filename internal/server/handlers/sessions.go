@@ -49,24 +49,33 @@ type workspacePathResolver interface {
 
 // SessionHandler handles session-related HTTP endpoints.
 type SessionHandler struct {
-	service         *session.Service
-	prService       *session.PRService
-	canceller       Canceller
-	cliRegistry     *runner.Registry
-	keyRegistry     keys.Registry
-	providerDomains map[string]string
-	tenantService   *tenant.Service       // optional, nil = subscription disabled
-	sessionCounter  tenantSessionCounter  // optional, nil = concurrency limit not enforced
-	workspaces      workspacePathResolver // optional, nil = diff endpoint reports workspace missing
+	service        *session.Service
+	prService      *session.PRService
+	canceller      Canceller
+	cliRegistry    *runner.Registry
+	keyRegistry    keys.Registry
+	domains        gitpkg.DomainsSource  // optional, nil = standard github.com/gitlab.com detection only
+	tenantService  *tenant.Service       // optional, nil = subscription disabled
+	sessionCounter tenantSessionCounter  // optional, nil = concurrency limit not enforced
+	workspaces     workspacePathResolver // optional, nil = diff endpoint reports workspace missing
 }
 
 // NewSessionHandler creates a new session handler.
-func NewSessionHandler(service *session.Service, prService *session.PRService, canceller Canceller, cliRegistry *runner.Registry, keyRegistry keys.Registry, providerDomains map[string]string, tenantService *tenant.Service, workspaces workspacePathResolver) *SessionHandler {
-	h := &SessionHandler{service: service, prService: prService, canceller: canceller, cliRegistry: cliRegistry, keyRegistry: keyRegistry, providerDomains: providerDomains, tenantService: tenantService, workspaces: workspaces}
+func NewSessionHandler(service *session.Service, prService *session.PRService, canceller Canceller, cliRegistry *runner.Registry, keyRegistry keys.Registry, domains gitpkg.DomainsSource, tenantService *tenant.Service, workspaces workspacePathResolver) *SessionHandler {
+	h := &SessionHandler{service: service, prService: prService, canceller: canceller, cliRegistry: cliRegistry, keyRegistry: keyRegistry, domains: domains, tenantService: tenantService, workspaces: workspaces}
 	if service != nil {
 		h.sessionCounter = service
 	}
 	return h
+}
+
+// providerDomains resolves the current host → provider mappings at call
+// time so provider keys created at runtime are honored without restart.
+func (h *SessionHandler) providerDomains(ctx context.Context) map[string]string {
+	if h.domains == nil {
+		return nil
+	}
+	return h.domains.ProviderDomains(ctx)
 }
 
 // List handles GET /api/v1/sessions.
@@ -594,7 +603,7 @@ func (h *SessionHandler) PostReviewComments(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	repo, err := gitpkg.ParseRepoURL(t.RepoURL, h.providerDomains)
+	repo, err := gitpkg.ParseRepoURL(t.RepoURL, h.providerDomains(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse repo URL: %v", err))
 		return

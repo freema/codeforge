@@ -46,9 +46,9 @@ type Registry interface {
 
 func verifyToken(ctx context.Context, provider, token, baseURL string) *VerifyResult {
 	switch provider {
-	case "github":
+	case gitProviderGitHub:
 		return verifyGitHub(ctx, token, baseURL)
-	case "gitlab":
+	case gitProviderGitLab:
 		return verifyGitLab(ctx, token, baseURL)
 	case "sentry":
 		return verifySentry(ctx, token, baseURL)

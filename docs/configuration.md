@@ -75,6 +75,23 @@ Each CLI also has a `models` list (selectable models offered to the UI) — set 
 | `CODEFORGE_GIT__COMMIT_EMAIL` | `codeforge@noreply` | Git commit email |
 | `CODEFORGE_GIT__PROVIDER_DOMAINS` | `{}` | Custom domain->provider mapping (e.g., `{"git.company.com": "gitlab"}`) |
 
+#### Self-hosted GitLab / GitHub Enterprise
+
+Provider detection for self-hosted instances works out of the box when a
+provider key with a `base_url` exists: the hostname of every stored
+`github`/`gitlab` key's `base_url` is merged into the domain mapping at call
+time. Creating a key via the API/UI (e.g. provider `gitlab`,
+`base_url: https://gitlab.example.com`) is sufficient — clone auth, MR
+create/status, and review posting recognize the host immediately, no restart
+needed.
+
+`GITLAB_URL`/`GITHUB_URL` env vars and explicit `git.provider_domains`
+config remain supported; explicit config/env entries take precedence over
+key-derived ones. `provider_domains` entries may also be keyed as
+`host:port` to pin an instance on a non-standard port. The scheme and port
+of the repository URL are preserved for provider API calls, so plain-`http`
+instances and custom ports (e.g. `http://gitlab.example.com:8080`) work.
+
 ### Webhooks
 
 | Variable | Default | Description |

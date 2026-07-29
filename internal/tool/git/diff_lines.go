@@ -95,23 +95,35 @@ func FetchPRDiffLines(ctx context.Context, client *http.Client, apiURL, owner, r
 }
 
 // hunkHeaderRe matches unified diff hunk headers: @@ -old,count +new,count @@
-var hunkHeaderRe = regexp.MustCompile(`^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,(\d+))?\s+@@`)
+var hunkHeaderRe = regexp.MustCompile(`^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@`)
 
 // ParsePatch parses a unified diff patch string and returns the set of
 // valid new-file line numbers (added and context lines within hunks).
 func ParsePatch(patch string) map[int]bool {
-	lines := make(map[int]bool)
+	positions := ParsePatchPositions(patch)
+	lines := make(map[int]bool, len(positions))
+	for newLine := range positions {
+		lines[newLine] = true
+	}
+	return lines
+}
+
+// ParsePatchPositions parses a unified diff patch string and maps each valid
+// new-file line number within hunks to its old-file line number: 0 for added
+// lines, >0 for context (unchanged) lines.
+func ParsePatchPositions(patch string) map[int]int {
+	positions := make(map[int]int)
 	if patch == "" {
-		return lines
+		return positions
 	}
 
-	var newLine int
+	var newLine, oldLine int
 	inHunk := false
 
 	for _, line := range strings.Split(patch, "\n") {
 		if m := hunkHeaderRe.FindStringSubmatch(line); m != nil {
-			start, _ := strconv.Atoi(m[1])
-			newLine = start
+			oldLine, _ = strconv.Atoi(m[1])
+			newLine, _ = strconv.Atoi(m[2])
 			inHunk = true
 			continue
 		}
@@ -122,28 +134,32 @@ func ParsePatch(patch string) map[int]bool {
 
 		if len(line) == 0 {
 			// Empty line in diff = context line (newline with no prefix)
-			lines[newLine] = true
+			positions[newLine] = oldLine
 			newLine++
+			oldLine++
 			continue
 		}
 
 		switch line[0] {
 		case '+':
-			lines[newLine] = true
+			positions[newLine] = 0
 			newLine++
 		case '-':
 			// Deletion from old file — don't increment new line counter
+			oldLine++
 		case ' ':
-			lines[newLine] = true
+			positions[newLine] = oldLine
 			newLine++
+			oldLine++
 		case '\\':
 			// "\ No newline at end of file" — skip
 		default:
 			// Unknown prefix in hunk — treat as context
-			lines[newLine] = true
+			positions[newLine] = oldLine
 			newLine++
+			oldLine++
 		}
 	}
 
-	return lines
+	return positions
 }

@@ -23,7 +23,7 @@ type PRServiceConfig struct {
 	BranchPrefix    string
 	CommitAuthor    string
 	CommitEmail     string
-	ProviderDomains map[string]string
+	ProviderDomains gitpkg.DomainsSource // resolved at call time (config + env + stored keys)
 }
 
 // TokenResolver resolves access tokens for sessions.
@@ -120,7 +120,7 @@ func (s *PRService) CreatePR(ctx context.Context, sessionID string, req CreatePR
 	}
 
 	// Parse repo URL to detect provider
-	repoInfo, err := gitpkg.ParseRepoURL(t.RepoURL, s.cfg.ProviderDomains)
+	repoInfo, err := gitpkg.ParseRepoURL(t.RepoURL, s.providerDomains(ctx))
 	if err != nil {
 		s.failPR(ctx, sessionID, err)
 		return nil, fmt.Errorf("parsing repo URL: %w", err)
@@ -330,7 +330,7 @@ func (s *PRService) GetPRStatus(ctx context.Context, sessionID string) (*gitpkg.
 		return nil, fmt.Errorf("session has no PR")
 	}
 
-	repoInfo, err := gitpkg.ParseRepoURL(t.RepoURL, s.cfg.ProviderDomains)
+	repoInfo, err := gitpkg.ParseRepoURL(t.RepoURL, s.providerDomains(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("parsing repo URL: %w", err)
 	}
@@ -360,6 +360,15 @@ func (s *PRService) GetPRStatus(ctx context.Context, sessionID string) (*gitpkg.
 	}
 
 	return status, nil
+}
+
+// providerDomains resolves the current host → provider mappings at call
+// time so provider keys created at runtime are honored without restart.
+func (s *PRService) providerDomains(ctx context.Context) map[string]string {
+	if s.cfg.ProviderDomains == nil {
+		return nil
+	}
+	return s.cfg.ProviderDomains.ProviderDomains(ctx)
 }
 
 func (s *PRService) failPR(ctx context.Context, sessionID string, err error) {

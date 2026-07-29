@@ -136,6 +136,11 @@ func run() error {
 	keyRegistry := keys.NewEnvAwareRegistry(sqliteKeyRegistry)
 	keyResolver := keys.NewResolver(keyRegistry, cfg.Git.ProviderDomains)
 
+	// Dynamic provider-domain detection: static config/env map enriched with
+	// hosts derived from stored keys' base_url values at call time, so a key
+	// created via the API/UI makes its self-hosted instance work immediately.
+	domainSource := keys.NewDomainSource(keyRegistry, cfg.Git.ProviderDomains)
+
 	// Initialize MCP registry and installer
 	mcpRegistry := mcp.NewSQLiteRegistry(sqliteDB.Unwrap())
 	mcpInstaller := mcp.NewInstaller(mcpRegistry)
@@ -205,7 +210,7 @@ func run() error {
 			WorkspaceBase:   cfg.Sessions.WorkspaceBase,
 			DefaultTimeout:  cfg.Sessions.DefaultTimeout,
 			MaxTimeout:      cfg.Sessions.MaxTimeout,
-			ProviderDomains: cfg.Git.ProviderDomains,
+			ProviderDomains: domainSource,
 			DefaultModels: map[string]string{
 				"claude-code":  cfg.CLI.ClaudeCode.DefaultModel,
 				"codex":        cfg.CLI.Codex.DefaultModel,
@@ -236,7 +241,7 @@ func run() error {
 		BranchPrefix:    cfg.Git.BranchPrefix,
 		CommitAuthor:    cfg.Git.CommitAuthor,
 		CommitEmail:     cfg.Git.CommitEmail,
-		ProviderDomains: cfg.Git.ProviderDomains,
+		ProviderDomains: domainSource,
 	}, aiClient)
 
 	// Wire the PR service into the executor for auto-PR-enabled sessions (workflows).

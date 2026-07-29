@@ -9,13 +9,23 @@ import (
 	"strings"
 )
 
+// GitLabCIJobTokenUsername is the git credential username GitLab requires
+// when authenticating with a CI job token (CI_JOB_TOKEN). Job tokens are
+// rejected when sent as the username, which is what the default askpass
+// behavior does.
+const GitLabCIJobTokenUsername = "gitlab-ci-token"
+
 // CloneOptions configures a git clone operation.
 type CloneOptions struct {
 	RepoURL string
 	DestDir string
 	Token   string
-	Branch  string
-	Shallow bool
+	// Username is the credential username sent alongside Token. Empty keeps
+	// the default PAT behavior (the token answers both git prompts). GitLab
+	// CI job tokens require GitLabCIJobTokenUsername.
+	Username string
+	Branch   string
+	Shallow  bool
 }
 
 // Clone clones a git repository using GIT_ASKPASS for token authentication.
@@ -36,7 +46,7 @@ func Clone(ctx context.Context, opts CloneOptions) error {
 	var askPassFile string
 	if opts.Token != "" {
 		var err error
-		askPassFile, err = createAskPassScript(opts.Token)
+		askPassFile, err = createAskPassScript(opts.Token, opts.Username)
 		if err != nil {
 			return fmt.Errorf("creating askpass script: %w", err)
 		}
@@ -62,17 +72,27 @@ func Clone(ctx context.Context, opts CloneOptions) error {
 	return nil
 }
 
-// createAskPassScript creates a temporary script that echoes the token.
-// Git calls this script for username (ignored) and password (returns token).
-func createAskPassScript(token string) (string, error) {
+// createAskPassScript creates a temporary script that answers git credential
+// prompts. With an empty username, the token is echoed for both the username
+// and password prompts (PAT behavior). With a username, git's "Username for
+// ..." prompt gets the username and every other prompt gets the token.
+func createAskPassScript(token, username string) (string, error) {
 	f, err := os.CreateTemp("", "codeforge-askpass-*.sh")
 	if err != nil {
 		return "", err
 	}
 
-	// Shell-escape the token to prevent injection
+	// Shell-escape the credentials to prevent injection
 	escaped := shellEscape(token)
-	script := fmt.Sprintf("#!/bin/sh\necho '%s'\n", escaped)
+	var script string
+	if username == "" {
+		script = fmt.Sprintf("#!/bin/sh\necho '%s'\n", escaped)
+	} else {
+		script = fmt.Sprintf(
+			"#!/bin/sh\ncase \"$1\" in\n[Uu]sername*) echo '%s' ;;\n*) echo '%s' ;;\nesac\n",
+			shellEscape(username), escaped,
+		)
+	}
 
 	if _, err := f.WriteString(script); err != nil {
 		_ = f.Close()

@@ -98,9 +98,43 @@ code-review:
     CODEFORGE_CLI: claude-code
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  artifacts:
+    reports:
+      dotenv: codeforge.env
 ```
 
-`$ANTHROPIC_API_KEY` must be set as a GitLab CI/CD variable. `$CI_JOB_TOKEN` is automatic.
+`$ANTHROPIC_API_KEY` and `$GITLAB_TOKEN` must be set as GitLab CI/CD variables. `GITLAB_TOKEN` needs to be a project (or personal) access token with `api` scope — **`$CI_JOB_TOKEN` cannot post MR discussions** (the API rejects it as `PRIVATE-TOKEN`), so the action fails fast with an actionable error if posting is requested with only a job token. Job tokens remain usable for cloning (git username `gitlab-ci-token`). Set `INPUT_POST_COMMENTS: "false"` to run without any GitLab token.
+
+Self-managed GitLab instances work with zero extra configuration: the provider is detected from `$CI_SERVER_URL`, which GitLab CI sets automatically (scheme, host, and port are preserved). `GITLAB_URL` / `GITHUB_URL` are also honored as manual overrides.
+
+### Manual MR review (trigger/web pipelines)
+
+Pipelines started outside a merge-request event have no MR context. Target a specific MR by setting `INPUT_MR_IID` (or the cross-platform alias `INPUT_PR_NUMBER`) as a pipeline variable:
+
+```yaml
+manual-review:
+  stage: review
+  image: ghcr.io/freema/codeforge-action:latest
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web" && $INPUT_MR_IID
+```
+
+`CI_MERGE_REQUEST_IID` always wins when the pipeline does run in an MR context.
+
+### GitLab outputs (dotenv)
+
+The action writes `codeforge.env` for downstream jobs (`artifacts: reports: dotenv:`):
+
+| Variable | Description |
+|----------|-------------|
+| `CODEFORGE_VERDICT` | Review verdict (reviews only) |
+| `CODEFORGE_SCORE` | Review score 1-10 (reviews only) |
+| `CODEFORGE_ISSUES_COUNT` | Number of issues found (reviews only) |
+| `CODEFORGE_INPUT_TOKENS` | Input tokens consumed |
+| `CODEFORGE_OUTPUT_TOKENS` | Output tokens consumed |
+| `CODEFORGE_REVIEW_URL` | URL of the posted review (only when comments were posted) |
+
+The CI log additionally shows the same human-readable review summary GitHub Actions gets.
 
 ## Inputs
 
@@ -111,7 +145,7 @@ code-review:
 | `cli` | `claude-code` | AI CLI: `claude-code` or `codex` |
 | `model` | | AI model override |
 | `api_key` | | AI API key (overrides `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) |
-| `provider_token` | | GitHub/GitLab token (defaults to `$GITHUB_TOKEN` / `$CI_JOB_TOKEN`) |
+| `provider_token` | | GitHub/GitLab token (defaults to `$GITHUB_TOKEN` / `$GITLAB_TOKEN`; `$CI_JOB_TOKEN` is a last resort and cannot post MR comments) |
 | `mcp_config` | | MCP config JSON string or path to `.mcp.json` |
 | `post_comments` | `true` | Post review as PR/MR comments |
 | `output_format` | `json` | Output format: `json`, `markdown`, `text` |
@@ -128,8 +162,11 @@ code-review:
 | `issues_count` | Number of issues found |
 | `input_tokens` | Input tokens consumed |
 | `output_tokens` | Output tokens consumed |
+| `review_url` | URL of the posted review (only when comments were posted) |
 | `review` | Full review result as JSON |
 | `output` | Raw CLI output |
+
+On GitHub these are `$GITHUB_OUTPUT` step outputs; on GitLab the equivalent data is written to the `codeforge.env` dotenv artifact as `CODEFORGE_*` variables (see the GitLab section above).
 
 ## Task Types
 
@@ -174,9 +211,9 @@ The CI Action reads `.codeforge/` files and `CLAUDE.md` before running the AI CL
 | Claude Code | `ANTHROPIC_API_KEY` |
 | Codex | `OPENAI_API_KEY` |
 
-Provider tokens for PR comments are automatic:
+Provider tokens for PR/MR comments:
 - **GitHub**: `$GITHUB_TOKEN` (per-job, no setup needed)
-- **GitLab**: `$CI_JOB_TOKEN` (automatic)
+- **GitLab**: `$GITLAB_TOKEN` — a project (or personal) access token with `api` scope, set as a CI/CD variable. `$CI_JOB_TOKEN` **cannot** post MR discussions; it is only picked up as a last resort and the action fails fast with a clear error when comment posting is requested with it. For cloning with a job token, git requires the username `gitlab-ci-token`.
 
 ## Docker Image
 
@@ -195,7 +232,9 @@ The CI Action reads configuration from `INPUT_*` environment variables (set auto
 | `INPUT_SESSION_TYPE` (legacy: `INPUT_TASK_TYPE`) | `session_type` input |
 | `INPUT_CLI` or `CODEFORGE_CLI` | `cli` input |
 | `INPUT_PROMPT` | `prompt` input |
+| `INPUT_MR_IID` or `INPUT_PR_NUMBER` | Manual MR/PR override for non-MR pipelines (GitLab) |
 | `ANTHROPIC_API_KEY` | Claude Code API key |
 | `OPENAI_API_KEY` | Codex API key |
 | `GITHUB_TOKEN` | GitHub provider token |
-| `GITLAB_TOKEN` or `CI_JOB_TOKEN` | GitLab provider token |
+| `GITLAB_TOKEN` (fallback: `CI_JOB_TOKEN`, clone-only) | GitLab provider token |
+| `CI_SERVER_URL` / `GITLAB_URL` / `GITHUB_URL` | Self-managed instance detection (`CI_SERVER_URL` is set automatically by GitLab CI) |

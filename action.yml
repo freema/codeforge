@@ -64,6 +64,8 @@ outputs:
     description: 'Input tokens consumed'
   output_tokens:
     description: 'Output tokens consumed'
+  review_url:
+    description: 'URL of the posted review (empty when comments were not posted)'
   output:
     description: 'Raw CLI output'
 

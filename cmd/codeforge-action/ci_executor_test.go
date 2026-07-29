@@ -173,6 +173,114 @@ func TestCreateRunner(t *testing.T) {
 	}
 }
 
+func TestValidateProviderToken(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     Config
+		ciCtx   *CIContext
+		wantErr bool
+	}{
+		{
+			name: "gitlab job token with MR posting fails fast",
+			cfg: Config{
+				SessionType:         "pr_review",
+				PostComments:        true,
+				ProviderToken:       "job-token",
+				ProviderTokenSource: tokenSourceCIJobToken,
+			},
+			ciCtx:   &CIContext{Platform: PlatformGitLab, PRNumber: 5},
+			wantErr: true,
+		},
+		{
+			name: "gitlab job token for code_review posting fails fast",
+			cfg: Config{
+				SessionType:         "code_review",
+				PostComments:        true,
+				ProviderToken:       "job-token",
+				ProviderTokenSource: tokenSourceCIJobToken,
+			},
+			ciCtx:   &CIContext{Platform: PlatformGitLab, PRNumber: 5},
+			wantErr: true,
+		},
+		{
+			name: "GITLAB_TOKEN posting is allowed",
+			cfg: Config{
+				SessionType:         "pr_review",
+				PostComments:        true,
+				ProviderToken:       "glpat-token",
+				ProviderTokenSource: tokenSourceGitLabEnv,
+			},
+			ciCtx: &CIContext{Platform: PlatformGitLab, PRNumber: 5},
+		},
+		{
+			name: "explicit input token is allowed",
+			cfg: Config{
+				SessionType:         "pr_review",
+				PostComments:        true,
+				ProviderToken:       "glpat-token",
+				ProviderTokenSource: tokenSourceInput,
+			},
+			ciCtx: &CIContext{Platform: PlatformGitLab, PRNumber: 5},
+		},
+		{
+			name: "job token with post_comments disabled is allowed",
+			cfg: Config{
+				SessionType:         "pr_review",
+				PostComments:        false,
+				ProviderToken:       "job-token",
+				ProviderTokenSource: tokenSourceCIJobToken,
+			},
+			ciCtx: &CIContext{Platform: PlatformGitLab, PRNumber: 5},
+		},
+		{
+			name: "job token without MR context is allowed",
+			cfg: Config{
+				SessionType:         "pr_review",
+				PostComments:        true,
+				ProviderToken:       "job-token",
+				ProviderTokenSource: tokenSourceCIJobToken,
+			},
+			ciCtx: &CIContext{Platform: PlatformGitLab, PRNumber: 0},
+		},
+		{
+			name: "job token for non-review session is allowed",
+			cfg: Config{
+				SessionType:         "knowledge_update",
+				PostComments:        true,
+				ProviderToken:       "job-token",
+				ProviderTokenSource: tokenSourceCIJobToken,
+			},
+			ciCtx: &CIContext{Platform: PlatformGitLab, PRNumber: 5},
+		},
+		{
+			name: "github platform never triggers the gitlab guard",
+			cfg: Config{
+				SessionType:         "pr_review",
+				PostComments:        true,
+				ProviderToken:       "job-token",
+				ProviderTokenSource: tokenSourceCIJobToken,
+			},
+			ciCtx: &CIContext{Platform: PlatformGitHub, PRNumber: 5},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateProviderToken(tt.cfg, tt.ciCtx)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !containsStr(err.Error(), "GITLAB_TOKEN") {
+					t.Errorf("error %q should mention GITLAB_TOKEN remediation", err.Error())
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestWriteMCPConfig_Empty(t *testing.T) {
 	executor := NewCIExecutor(Config{})
 	path, err := executor.writeMCPConfig(t.TempDir())

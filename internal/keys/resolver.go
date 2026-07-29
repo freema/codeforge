@@ -13,13 +13,15 @@ import (
 // 2. Registered key by provider_key name
 // 3. Environment variable fallback (GITHUB_TOKEN / GITLAB_TOKEN)
 type Resolver struct {
-	registry        Registry
-	providerDomains map[string]string
+	registry Registry
+	domains  *DomainSource
 }
 
-// NewResolver creates a new key resolver.
+// NewResolver creates a new key resolver. providerDomains is the static
+// config/env host → provider map; hosts derived from stored keys' base_url
+// values are merged in dynamically at resolution time.
 func NewResolver(registry Registry, providerDomains map[string]string) *Resolver {
-	return &Resolver{registry: registry, providerDomains: providerDomains}
+	return &Resolver{registry: registry, domains: NewDomainSource(registry, providerDomains)}
 }
 
 // ResolveToken resolves the access token for a session.
@@ -30,7 +32,7 @@ func (r *Resolver) ResolveToken(ctx context.Context, repoURL, accessToken, provi
 	}
 
 	// Detect provider from repo URL
-	repo, err := gitpkg.ParseRepoURL(repoURL, r.providerDomains)
+	repo, err := gitpkg.ParseRepoURL(repoURL, r.domains.ProviderDomains(ctx))
 	if err != nil {
 		return "", fmt.Errorf("parsing repo URL: %w", err)
 	}

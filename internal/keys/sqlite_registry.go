@@ -24,7 +24,7 @@ func NewSQLiteRegistry(db *sql.DB, cryptoSvc *crypto.Service) *SQLiteRegistry {
 
 func (r *SQLiteRegistry) Create(ctx context.Context, key Key) error {
 	switch key.Provider {
-	case "github", "gitlab", "sentry", "anthropic", "openai":
+	case gitProviderGitHub, gitProviderGitLab, "sentry", "anthropic", "openai":
 		// valid
 	default:
 		return apperror.Validation("provider must be 'github', 'gitlab', 'sentry', 'anthropic', or 'openai'")

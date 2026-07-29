@@ -57,6 +57,21 @@ var builtinTools = []ToolDefinition{
 		Builtin:      true,
 	},
 	{
+		Name:        "gitlab",
+		Type:        ToolTypeMCP,
+		Description: "GitLab — issues, merge requests, repos via GitLab MCP server",
+		MCPPackage:  "@zereight/mcp-gitlab",
+		MCPCommand:  "npx",
+		RequiredConfig: []ConfigField{
+			{Name: "token", Description: "GitLab personal access token", Type: "secret", EnvVar: "GITLAB_PERSONAL_ACCESS_TOKEN", Sensitive: true, ProviderKey: "gitlab"},
+		},
+		OptionalConfig: []ConfigField{
+			{Name: "api_url", Description: "GitLab API URL for self-hosted instances (default: https://gitlab.com/api/v4)", Type: "url", EnvVar: "GITLAB_API_URL"},
+		},
+		Capabilities: []string{"gitlab", "issues", "merge-requests"},
+		Builtin:      true,
+	},
+	{
 		Name:         "playwright",
 		Type:         ToolTypeMCP,
 		Description:  "Playwright browser automation — navigate, click, screenshot, test",

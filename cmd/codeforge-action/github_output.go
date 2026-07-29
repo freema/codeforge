@@ -11,18 +11,18 @@ import (
 )
 
 // writeGitHubOutput writes results to $GITHUB_OUTPUT and $GITHUB_STEP_SUMMARY.
-func writeGitHubOutput(ciCtx *CIContext, reviewResult *review.ReviewResult, rawOutput string, outputFormat string, inputTokens, outputTokens int) {
+func writeGitHubOutput(ciCtx *CIContext, reviewResult *review.ReviewResult, rawOutput string, outputFormat string, inputTokens, outputTokens int, reviewURL string) {
 	// Write to $GITHUB_OUTPUT (key=value pairs for downstream steps)
-	writeGitHubOutputVars(reviewResult, rawOutput, outputFormat, inputTokens, outputTokens)
+	writeGitHubOutputVars(reviewResult, rawOutput, outputFormat, inputTokens, outputTokens, reviewURL)
 
 	// Write to $GITHUB_STEP_SUMMARY (markdown rendered in Actions UI)
-	writeGitHubStepSummary(ciCtx, reviewResult, rawOutput, inputTokens, outputTokens)
+	writeGitHubStepSummary(ciCtx, reviewResult, rawOutput, inputTokens, outputTokens, reviewURL)
 
 	// Write human-readable summary to stdout (visible in CI log)
-	writeTerminalSummary(reviewResult, rawOutput, inputTokens, outputTokens)
+	writeTerminalSummary(reviewResult, rawOutput, inputTokens, outputTokens, reviewURL)
 }
 
-func writeGitHubOutputVars(reviewResult *review.ReviewResult, rawOutput string, outputFormat string, inputTokens, outputTokens int) {
+func writeGitHubOutputVars(reviewResult *review.ReviewResult, rawOutput string, outputFormat string, inputTokens, outputTokens int, reviewURL string) {
 	outputPath := os.Getenv("GITHUB_OUTPUT")
 	if outputPath == "" {
 		return
@@ -51,6 +51,10 @@ func writeGitHubOutputVars(reviewResult *review.ReviewResult, rawOutput string, 
 	fmt.Fprintf(f, "input_tokens=%d\n", inputTokens)
 	fmt.Fprintf(f, "output_tokens=%d\n", outputTokens)
 
+	if reviewURL != "" {
+		fmt.Fprintf(f, "review_url=%s\n", reviewURL)
+	}
+
 	// Raw output (truncated for GitHub Actions limits)
 	output := rawOutput
 	if len(output) > 50000 {
@@ -59,7 +63,7 @@ func writeGitHubOutputVars(reviewResult *review.ReviewResult, rawOutput string, 
 	fmt.Fprintf(f, "output<<EOF\n%s\nEOF\n", output)
 }
 
-func writeGitHubStepSummary(ciCtx *CIContext, reviewResult *review.ReviewResult, rawOutput string, inputTokens, outputTokens int) {
+func writeGitHubStepSummary(ciCtx *CIContext, reviewResult *review.ReviewResult, rawOutput string, inputTokens, outputTokens int, reviewURL string) {
 	summaryPath := os.Getenv("GITHUB_STEP_SUMMARY")
 	if summaryPath == "" {
 		return
@@ -73,7 +77,7 @@ func writeGitHubStepSummary(ciCtx *CIContext, reviewResult *review.ReviewResult,
 	defer f.Close()
 
 	if reviewResult != nil {
-		writeReviewSummaryMarkdown(f, ciCtx, reviewResult, inputTokens, outputTokens)
+		writeReviewSummaryMarkdown(f, ciCtx, reviewResult, inputTokens, outputTokens, reviewURL)
 	} else {
 		// Non-review output
 		fmt.Fprintf(f, "## CodeForge Result\n\n")
@@ -84,7 +88,7 @@ func writeGitHubStepSummary(ciCtx *CIContext, reviewResult *review.ReviewResult,
 	}
 }
 
-func writeTerminalSummary(r *review.ReviewResult, rawOutput string, inputTokens, outputTokens int) {
+func writeTerminalSummary(r *review.ReviewResult, rawOutput string, inputTokens, outputTokens int, reviewURL string) {
 	if r == nil {
 		// Non-review session — print truncated output
 		output := rawOutput
@@ -148,10 +152,13 @@ func writeTerminalSummary(r *review.ReviewResult, rawOutput string, inputTokens,
 	if r.ReviewedBy != "" {
 		fmt.Printf("Model:  %s\n", r.ReviewedBy)
 	}
+	if reviewURL != "" {
+		fmt.Printf("Review: %s\n", reviewURL)
+	}
 	fmt.Println()
 }
 
-func writeReviewSummaryMarkdown(f *os.File, _ *CIContext, r *review.ReviewResult, inputTokens, outputTokens int) {
+func writeReviewSummaryMarkdown(f *os.File, _ *CIContext, r *review.ReviewResult, inputTokens, outputTokens int, reviewURL string) {
 	fmt.Fprintf(f, "## CodeForge Review\n\n")
 	fmt.Fprintf(f, "**Verdict:** %s | **Score:** %d/10\n\n", r.Verdict, r.Score)
 
@@ -178,6 +185,10 @@ func writeReviewSummaryMarkdown(f *os.File, _ *CIContext, r *review.ReviewResult
 
 	if inputTokens > 0 || outputTokens > 0 {
 		fmt.Fprintf(f, "\n**Tokens:** %d input, %d output\n", inputTokens, outputTokens)
+	}
+
+	if reviewURL != "" {
+		fmt.Fprintf(f, "\n[View review](%s)\n", reviewURL)
 	}
 
 	fmt.Fprintf(f, "---\n*Reviewed by CodeForge (%s)*\n", r.ReviewedBy)

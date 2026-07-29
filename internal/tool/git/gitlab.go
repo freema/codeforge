@@ -106,8 +106,13 @@ func (c *GitLabMRCreator) GetMRStatus(ctx context.Context, repo *RepoInfo, token
 	}
 
 	var mr struct {
-		State    string `json:"state"`
-		Title    string `json:"title"`
+		State     string `json:"state"`
+		Title     string `json:"title"`
+		MergeUser *struct {
+			Username string `json:"username"`
+		} `json:"merge_user"`
+		// merged_by is deprecated; modern GitLab returns null here and
+		// populates merge_user instead. Kept as fallback for old instances.
 		MergedBy *struct {
 			Username string `json:"username"`
 		} `json:"merged_by"`
@@ -116,9 +121,11 @@ func (c *GitLabMRCreator) GetMRStatus(ctx context.Context, repo *RepoInfo, token
 		return nil, fmt.Errorf("parsing response: %w", err)
 	}
 
-	// GitLab states: "opened", "closed", "merged", "locked"
+	// GitLab states: "opened", "closed", "merged", "locked".
+	// "locked" is a transient state during merge — surface it as "open",
+	// consumers only understand open/merged/closed.
 	state := mr.State
-	if state == "opened" {
+	if state == "opened" || state == "locked" {
 		state = "open"
 	}
 
@@ -127,7 +134,10 @@ func (c *GitLabMRCreator) GetMRStatus(ctx context.Context, repo *RepoInfo, token
 		Title:  mr.Title,
 		Merged: state == "merged",
 	}
-	if mr.MergedBy != nil {
+	switch {
+	case mr.MergeUser != nil:
+		status.MergedBy = mr.MergeUser.Username
+	case mr.MergedBy != nil:
 		status.MergedBy = mr.MergedBy.Username
 	}
 	return status, nil

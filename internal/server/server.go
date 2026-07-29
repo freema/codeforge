@@ -75,7 +75,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 	}
 
 	// Handlers
-	sessionHandler := handlers.NewSessionHandler(sessionService, prService, canceller, cliRegistry, keyRegistry, cfg.Git.ProviderDomains, tenantService, workspaceMgr)
+	sessionHandler := handlers.NewSessionHandler(sessionService, prService, canceller, cliRegistry, keyRegistry, keys.NewDomainSource(keyRegistry, cfg.Git.ProviderDomains), tenantService, workspaceMgr)
 	cliHandler := handlers.NewCLIHandler(cliRegistry, cliConfigs)
 	streamHandler := handlers.NewStreamHandler(sessionService, redis)
 	keyHandler := handlers.NewKeyHandler(keyRegistry)

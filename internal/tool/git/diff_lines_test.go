@@ -117,6 +117,81 @@ func TestParsePatch(t *testing.T) {
 	}
 }
 
+func TestParsePatchPositions(t *testing.T) {
+	tests := []struct {
+		name     string
+		patch    string
+		expected map[int]int // new line -> old line (0 = added)
+	}{
+		{
+			name:     "empty patch",
+			patch:    "",
+			expected: map[int]int{},
+		},
+		{
+			name: "new file additions have no old line",
+			patch: `@@ -0,0 +1,2 @@
++line one
++line two`,
+			expected: map[int]int{1: 0, 2: 0},
+		},
+		{
+			name: "context lines map to old lines across an addition",
+			patch: `@@ -3,4 +3,5 @@
+ ctx1
+ ctx2
++added
+ ctx3
+ ctx4`,
+			expected: map[int]int{3: 3, 4: 4, 5: 0, 6: 5, 7: 6},
+		},
+		{
+			name: "deletion shifts old line counter",
+			patch: `@@ -1,3 +1,3 @@
+ alpha
+-beta
++gamma
+ delta`,
+			expected: map[int]int{1: 1, 2: 0, 3: 3},
+		},
+		{
+			name: "multiple hunks",
+			patch: `@@ -1,2 +1,3 @@
+ first
++inserted
+ second
+@@ -20,3 +21,3 @@
+ alpha
+-beta
++gamma
+ delta`,
+			expected: map[int]int{1: 1, 2: 0, 3: 2, 21: 20, 22: 0, 23: 22},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParsePatchPositions(tt.patch)
+
+			if len(got) != len(tt.expected) {
+				t.Fatalf("ParsePatchPositions() returned %d lines, want %d\ngot:  %v\nwant: %v",
+					len(got), len(tt.expected), got, tt.expected)
+			}
+
+			for newLine, wantOld := range tt.expected {
+				gotOld, ok := got[newLine]
+				if !ok {
+					t.Errorf("ParsePatchPositions() missing new line %d", newLine)
+					continue
+				}
+				if gotOld != wantOld {
+					t.Errorf("ParsePatchPositions() new line %d -> old line %d, want %d", newLine, gotOld, wantOld)
+				}
+			}
+		})
+	}
+}
+
 func TestDiffLineSet_Contains(t *testing.T) {
 	d := DiffLineSet{
 		"main.go": {10: true, 11: true, 12: true},

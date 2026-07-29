@@ -271,6 +271,48 @@ func TestGitLabWebhook(t *testing.T) {
 			wantStatus:     http.StatusOK,
 			wantBodySubstr: "skipped",
 		},
+		{
+			name: "system note is ignored even with command-like text",
+			cfg: config.CodeReviewConfig{
+				WebhookSecrets: config.WebhookSecretsConfig{GitLab: secret},
+				DefaultKeyName: "my-key",
+			},
+			body: `{"object_kind":"note","object_attributes":{"note":"/review","noteable_type":"MergeRequest","system":true},"merge_request":{"iid":12,"source_branch":"feat","target_branch":"main"},"project":{"path_with_namespace":"group/repo","http_url_to_repo":"https://gitlab.example.com/group/repo.git"}}`, //nolint:misspell // GitLab API uses "noteable_type"
+			headers: map[string]string{
+				"X-Gitlab-Token": secret,
+				"X-Gitlab-Event": "Note Hook",
+			},
+			wantStatus:     http.StatusOK,
+			wantBodySubstr: "system note",
+		},
+		{
+			name: "non-MR note is ignored",
+			cfg: config.CodeReviewConfig{
+				WebhookSecrets: config.WebhookSecretsConfig{GitLab: secret},
+				DefaultKeyName: "my-key",
+			},
+			body: `{"object_kind":"note","object_attributes":{"note":"/review","noteable_type":"Issue","system":false},"project":{"path_with_namespace":"group/repo","http_url_to_repo":"https://gitlab.example.com/group/repo.git"}}`, //nolint:misspell // GitLab API uses "noteable_type"
+			headers: map[string]string{
+				"X-Gitlab-Token": secret,
+				"X-Gitlab-Event": "Note Hook",
+			},
+			wantStatus:     http.StatusOK,
+			wantBodySubstr: "not a MR note",
+		},
+		{
+			name: "user MR note without command is ignored",
+			cfg: config.CodeReviewConfig{
+				WebhookSecrets: config.WebhookSecretsConfig{GitLab: secret},
+				DefaultKeyName: "my-key",
+			},
+			body: `{"object_kind":"note","object_attributes":{"note":"looks good to me","noteable_type":"MergeRequest","system":false},"merge_request":{"iid":13,"source_branch":"feat","target_branch":"main"},"project":{"path_with_namespace":"group/repo","http_url_to_repo":"https://gitlab.example.com/group/repo.git"}}`, //nolint:misspell // GitLab API uses "noteable_type"
+			headers: map[string]string{
+				"X-Gitlab-Token": secret,
+				"X-Gitlab-Event": "Note Hook",
+			},
+			wantStatus:     http.StatusOK,
+			wantBodySubstr: "no forge command found",
+		},
 	}
 
 	for _, tt := range tests {

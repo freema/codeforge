@@ -162,6 +162,30 @@ func TestResolveToken_CustomDomain_OverridesUnknown(t *testing.T) {
 	}
 }
 
+func TestResolveToken_KeyBaseURL_DetectsSelfHostedProvider(t *testing.T) {
+	// A self-hosted GitLab key created at runtime (base_url set, no env vars,
+	// no provider_domains config) must be enough for provider detection —
+	// the registry key resolves under provider "gitlab", not "unknown".
+	reg := &listStubRegistry{
+		stubRegistry: stubRegistry{
+			tokens: map[string]string{"gitlab:my-key": "self-hosted-token"},
+		},
+		keys: []Key{{Name: "my-key", Provider: "gitlab", BaseURL: "https://gitlab.example.com"}},
+	}
+	r := NewResolver(reg, nil)
+
+	t.Setenv("GITLAB_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+
+	tok, err := r.ResolveToken(context.Background(), "https://gitlab.example.com/group/project.git", "", "my-key")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tok != "self-hosted-token" {
+		t.Errorf("got %q, want %q — key base_url should drive provider detection", tok, "self-hosted-token")
+	}
+}
+
 func TestResolveToken_InlineTokenTakesPrecedence(t *testing.T) {
 	reg := &stubRegistry{
 		tokens: map[string]string{"github:my-key": "registry-token"},

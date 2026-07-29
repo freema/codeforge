@@ -132,8 +132,8 @@ Client (ScopeBot / curl)
 - **GitLab review posting**: `internal/tool/git/gitlab_review.go` — MR version SHAs for position-based comments, fallback to summary-only
 
 ### Webhook Receivers (`internal/server/handlers/webhook_receiver.go`)
-- **GitHub**: HMAC-SHA256 signature verification via `X-Hub-Signature-256`, handles `pull_request` events (opened, synchronize, reopened)
-- **GitLab**: constant-time `X-Gitlab-Token` comparison, handles `Merge Request Hook` events (open, update, reopen)
+- **GitHub**: HMAC-SHA256 signature verification via `X-Hub-Signature-256`, handles `pull_request` events (opened, synchronize, reopened) + `issue_comment` for `/review`, `/fix-cr`, `/fix` commands
+- **GitLab**: constant-time `X-Gitlab-Token` comparison, handles `Merge Request Hook` events (open, update, reopen) + `Note Hook` for the same commands (system notes ignored)
 - Draft PR/MR filtering: skipped unless `code_review.review_drafts` is true
 - Configuration: `code_review.webhook_secrets.github`, `code_review.webhook_secrets.gitlab`, `code_review.default_key_name`, `code_review.default_cli`
 - Routes registered outside Bearer auth group: `POST /api/v1/webhooks/github`, `POST /api/v1/webhooks/gitlab`
@@ -141,7 +141,7 @@ Client (ScopeBot / curl)
 ### Tool System (`internal/tools/`)
 - High-level abstraction over MCP servers — users request tools by name, system handles MCP wiring
 - **Registry** — SQLite-backed storage with scope (global / project-level)
-- **Catalog** — 5 built-in tools: sentry (HTTP), jira, git, github, playwright (stdio)
+- **Catalog** — 6 built-in tools: sentry (HTTP), jira, git, github, gitlab, playwright (stdio)
 - **Resolver** — lookup chain: project scope -> global scope -> built-in catalog
 - **Bridge** — converts resolved tools to MCP server configs for `.mcp.json` generation
 - **Validator** — checks required config fields before session execution

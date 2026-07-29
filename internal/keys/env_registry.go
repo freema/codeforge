@@ -20,8 +20,8 @@ type envKeyMapping struct {
 
 // knownEnvKeys lists all recognized environment variable → provider mappings.
 var knownEnvKeys = []envKeyMapping{
-	{"GITHUB_TOKEN", "GITHUB_URL", "github", "github-env"},
-	{"GITLAB_TOKEN", "GITLAB_URL", "gitlab", "gitlab-env"},
+	{"GITHUB_TOKEN", "GITHUB_URL", gitProviderGitHub, "github-env"},
+	{"GITLAB_TOKEN", "GITLAB_URL", gitProviderGitLab, "gitlab-env"},
 	{"SENTRY_AUTH_TOKEN", "SENTRY_URL", "sentry", "sentry-env"},
 	{"ANTHROPIC_API_KEY", "", "anthropic", "anthropic-env"},
 	{"OPENAI_API_KEY", "", "openai", "openai-env"},
@@ -154,8 +154,8 @@ func MergeEnvProviderDomains(existing map[string]string) map[string]string {
 		envVar   string
 		provider string
 	}{
-		{"GITLAB_URL", "gitlab"},
-		{"GITHUB_URL", "github"},
+		{"GITLAB_URL", gitProviderGitLab},
+		{"GITHUB_URL", gitProviderGitHub},
 	}
 
 	for _, m := range envMappings {

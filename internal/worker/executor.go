@@ -45,8 +45,8 @@ type ExecutorConfig struct {
 	WorkspaceBase   string
 	DefaultTimeout  int
 	MaxTimeout      int
-	DefaultModels   map[string]string // CLI name → default model (e.g. "claude-code" → "claude-sonnet-4-...")
-	ProviderDomains map[string]string // custom domain → provider mappings
+	DefaultModels   map[string]string    // CLI name → default model (e.g. "claude-code" → "claude-sonnet-4-...")
+	ProviderDomains gitpkg.DomainsSource // domain → provider mappings, resolved at call time (config + env + stored keys)
 }
 
 // PRCreator creates a PR/MR from a completed session's workspace.
@@ -850,16 +850,14 @@ func (e *Executor) cloneStep(ctx context.Context, t *session.Session, workDir st
 	// For pr_review tasks: clone the target branch (or default), then fetch the PR ref.
 	// This handles fork PRs where the source branch doesn't exist in the origin repo.
 	if t.SessionType == "pr_review" && t.Config != nil && t.Config.PRNumber > 0 {
-		targetBranch := t.Config.TargetBranch
-		if targetBranch == "" {
-			targetBranch = "main"
-		}
-
+		// An empty TargetBranch (e.g. comment-triggered webhook reviews) clones
+		// the repository's default branch — a plain clone without -b. Hardcoding
+		// "main" here broke repos whose default branch is e.g. "master".
 		err := e.cloneWithRetry(ctx, t.ID, gitpkg.CloneOptions{
 			RepoURL: t.RepoURL,
 			DestDir: workDir,
 			Token:   t.AccessToken,
-			Branch:  targetBranch,
+			Branch:  t.Config.TargetBranch,
 			Shallow: false, // need full history for diff
 		}, log)
 		if err != nil {
@@ -867,8 +865,19 @@ func (e *Executor) cloneStep(ctx context.Context, t *session.Session, workDir st
 			return err
 		}
 
+		// Record the branch the clone checked out so the review prompt diffs
+		// against the real base instead of assuming "main".
+		if t.Config.TargetBranch == "" {
+			if defBranch, dErr := gitpkg.DefaultBranch(ctx, workDir); dErr == nil {
+				t.Config.TargetBranch = defBranch
+				log.Info("resolved default branch for pr review", "branch", defBranch)
+			} else {
+				log.Warn("failed to detect default branch, review prompt falls back to main", "error", dErr)
+			}
+		}
+
 		// Determine the correct PR ref based on provider (GitHub vs GitLab)
-		repo, parseErr := gitpkg.ParseRepoURL(t.RepoURL, e.cfg.ProviderDomains)
+		repo, parseErr := gitpkg.ParseRepoURL(t.RepoURL, e.providerDomains(ctx))
 		var prRef string
 		if parseErr == nil && repo.Provider == gitpkg.ProviderGitLab {
 			prRef = fmt.Sprintf("merge-requests/%d/head", t.Config.PRNumber)
@@ -1365,7 +1374,7 @@ func (e *Executor) handlePRReviewCompletion(ctx context.Context, t *session.Sess
 		token = resolved
 	}
 
-	repo, err := gitpkg.ParseRepoURL(t.RepoURL, e.cfg.ProviderDomains)
+	repo, err := gitpkg.ParseRepoURL(t.RepoURL, e.providerDomains(ctx))
 	if err != nil {
 		log.Error("pr_review: failed to parse repo URL", "error", err)
 		return
@@ -1402,6 +1411,15 @@ func (e *Executor) handlePRReviewCompletion(ctx context.Context, t *session.Sess
 		"review_url", postResult.ReviewURL,
 		"comments_posted", postResult.CommentsPosted,
 	)
+}
+
+// providerDomains resolves the current host → provider mappings at call
+// time so provider keys created at runtime are honored without restart.
+func (e *Executor) providerDomains(ctx context.Context) map[string]string {
+	if e.cfg.ProviderDomains == nil {
+		return nil
+	}
+	return e.cfg.ProviderDomains.ProviderDomains(ctx)
 }
 
 // resolveWorkDir finds the workspace directory for a session without cloning.
@@ -1643,7 +1661,7 @@ func (e *Executor) autoPostReviewToPR(ctx context.Context, t *session.Session, p
 		token = resolved
 	}
 
-	repo, err := gitpkg.ParseRepoURL(t.RepoURL, e.cfg.ProviderDomains)
+	repo, err := gitpkg.ParseRepoURL(t.RepoURL, e.providerDomains(ctx))
 	if err != nil {
 		log.Error("auto-post: failed to parse repo URL", "error", err)
 		return

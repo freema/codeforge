@@ -79,6 +79,64 @@ func TestParseConfig_ProviderTokenFallback(t *testing.T) {
 	}
 }
 
+func TestParseConfig_ProviderTokenSource(t *testing.T) {
+	tests := []struct {
+		name       string
+		env        map[string]string
+		wantToken  string
+		wantSource string
+	}{
+		{
+			name:       "explicit input token",
+			env:        map[string]string{"INPUT_PROVIDER_TOKEN": "explicit", "GITHUB_TOKEN": "gh", "CI_JOB_TOKEN": "job"},
+			wantToken:  "explicit",
+			wantSource: tokenSourceInput,
+		},
+		{
+			name:       "GITHUB_TOKEN fallback",
+			env:        map[string]string{"GITHUB_TOKEN": "gh"},
+			wantToken:  "gh",
+			wantSource: tokenSourceGitHubEnv,
+		},
+		{
+			name:       "GITLAB_TOKEN preferred over CI_JOB_TOKEN",
+			env:        map[string]string{"GITLAB_TOKEN": "glpat", "CI_JOB_TOKEN": "job"},
+			wantToken:  "glpat",
+			wantSource: tokenSourceGitLabEnv,
+		},
+		{
+			name:       "CI_JOB_TOKEN is last resort and tracked",
+			env:        map[string]string{"CI_JOB_TOKEN": "job"},
+			wantToken:  "job",
+			wantSource: tokenSourceCIJobToken,
+		},
+		{
+			name:       "no token no source",
+			env:        map[string]string{},
+			wantToken:  "",
+			wantSource: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearCIEnv(t)
+			t.Setenv("ANTHROPIC_API_KEY", "test-key")
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+
+			cfg := parseConfig()
+			if cfg.ProviderToken != tt.wantToken {
+				t.Errorf("ProviderToken = %q, want %q", cfg.ProviderToken, tt.wantToken)
+			}
+			if cfg.ProviderTokenSource != tt.wantSource {
+				t.Errorf("ProviderTokenSource = %q, want %q", cfg.ProviderTokenSource, tt.wantSource)
+			}
+		})
+	}
+}
+
 func TestParseConfig_CLIEnvFallback(t *testing.T) {
 	clearCIEnv(t)
 	t.Setenv("CODEFORGE_CLI", "codex")

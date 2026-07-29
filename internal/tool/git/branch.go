@@ -86,7 +86,7 @@ func AskPassEnv(token string) ([]string, func(), error) {
 		return nil, func() {}, nil
 	}
 
-	askPassFile, err := createAskPassScript(token)
+	askPassFile, err := createAskPassScript(token, "")
 	if err != nil {
 		return nil, nil, err
 	}
