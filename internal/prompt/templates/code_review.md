@@ -25,15 +25,4 @@ The following task was executed by an AI agent:
 
 ## Output Format
 
-Respond ONLY with a JSON object (no other text):
-```json
-{
-  "verdict": "approve" | "request_changes" | "comment",
-  "score": 1-10,
-  "summary": "Brief overall assessment",
-  "issues": [
-    {"severity": "critical|major|minor|suggestion", "file": "path", "line": 42, "description": "...", "suggestion": "..."}
-  ],
-  "auto_fixable": false
-}
-```
+{{reviewSchema}}

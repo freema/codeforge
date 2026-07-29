@@ -257,8 +257,9 @@ func (e *CIExecutor) buildCodeReviewPrompt(ciCtx *CIContext) (string, error) {
 }
 
 func (e *CIExecutor) buildKnowledgeUpdatePrompt() (string, error) {
-	// Two-phase: analyze then update — combined into one prompt for CI mode
-	return prompt.AnalyzeRepoPrompt + "\n\n---\n\n" + prompt.UpdateKnowledgePrompt, nil
+	// The knowledge template combines analyze + update in one prompt.
+	// The configured prompt is an optional focus area — empty is fine.
+	return prompt.RenderTaskPrompt("knowledge", e.cfg.Prompt)
 }
 
 // buildSystemContext reads .codeforge/ knowledge files and CLAUDE.md to build system context.

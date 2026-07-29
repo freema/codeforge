@@ -100,11 +100,13 @@ Client (ScopeBot / curl)
 - Global `http.Server.WriteTimeout` is set to `0` (disabled) — SSE handler manages its own deadlines
 
 ### Session Type System (`internal/prompt/`)
-- Four session types: `code` (default), `plan`, `review`, `pr_review` — each with different behavior
-- **code**: no template wrapping, user prompt passed directly to CLI
-- **plan**: wraps user prompt in `plan.md` template — instructs AI to analyze repo and create implementation plan without modifying files
-- **review**: wraps user prompt in `review.md` template — instructs AI to review code quality with structured JSON output, read-only
-- **pr_review**: wraps user prompt in `pr_review.md` template — instructs AI to review a specific PR/MR diff via `git diff origin/{base}...HEAD`, outputs structured JSON
+- Five session types: `code` (default), `plan`, `review`, `pr_review`, `knowledge` — each with different behavior
+- **code**: no template wrapping, user prompt passed directly to CLI (prompt required)
+- **plan**: wraps user prompt in `plan.md` template — instructs AI to analyze repo and create implementation plan without modifying files (prompt required)
+- **review**: wraps user prompt in `review.md` template — instructs AI to review code quality with structured JSON output, read-only (prompt optional — extra focus)
+- **pr_review**: wraps user prompt in `pr_review.md` template — instructs AI to review a specific PR/MR diff via `git diff origin/{base}...HEAD`, outputs structured JSON (prompt optional — extra focus)
+- **knowledge**: analyzes repo, then creates/updates `.codeforge/OVERVIEW.md`, `ARCHITECTURE.md`, `CONVENTIONS.md` — writes only inside `.codeforge/` (prompt optional — focus area)
+- `review` and `pr_review` share one JSON output contract (`templates/review_schema.md`)
 - Templates rendered via Go `text/template` with `embed.FS`
 - Template rendering happens in the executor (`buildPrompt()`) at runtime, NOT at session creation time
 - `Session.Prompt` always stores the original user prompt (displayed in FE), template is applied only when running the CLI
@@ -154,7 +156,7 @@ Client (ScopeBot / curl)
   - **session** — creates and waits for a CodeForge session (clone + AI CLI run)
   - **action** — built-in actions (e.g., `create_pr`, `notify`) that operate on previous step results
 - Go `text/template` engine for step configuration: `{{.Params.key}}`, `{{.Steps.step_name.field}}`
-- Built-in workflows: `sentry-fixer`, `github-issue-fixer`, `gitlab-issue-fixer`, `code-review`, `knowledge-update`
+- Built-in workflows: `sentry-fixer`
 - Workflow definitions stored in SQLite (user-created + built-in, seeded on startup)
 - Run state tracked in SQLite with per-step status records
 - Streaming via Redis Pub/Sub (`workflow:{runID}:stream`) with history replay, same SSE pattern as sessions

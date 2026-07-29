@@ -139,6 +139,31 @@ func TestBuildPrompt_KnowledgeUpdate(t *testing.T) {
 	if !containsStr(prompt, ".codeforge") {
 		t.Error("prompt should reference .codeforge/ directory")
 	}
+	if containsStr(prompt, "{{") {
+		t.Error("prompt should not contain unrendered template syntax")
+	}
+	if containsStr(prompt, "Focus area:") {
+		t.Error("prompt should not contain a focus area when none is configured")
+	}
+}
+
+func TestBuildPrompt_KnowledgeUpdate_WithFocus(t *testing.T) {
+	executor := NewCIExecutor(Config{
+		SessionType: "knowledge_update",
+		Prompt:      "the auth module",
+	})
+
+	prompt, err := executor.buildPrompt(&CIContext{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !containsStr(prompt, "Focus area: the auth module") {
+		t.Error("prompt should contain the configured focus area")
+	}
+	if containsStr(prompt, "{{") {
+		t.Error("prompt should not contain unrendered template syntax")
+	}
 }
 
 func TestBuildPrompt_InvalidType(t *testing.T) {

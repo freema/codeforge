@@ -15,4 +15,13 @@ The user wants you to create a detailed implementation plan for the following ta
 - Do NOT modify any files — this is a read-only analysis
 - Do NOT create or edit any code
 - Focus on: what files to change, what approach to take, potential risks, and estimated complexity
-- Output a clear, structured plan in markdown format
+
+## Output Format
+
+Respond with a markdown plan containing exactly these sections:
+
+- `## Summary` — brief description of the task and the chosen approach
+- `## Files to Change` — for each file: its path plus what changes are needed and why
+- `## Approach` — ordered implementation steps
+- `## Risks` — potential risks and their mitigations
+- `## Complexity` — S/M/L estimate with rationale

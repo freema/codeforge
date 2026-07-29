@@ -122,6 +122,49 @@ func createTestSession(t *testing.T, svc *Service, status Status) *Session {
 	return sess
 }
 
+func TestCreate_PromptHandling(t *testing.T) {
+	svc, _ := setupTestService(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		sessionType string
+		prompt      string
+		wantErr     bool
+		wantPrompt  string
+	}{
+		{"code requires prompt", "code", "", true, ""},
+		{"plan requires prompt", "plan", "", true, ""},
+		{"review empty gets default", "review", "", false, "Review this repository for code quality, security, and architecture."},
+		{"pr_review empty gets default", "pr_review", "", false, "Review this pull request."},
+		{"knowledge empty allowed", "knowledge", "", false, ""},
+		{"knowledge prompt passed through", "knowledge", "focus on auth", false, "focus on auth"},
+		{"review prompt prefixed", "review", "check error handling", false, "Review this repository for code quality, security, and architecture.\ncheck error handling"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sess, err := svc.Create(ctx, CreateSessionRequest{
+				RepoURL:     "https://github.com/test/repo.git",
+				Prompt:      tt.prompt,
+				SessionType: tt.sessionType,
+			})
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			if sess.Prompt != tt.wantPrompt {
+				t.Errorf("prompt = %q, want %q", sess.Prompt, tt.wantPrompt)
+			}
+		})
+	}
+}
+
 func TestStartReviewAsync_FromCompleted(t *testing.T) {
 	svc, rdb := setupTestService(t)
 	ctx := context.Background()

@@ -50,10 +50,103 @@ func TestRenderTaskPrompt_Plan(t *testing.T) {
 		"software architect",
 		"Do NOT modify any files",
 		"implementation plan",
+		"## Output Format",
+		"## Summary",
+		"## Files to Change",
+		"## Approach",
+		"## Risks",
+		"## Complexity",
 	} {
 		if !strings.Contains(result, want) {
 			t.Errorf("result should contain %q", want)
 		}
+	}
+}
+
+func TestRenderTaskPrompt_Knowledge(t *testing.T) {
+	tests := []struct {
+		name      string
+		focus     string
+		wantFocus bool
+	}{
+		{"with focus", "authentication and session handling", true},
+		{"without focus", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := RenderTaskPrompt("knowledge", tt.focus)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if strings.Contains(result, "{{") {
+				t.Error("result contains unrendered template syntax")
+			}
+
+			if tt.wantFocus {
+				if !strings.Contains(result, "Focus area: "+tt.focus) {
+					t.Error("result should contain the focus area")
+				}
+			} else if strings.Contains(result, "Focus area:") {
+				t.Error("result should not contain a focus area line when focus is empty")
+			}
+
+			for _, want := range []string{
+				".codeforge/OVERVIEW.md",
+				".codeforge/ARCHITECTURE.md",
+				".codeforge/CONVENTIONS.md",
+				"do NOT modify anything outside",
+				"UPDATE them",
+				"STABLE knowledge",
+				"reference them rather than duplicating",
+			} {
+				if !strings.Contains(result, want) {
+					t.Errorf("result should contain %q", want)
+				}
+			}
+		})
+	}
+}
+
+func TestReviewTemplates_IdenticalSchema(t *testing.T) {
+	schema, err := LoadRaw("review_schema")
+	if err != nil {
+		t.Fatalf("LoadRaw review_schema: %v", err)
+	}
+	schema = strings.TrimRight(schema, "\n")
+	if !strings.Contains(schema, `"auto_fixable"`) {
+		t.Fatal("review_schema should contain auto_fixable")
+	}
+
+	renders := map[string]func() (string, error){
+		"review": func() (string, error) {
+			return Render("review", SessionTypeData{UserPrompt: "focus"})
+		},
+		"pr_review": func() (string, error) {
+			return Render("pr_review", PRReviewData{PRNumber: 1, PRBranch: "feature", BaseBranch: "main"})
+		},
+		"code_review": func() (string, error) {
+			return Render("code_review", CodeReviewData{OriginalPrompt: "task"})
+		},
+	}
+
+	for name, render := range renders {
+		t.Run(name, func(t *testing.T) {
+			result, err := render()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(result, schema) {
+				t.Error("rendered template should contain the shared review schema block")
+			}
+			if !strings.Contains(result, `"auto_fixable"`) {
+				t.Error("rendered template should contain auto_fixable")
+			}
+			if strings.Contains(result, "{{") {
+				t.Error("result contains unrendered template syntax")
+			}
+		})
 	}
 }
 
@@ -106,6 +199,8 @@ func TestValidSessionType(t *testing.T) {
 		{"code", true},
 		{"plan", true},
 		{"review", true},
+		{"pr_review", true},
+		{"knowledge", true},
 		{"invalid", false},
 		{"", false},
 	}
@@ -118,8 +213,8 @@ func TestValidSessionType(t *testing.T) {
 
 func TestSessionTypes(t *testing.T) {
 	types := SessionTypes()
-	if len(types) != 4 {
-		t.Fatalf("expected 4 session types, got %d", len(types))
+	if len(types) != 5 {
+		t.Fatalf("expected 5 session types, got %d", len(types))
 	}
 
 	names := map[string]bool{}
@@ -133,7 +228,7 @@ func TestSessionTypes(t *testing.T) {
 		}
 	}
 
-	for _, expected := range []string{"code", "plan", "review", "pr_review"} {
+	for _, expected := range []string{"code", "plan", "review", "pr_review", "knowledge"} {
 		if !names[expected] {
 			t.Errorf("expected session type %s in list", expected)
 		}
@@ -149,6 +244,9 @@ func TestSessionTypeTemplate(t *testing.T) {
 	}
 	if tmpl := SessionTypeTemplate("review"); tmpl != "review" {
 		t.Errorf("review template should be 'review', got %q", tmpl)
+	}
+	if tmpl := SessionTypeTemplate("knowledge"); tmpl != "knowledge" {
+		t.Errorf("knowledge template should be 'knowledge', got %q", tmpl)
 	}
 	if tmpl := SessionTypeTemplate("unknown"); tmpl != "" {
 		t.Errorf("unknown type should have no template, got %q", tmpl)

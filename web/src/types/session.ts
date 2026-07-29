@@ -86,7 +86,7 @@ export interface SessionToolRef {
 
 export interface CreateSessionRequest {
   repo_url: string;
-  prompt: string;
+  prompt?: string;
   session_type?: string;
   access_token?: string;
   provider_key?: string;

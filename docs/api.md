@@ -196,8 +196,8 @@ Request:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `repo_url` | string | yes | Git repository URL |
-| `prompt` | string | yes | Session instruction (max 100KB) |
-| `session_type` | string | no | Session type: `code` (default), `plan`, `review`, `pr_review` |
+| `prompt` | string | yes* | Session instruction (max 100KB) |
+| `session_type` | string | no | Session type: `code` (default), `plan`, `review`, `pr_review`, `knowledge` — see [Session Types](session-types.md) |
 | `provider_key` | string | no | Name of registered key for git auth |
 | `access_token` | string | no | Inline git access token (never returned in responses) |
 | `callback_url` | string | no | Webhook URL for completion notification |
@@ -223,6 +223,8 @@ Response `201`:
   "created_at": "2026-02-26T18:38:10.277Z"
 }
 ```
+
+\* `review` and `knowledge` sessions accept an empty `prompt` — the type's template drives the run, and a non-empty prompt acts as an optional focus. `code` and `plan` always require a prompt.
 
 Errors: `400` (validation), `429` (rate limited).
 
@@ -741,6 +743,11 @@ Response `200`:
       "name": "pr_review",
       "label": "PR Review",
       "description": "Review a pull request / merge request diff and post comments"
+    },
+    {
+      "name": "knowledge",
+      "label": "Knowledge",
+      "description": "Analyze the repo and create or update .codeforge/ knowledge docs"
     }
   ]
 }
@@ -754,6 +761,9 @@ Response `200`:
 | `plan` | `plan.md` | Read-only analysis, creates implementation plan, does NOT modify files |
 | `review` | `review.md` | Reviews code quality with structured JSON output, does NOT modify files |
 | `pr_review` | `pr_review.md` | Reviews a PR/MR diff, outputs structured JSON, optionally posts comments to PR/MR |
+| `knowledge` | `knowledge.md` | Analyzes repo, writes `.codeforge/OVERVIEW.md`, `ARCHITECTURE.md`, `CONVENTIONS.md` — touches nothing outside `.codeforge/` |
+
+`review` and `knowledge` accept an empty `prompt` — a non-empty prompt acts as an optional focus area. See [Session Types](session-types.md) for full per-type documentation.
 
 **Review distinctions:**
 - `review` session type — reviews the **entire repository** as a new session
@@ -1258,7 +1268,7 @@ DELETE /api/v1/schedules/{scheduleID} (204)
 POST   /api/v1/schedules/{scheduleID}/run   fire immediately → 202 {"schedule_id": "...", "session_id": "..."}
 ```
 
-`cron` accepts standard 5-field expressions plus `@daily`/`@weekly`/`@every 2h` descriptors. `session_request` is a stored create-session request (`repo_url` + `prompt` required) used verbatim on each firing. Responses include a computed `next_run_at`; `last_run_at`/`last_session_id` track the previous firing.
+`cron` accepts standard 5-field expressions plus `@daily`/`@weekly`/`@every 2h` descriptors. `session_request` is a stored create-session request (`repo_url` required) used verbatim on each firing. `session_request.session_type` may be `code`, `plan`, `review`, or `knowledge` — `pr_review` schedules are rejected (`400`) since a schedule cannot target a fixed PR number. `prompt` is required for `code`/`plan`; `review` and `knowledge` accept an empty prompt (a non-empty one is an optional focus). Responses include a computed `next_run_at`; `last_run_at`/`last_session_id` track the previous firing.
 
 Example — nightly dependency update:
 

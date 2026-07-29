@@ -458,7 +458,7 @@ func TestToolCatalog(t *testing.T) {
 		}
 	}
 
-	expected := []string{"sentry", "jira", "git", "github", "playwright"}
+	expected := []string{"sentry", "jira", "git", "github", "gitlab", "playwright"}
 	for _, name := range expected {
 		if !names[name] {
 			t.Errorf("expected built-in tool %s in catalog", name)
@@ -500,8 +500,8 @@ func TestListSessionTypes(t *testing.T) {
 	if !ok {
 		t.Fatal("expected session_types array in response")
 	}
-	if len(sessionTypes) != 4 {
-		t.Fatalf("expected 4 session types, got %d", len(sessionTypes))
+	if len(sessionTypes) != 5 {
+		t.Fatalf("expected 5 session types, got %d", len(sessionTypes))
 	}
 
 	names := make(map[string]bool)
@@ -517,7 +517,7 @@ func TestListSessionTypes(t *testing.T) {
 		}
 	}
 
-	for _, expected := range []string{"code", "plan", "review", "pr_review"} {
+	for _, expected := range []string{"code", "plan", "review", "pr_review", "knowledge"} {
 		if !names[expected] {
 			t.Errorf("expected session type %s in response", expected)
 		}

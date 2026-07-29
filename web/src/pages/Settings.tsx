@@ -1205,6 +1205,7 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   jira: ClipboardCheck,
   git: GitCommitHorizontal,
   github: Github,
+  gitlab: Gitlab,
   playwright: AppWindow,
 };
 

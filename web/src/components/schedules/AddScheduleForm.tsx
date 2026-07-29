@@ -11,6 +11,7 @@ import { useCreateSchedule } from "../../hooks/useSchedules";
 import { useCLIs } from "../../hooks/useCLIs";
 import { useKeys } from "../../hooks/useKeys";
 import { useRepositories } from "../../hooks/useRepositories";
+import { useSessionTypes } from "../../hooks/useSessionTypes";
 import { useToast } from "../../context/ToastContext";
 import RepoSelector from "../RepoSelector";
 import type { Repository } from "../../types";
@@ -35,6 +36,13 @@ export default function AddScheduleForm() {
   const createSchedule = useCreateSchedule();
   const { data: clis } = useCLIs();
   const { data: allKeys } = useKeys();
+  const { data: sessionTypes } = useSessionTypes();
+
+  // pr_review needs a concrete PR number, so it cannot recur on a schedule
+  const schedulableTypes = useMemo(
+    () => sessionTypes?.filter((t) => t.name !== "pr_review") ?? [],
+    [sessionTypes],
+  );
 
   const keys = useMemo(
     () =>
@@ -51,11 +59,20 @@ export default function AddScheduleForm() {
   const [providerKey, setProviderKey] = useState<string | null>(null);
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null);
   const [repoUrl, setRepoUrl] = useState("");
+  const [sessionType, setSessionType] = useState("code");
   const [prompt, setPrompt] = useState("");
   const [cli, setCli] = useState("");
   const [timezone, setTimezone] = useState("");
 
   const activeKey = providerKey ?? "";
+
+  // Prompt is required only for code and plan; review and knowledge
+  // fall back to backend defaults when empty.
+  const isPromptRequired = sessionType === "code" || sessionType === "plan";
+  const selectedType = schedulableTypes.find((t) => t.name === sessionType);
+  const promptPlaceholder = isPromptRequired
+    ? "What should the agent do on each run?"
+    : (selectedType?.description ?? "Optional additional instructions");
 
   const availableClis = useMemo(
     () => clis?.filter((c) => c.available) ?? [],
@@ -104,7 +121,8 @@ export default function AddScheduleForm() {
         ...(timezone.trim() ? { timezone: timezone.trim() } : {}),
         session_request: {
           repo_url: repoUrl,
-          prompt,
+          ...(prompt.trim() ? { prompt: prompt.trim() } : {}),
+          ...(sessionType !== "code" ? { session_type: sessionType } : {}),
           ...(activeKey ? { provider_key: activeKey } : {}),
           ...(cli ? { config: { cli } } : {}),
         },
@@ -115,6 +133,7 @@ export default function AddScheduleForm() {
       setCustomCron("");
       setSelectedRepo(null);
       setRepoUrl("");
+      setSessionType("code");
       setPrompt("");
       setCli("");
       setTimezone("");
@@ -268,17 +287,49 @@ export default function AddScheduleForm() {
           )}
         </div>
 
+        {/* Session type */}
+        {schedulableTypes.length > 0 && (
+          <div>
+            <label className={labelCls}>Session type</label>
+            <div className="flex flex-wrap gap-2">
+              {schedulableTypes.map((t) => (
+                <button
+                  key={t.name}
+                  type="button"
+                  onClick={() => setSessionType(t.name)}
+                  title={t.description}
+                  className={`flex items-center gap-2 rounded-md border px-4 py-2 text-sm transition-colors ${
+                    sessionType === t.name
+                      ? "border-accent-muted bg-accent-soft text-accent"
+                      : "border-edge bg-surface-alt text-fg-3 hover:border-fg-4 hover:text-fg"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Prompt */}
         <div>
-          <label className={labelCls}>Prompt</label>
+          <label className={labelCls}>
+            {isPromptRequired ? "Prompt" : "Prompt (optional)"}
+          </label>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="What should the agent do on each run?"
-            required
+            placeholder={promptPlaceholder}
+            required={isPromptRequired}
             rows={3}
             className={`${inputCls} resize-y`}
           />
+          {sessionType === "knowledge" && (
+            <p className="mt-2 text-xs text-fg-4">
+              Writes .codeforge/ knowledge docs; open a PR from the resulting
+              session to keep them.
+            </p>
+          )}
         </div>
 
         {/* CLI + timezone */}

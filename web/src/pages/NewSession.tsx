@@ -10,6 +10,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import {
   Bookmark,
   BookmarkPlus,
+  BookOpen,
   Braces,
   ChevronDown,
   CircleAlert,
@@ -97,6 +98,13 @@ const SESSION_TYPE_CONFIG: Record<
     submit: "Start review",
     submitIcon: GitPullRequest,
   },
+  knowledge: {
+    icon: BookOpen,
+    label: "Knowledge",
+    desc: "Analyze the repo and create or update .codeforge/ knowledge docs",
+    submit: "Build knowledge",
+    submitIcon: BookOpen,
+  },
 };
 
 export default function NewSession() {
@@ -170,7 +178,10 @@ export default function NewSession() {
 
   // Derived booleans
   const isPrReview = taskType === "pr_review";
-  const isPromptOptional = taskType === "review" || taskType === "pr_review";
+  const isPromptOptional =
+    taskType === "review" ||
+    taskType === "pr_review" ||
+    taskType === "knowledge";
   const showTargetBranch = taskType === "code";
   const showBranches = !isPrReview && (!!selectedRepo || !!repoUrl);
 

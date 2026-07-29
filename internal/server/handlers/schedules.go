@@ -3,11 +3,13 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/freema/codeforge/internal/prompt"
 	"github.com/freema/codeforge/internal/schedule"
 	"github.com/freema/codeforge/internal/session"
 )
@@ -32,7 +34,9 @@ type scheduleRequest struct {
 }
 
 // validateSessionRequest ensures the stored template will actually produce a
-// runnable session when the schedule fires.
+// runnable session when the schedule fires. This is the only validation gate:
+// Scheduler.Fire calls session.Service.Create directly, bypassing the HTTP
+// session handler checks.
 func validateSessionRequest(raw json.RawMessage) error {
 	var req session.CreateSessionRequest
 	if err := json.Unmarshal(raw, &req); err != nil {
@@ -41,8 +45,20 @@ func validateSessionRequest(raw json.RawMessage) error {
 	if req.RepoURL == "" {
 		return errors.New("session_request.repo_url is required")
 	}
-	if req.Prompt == "" {
-		return errors.New("session_request.prompt is required")
+	if req.SessionType != "" && !prompt.ValidSessionType(req.SessionType) {
+		return fmt.Errorf("unknown session type: %s", req.SessionType)
+	}
+	if req.SessionType == "pr_review" {
+		// A schedule cannot target a fixed PR number.
+		return errors.New("pr_review sessions cannot be scheduled")
+	}
+	// Prompt drives code (the default) and plan sessions; for review and
+	// knowledge it is an optional focus/instruction on top of the template.
+	switch req.SessionType {
+	case "", "code", "plan":
+		if req.Prompt == "" {
+			return errors.New("session_request.prompt is required")
+		}
 	}
 	return nil
 }

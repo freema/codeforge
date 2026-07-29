@@ -63,7 +63,7 @@ func (s *Service) Create(ctx context.Context, req CreateSessionRequest) (*Sessio
 		taskType = "code"
 	}
 
-	// Prompt is required for code and plan sessions, optional for review types
+	// Prompt is required for code and plan sessions, optional for review and knowledge types
 	if req.Prompt == "" {
 		switch taskType {
 		case "code", "plan":
@@ -72,10 +72,13 @@ func (s *Service) Create(ctx context.Context, req CreateSessionRequest) (*Sessio
 			req.Prompt = "Review this repository for code quality, security, and architecture."
 		case "pr_review":
 			req.Prompt = "Review this pull request."
+		case "knowledge":
+			// Prompt is an optional focus area — empty is fine, the template handles it.
 		}
 	} else {
 		// For review types, always prefix with the base instruction so that
 		// user-supplied text becomes additional instructions, not a replacement.
+		// Knowledge prompts are passed through unchanged (focus area only).
 		switch taskType {
 		case "review":
 			req.Prompt = "Review this repository for code quality, security, and architecture.\n" + req.Prompt
