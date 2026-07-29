@@ -1373,279 +1373,170 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /api/v1/workflows:
+  /api/v1/blueprints:
     post:
-      summary: Create a workflow definition
-      operationId: createWorkflow
-      tags: [Workflows]
+      summary: Create a blueprint
+      operationId: createBlueprint
+      tags: [Blueprints]
+      description: |
+        Operator only. Saves a named, reusable session request template with
+        optional input parameters. The template must include repo_url; prompt
+        is optional because the run endpoint can supply it as an override.
+        String values may contain {{.Params.x}} template expressions, and one
+        extra optional top-level field tool_key_ref names a registered key
+        whose token is injected into each tool's auth_token config at run time.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/WorkflowDefinition"
+              $ref: "#/components/schemas/BlueprintRequest"
       responses:
         "201":
-          description: Workflow created
+          description: Blueprint created
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  name:
-                    type: string
-                  message:
-                    type: string
+                $ref: "#/components/schemas/Blueprint"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Missing name, invalid request template, or invalid parameter declarations
         "409":
-          $ref: "#/components/responses/Conflict"
+          description: Blueprint name already exists
     get:
-      summary: List workflow definitions
-      operationId: listWorkflows
-      tags: [Workflows]
+      summary: List blueprints
+      operationId: listBlueprints
+      tags: [Blueprints]
       responses:
         "200":
-          description: List of workflows
+          description: All blueprints ordered by name
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  workflows:
+                  blueprints:
                     type: array
                     items:
-                      $ref: "#/components/schemas/WorkflowDefinition"
+                      $ref: "#/components/schemas/Blueprint"
 
-  /api/v1/workflows/{name}:
+  /api/v1/blueprints/{blueprintID}:
+    parameters:
+      - name: blueprintID
+        in: path
+        required: true
+        description: Blueprint UUID or unique name
+        schema:
+          type: string
     get:
-      summary: Get a workflow definition
-      operationId: getWorkflow
-      tags: [Workflows]
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
+      summary: Get a blueprint
+      operationId: getBlueprint
+      tags: [Blueprints]
       responses:
         "200":
-          description: Workflow definition
+          description: Blueprint
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/WorkflowDefinition"
+                $ref: "#/components/schemas/Blueprint"
         "404":
-          $ref: "#/components/responses/NotFound"
-    delete:
-      summary: Delete a workflow definition
-      operationId: deleteWorkflow
-      tags: [Workflows]
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Workflow deleted
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-
-  /api/v1/workflows/{name}/run:
-    post:
-      summary: Run a workflow
-      operationId: runWorkflow
-      tags: [Workflows]
+          description: Not found
+    put:
+      summary: Replace a blueprint
+      operationId: updateBlueprint
+      tags: [Blueprints]
       description: |
-        Builds a session request from the workflow definition and the given
-        parameters, then creates the session directly.
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
+        Full replacement — name and request are required. Built-in blueprints
+        cannot be modified.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/RunWorkflowRequest"
+              $ref: "#/components/schemas/BlueprintRequest"
       responses:
-        "201":
-          description: Session created from the workflow
+        "200":
+          description: Updated blueprint
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  session_id:
-                    type: string
-                    format: uuid
-                  workflow_name:
-                    type: string
+                $ref: "#/components/schemas/Blueprint"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Invalid request, or the blueprint is built-in
         "404":
-          $ref: "#/components/responses/NotFound"
+          description: Not found
+        "409":
+          description: Blueprint name already exists
+    delete:
+      summary: Delete a blueprint
+      operationId: deleteBlueprint
+      tags: [Blueprints]
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          description: Built-in blueprints cannot be deleted
+        "404":
+          description: Not found
+        "409":
+          description: Blueprint is referenced by one or more schedules
 
-  /api/v1/workflow-configs:
+  /api/v1/blueprints/{blueprintID}/run:
     post:
-      summary: Create a saved workflow configuration
-      operationId: createWorkflowConfig
-      tags: [Workflows]
+      summary: Run a blueprint (create a session)
+      operationId: runBlueprint
+      tags: [Blueprints]
       description: |
-        Saves a named workflow configuration (workflow template + parameters) that
-        can be run later via POST /workflow-configs/{id}/run.
+        Operator only. Merges params with the declared parameter defaults
+        (missing required parameter → 400), renders every string leaf of the
+        request template, resolves tool_key_ref via the key registry, and
+        creates a session through the same validation as POST /api/v1/sessions.
+        A non-empty prompt overrides the rendered prompt. Subject to the
+        session-creation rate limit.
+      parameters:
+        - name: blueprintID
+          in: path
+          required: true
+          description: Blueprint UUID or unique name
+          schema:
+            type: string
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               type: object
-              required: [name, workflow]
               properties:
-                name:
-                  type: string
-                  description: Unique config name (alphanumeric, hyphens, underscores)
-                  example: sentry-fixer-prod
-                workflow:
-                  type: string
-                  description: Workflow template name to run
-                  example: sentry-fixer
                 params:
                   type: object
                   additionalProperties:
                     type: string
-                  description: Workflow input parameters
-                timeout_seconds:
-                  type: integer
-                  description: Session timeout override (0 = use default)
+                  description: Blueprint input parameters
+                prompt:
+                  type: string
+                  description: Replaces the rendered prompt for this run
       responses:
         "201":
-          description: Workflow config created
+          description: Session created
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   id:
-                    type: integer
-                  name:
-                    type: string
-                  message:
-                    type: string
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "409":
-          $ref: "#/components/responses/Conflict"
-    get:
-      summary: List saved workflow configurations
-      operationId: listWorkflowConfigs
-      tags: [Workflows]
-      responses:
-        "200":
-          description: List of workflow configs
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  configs:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/WorkflowConfig"
-
-  /api/v1/workflow-configs/{id}:
-    get:
-      summary: Get a saved workflow configuration
-      operationId: getWorkflowConfig
-      tags: [Workflows]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Workflow config
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/WorkflowConfig"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-    delete:
-      summary: Delete a saved workflow configuration
-      operationId: deleteWorkflowConfig
-      tags: [Workflows]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Workflow config deleted
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /api/v1/workflow-configs/{id}/run:
-    post:
-      summary: Run a saved workflow configuration
-      operationId: runWorkflowConfig
-      tags: [Workflows]
-      description: |
-        Looks up the saved config, builds a session request from its workflow
-        definition and stored parameters, and creates a session directly.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "201":
-          description: Session created from the workflow config
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  session_id:
                     type: string
                     format: uuid
-                  config_id:
-                    type: integer
-                  config_name:
+                  status:
                     type: string
+                    example: pending
+                  created_at:
+                    type: string
+                    format: date-time
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Missing required parameter or rendered request fails session validation
         "404":
-          $ref: "#/components/responses/NotFound"
+          description: Blueprint not found
+        "429":
+          $ref: "#/components/responses/RateLimited"
 
   /api/v1/session-types:
     get:
@@ -1803,13 +1694,19 @@ paths:
         Operator only. The scheduler fires enabled schedules whose cron
         expression is due (checked every minute); a backlog of missed
         occurrences collapses into a single catch-up run.
+
+        The session template is EITHER an inline session_request OR a
+        blueprint reference (blueprint_id + blueprint_params) — exactly one
+        of the two. A blueprint reference is rendered on every firing; the
+        rendered request is validated like an inline one (a rendered
+        session_type pr_review is rejected).
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name, cron, session_request]
+              required: [name, cron]
               properties:
                 name:
                   type: string
@@ -1826,6 +1723,14 @@ paths:
                   example: "Europe/Prague"
                 session_request:
                   $ref: "#/components/schemas/CreateSessionRequest"
+                blueprint_id:
+                  type: string
+                  description: Blueprint UUID or unique name to render on each firing (mutually exclusive with session_request)
+                blueprint_params:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: Parameters used to render the referenced blueprint
       responses:
         "201":
           description: Schedule created
@@ -1834,7 +1739,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Schedule"
         "400":
-          description: Invalid cron expression, timezone or session request
+          description: Invalid cron expression, timezone or session template (both or neither of session_request / blueprint_id, unsatisfiable blueprint params, or a rendered pr_review request)
     get:
       summary: List schedules
       operationId: listSchedules
@@ -1895,6 +1800,13 @@ paths:
                   description: IANA timezone (empty string = server local)
                 session_request:
                   $ref: "#/components/schemas/CreateSessionRequest"
+                blueprint_id:
+                  type: string
+                  description: Blueprint UUID or unique name (mutually exclusive with session_request)
+                blueprint_params:
+                  type: object
+                  additionalProperties:
+                    type: string
       responses:
         "200":
           description: Updated schedule
@@ -1973,13 +1885,16 @@ paths:
 
   /api/v1/presets:
     post:
-      summary: Create a session preset
+      summary: Create a session preset (deprecated — use /blueprints)
       operationId: createPreset
       tags: [Presets]
+      deprecated: true
       description: |
-        Operator only. Saves a named, reusable session request template.
-        The template must include repo_url; prompt is optional because the
-        run endpoint can supply it as an override.
+        DEPRECATED alias over /api/v1/blueprints — creates a blueprint with
+        parameters=[] using the old preset create shape. Operator only. Saves
+        a named, reusable session request template. The template must include
+        repo_url; prompt is optional because the run endpoint can supply it
+        as an override.
       requestBody:
         required: true
         content:
@@ -1998,9 +1913,11 @@ paths:
         "409":
           description: Preset name already exists
     get:
-      summary: List session presets
+      summary: List session presets (deprecated — use /blueprints)
       operationId: listPresets
       tags: [Presets]
+      deprecated: true
+      description: DEPRECATED alias over /api/v1/blueprints — lists the same blueprints under the old "presets" envelope key.
       responses:
         "200":
           description: All presets ordered by name
@@ -2022,9 +1939,11 @@ paths:
         schema:
           type: string
     get:
-      summary: Get a preset
+      summary: Get a preset (deprecated — use /blueprints)
       operationId: getPreset
       tags: [Presets]
+      deprecated: true
+      description: DEPRECATED alias over GET /api/v1/blueprints/{blueprintID}.
       responses:
         "200":
           description: Preset
@@ -2035,10 +1954,11 @@ paths:
         "404":
           description: Not found
     put:
-      summary: Replace a preset
+      summary: Replace a preset (deprecated — use /blueprints)
       operationId: updatePreset
       tags: [Presets]
-      description: Full replacement — name and request are required, description is reset when omitted.
+      deprecated: true
+      description: DEPRECATED alias over PUT /api/v1/blueprints/{blueprintID}. Full replacement — name and request are required, description is reset when omitted.
       requestBody:
         required: true
         content:
@@ -2059,9 +1979,11 @@ paths:
         "409":
           description: Preset name already exists
     delete:
-      summary: Delete a preset
+      summary: Delete a preset (deprecated — use /blueprints)
       operationId: deletePreset
       tags: [Presets]
+      deprecated: true
+      description: DEPRECATED alias over DELETE /api/v1/blueprints/{blueprintID}. Refused with 409 when the blueprint is referenced by schedules.
       responses:
         "204":
           description: Deleted
@@ -2070,10 +1992,12 @@ paths:
 
   /api/v1/presets/{presetID}/run:
     post:
-      summary: Create a session from a preset
+      summary: Create a session from a preset (deprecated — use /blueprints)
       operationId: runPreset
       tags: [Presets]
+      deprecated: true
       description: |
+        DEPRECATED alias over POST /api/v1/blueprints/{blueprintID}/run.
         Operator only. Merges the optional prompt override into the stored
         template and creates a session through the same validation as
         POST /api/v1/sessions. Subject to the session-creation rate limit.
@@ -2500,9 +2424,6 @@ components:
           description: Webhook URL for completion notification
         config:
           $ref: "#/components/schemas/SessionConfig"
-        workflow_run_id:
-          type: string
-          description: Workflow run this session belongs to (set by the workflow layer)
         metadata:
           type: object
           additionalProperties:
@@ -2573,7 +2494,7 @@ components:
           description: Auto-post review result to PR/MR comments
         auto_create_pr:
           type: boolean
-          description: Auto-create a PR/MR when the session completes with changes (used by workflows)
+          description: Auto-create a PR/MR when the session completes with changes (used by blueprints and schedules)
         pr_title:
           type: string
           description: Explicit PR title for auto-created PRs (empty = AI-generated)
@@ -2694,9 +2615,6 @@ components:
           additionalProperties:
             type: string
           description: Optional key-value metadata (sentry URL, ticket link, etc.)
-        workflow_run_id:
-          type: string
-          description: Workflow run this session belongs to
         tenant_id:
           type: string
           description: Subscription tenant that owns this session (empty = operator/BYOK)
@@ -2737,8 +2655,6 @@ components:
         branch:
           type: string
         pr_url:
-          type: string
-        workflow_run_id:
           type: string
         changes_summary:
           $ref: "#/components/schemas/ChangesSummary"
@@ -3069,21 +2985,29 @@ components:
         session_status:
           type: string
 
-    WorkflowDefinition:
+    Blueprint:
       type: object
-      required: [name]
+      description: |
+        A named, reusable session request template with optional input
+        parameters. A preset is a blueprint without parameters; a workflow is
+        a blueprint with parameters. String values in the request template may
+        contain {{.Params.x}} expressions; an extra optional top-level
+        tool_key_ref field names a registered key whose token is injected into
+        each tool's auth_token config at run time.
       properties:
+        id:
+          type: string
         name:
           type: string
+          description: Unique blueprint name
           example: sentry-fixer
         description:
           type: string
         builtin:
           type: boolean
-        steps:
-          type: array
-          items:
-            $ref: "#/components/schemas/StepDefinition"
+          description: Built-in blueprints are seeded on startup and cannot be modified or deleted
+        request:
+          $ref: "#/components/schemas/CreateSessionRequest"
         parameters:
           type: array
           items:
@@ -3091,19 +3015,25 @@ components:
         created_at:
           type: string
           format: date-time
+        updated_at:
+          type: string
+          format: date-time
 
-    StepDefinition:
+    BlueprintRequest:
       type: object
-      required: [name, type, config]
+      required: [name, request]
       properties:
         name:
           type: string
-        type:
+          description: Unique name (alphanumeric, hyphens, underscores)
+        description:
           type: string
-          enum: [session]
-        config:
-          type: object
-          description: Step-type-specific configuration
+        request:
+          $ref: "#/components/schemas/CreateSessionRequest"
+        parameters:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParameterDefinition"
 
     ParameterDefinition:
       type: object
@@ -3115,39 +3045,7 @@ components:
           type: boolean
         default:
           type: string
-
-    RunWorkflowRequest:
-      type: object
-      properties:
-        params:
-          type: object
-          additionalProperties:
-            type: string
-          description: Workflow input parameters
-
-    WorkflowConfig:
-      type: object
-      description: A saved workflow configuration that can be run later
-      properties:
-        id:
-          type: integer
-        name:
-          type: string
-          example: sentry-fixer-prod
-        workflow:
-          type: string
-          description: Workflow template name
-          example: sentry-fixer
-        params:
-          type: object
-          additionalProperties:
-            type: string
-        timeout_seconds:
-          type: integer
-          description: Session timeout override (0 = use default)
-        created_at:
-          type: string
-          format: date-time
+          description: Used when the parameter is missing from the run input
 
     CLIEntry:
       type: object
@@ -3284,6 +3182,13 @@ components:
           example: "Europe/Prague"
         session_request:
           $ref: "#/components/schemas/CreateSessionRequest"
+        blueprint_id:
+          type: string
+          description: Referenced blueprint (set instead of session_request; rendered with blueprint_params on each firing)
+        blueprint_params:
+          type: object
+          additionalProperties:
+            type: string
         consecutive_failures:
           type: integer
           description: Fire/session failures since the last success; the schedule is auto-disabled at 5
@@ -3337,7 +3242,7 @@ components:
 
     Preset:
       type: object
-      description: A saved, reusable session request template
+      description: DEPRECATED alias shape for a blueprint without parameters — see Blueprint
       properties:
         id:
           type: string

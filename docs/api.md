@@ -1124,31 +1124,40 @@ Cannot delete workspace of a running session (`409`).
 
 ---
 
-## Workflows
+## Blueprints (Operator Only)
 
-A workflow is a named preset: a parameterized session template. Running it renders the template with the given params and creates a regular session — there is no separate run entity; track progress via the returned `session_id`.
+A blueprint is a named session template: a stored `CreateSessionRequest`-shaped JSON template plus optional input parameters. A preset is a blueprint without parameters; a workflow is a blueprint with parameters. Running a blueprint renders the template and creates a **regular session** — there is no separate run entity; track progress via the returned session ID. Full guide: [Blueprints](blueprints.md).
 
-### Create Workflow
+Blueprints replace the removed `/workflows` and `/workflow-configs` endpoints; legacy preset/workflow data auto-migrates into blueprints on startup.
+
+### Endpoints
 
 ```
-POST /api/v1/workflows
+POST   /api/v1/blueprints                 create
+GET    /api/v1/blueprints                 list → {"blueprints": [...]}
+GET    /api/v1/blueprints/{id-or-name}    get
+PUT    /api/v1/blueprints/{id-or-name}    full replacement (builtins → 400)
+DELETE /api/v1/blueprints/{id-or-name}    204; builtins → 400; referenced by schedules → 409
+POST   /api/v1/blueprints/{id-or-name}/run   run → creates a session (session rate limit applies)
+```
+
+Path segments accept the blueprint UUID **or** its unique name.
+
+### Create Blueprint
+
+```
+POST /api/v1/blueprints
 ```
 
 ```json
 {
-  "name": "my-workflow",
-  "description": "Custom workflow",
-  "steps": [
-    {
-      "name": "fix_it",
-      "type": "session",
-      "config": {
-        "repo_url": "{{.Params.repo_url}}",
-        "prompt": "Fix issue #{{.Params.issue_number}}",
-        "provider_key": "{{.Params.provider_key}}"
-      }
-    }
-  ],
+  "name": "fix-github-issue",
+  "description": "Fix a numbered GitHub issue",
+  "request": {
+    "repo_url": "{{.Params.repo_url}}",
+    "prompt": "Fix issue #{{.Params.issue_number}}",
+    "provider_key": "{{.Params.provider_key}}"
+  },
   "parameters": [
     { "name": "repo_url", "required": true },
     { "name": "issue_number", "required": true },
@@ -1157,36 +1166,14 @@ POST /api/v1/workflows
 }
 ```
 
-The only step type is `session` (creates a CodeForge session: clone + AI CLI run).
+`request` must include `repo_url`; `prompt` is optional (the run endpoint can supply it as an override). String values may contain `{{.Params.x}}` template expressions. One extra optional top-level field `tool_key_ref` names a registered key whose token is injected as `auth_token` into each tool's config at run time. Duplicate name → `409`.
 
-**Template syntax:** `{{.Params.key}}` for inputs.
+**Built-in blueprints** (seeded on startup, immutable): `sentry-fixer`, `knowledge-update`, `repo-review` — see [Blueprints](blueprints.md#built-in-blueprints) for their parameters.
 
-**Built-in workflows:** `sentry-fixer`.
-
-### List Workflows
+### Run Blueprint
 
 ```
-GET /api/v1/workflows
-```
-
-### Get Workflow
-
-```
-GET /api/v1/workflows/{name}
-```
-
-### Delete Workflow
-
-```
-DELETE /api/v1/workflows/{name}
-```
-
-Built-in workflows cannot be deleted.
-
-### Run Workflow
-
-```
-POST /api/v1/workflows/{name}/run
+POST /api/v1/blueprints/{id-or-name}/run
 ```
 
 ```json
@@ -1195,63 +1182,27 @@ POST /api/v1/workflows/{name}/run
     "repo_url": "https://github.com/user/repo.git",
     "issue_number": "42",
     "provider_key": "my-github-key"
-  }
+  },
+  "prompt": "optional — overrides the rendered prompt for this run"
 }
 ```
 
-Response `201`:
+**Params semantics:** caller params win; a declared parameter missing from the input gets its `default`; a missing required parameter without a default → `400`; a missing optional parameter renders as `""`. Each string leaf of the request template is rendered individually, so param values containing quotes or newlines cannot break the JSON.
+
+Response `201` — the standard create-session response:
 ```json
 {
-  "session_id": "abc-123-...",
-  "workflow_name": "sentry-fixer"
+  "id": "abc-123-...",
+  "status": "pending",
+  "created_at": "..."
 }
 ```
 
 The created session behaves like any other — stream it via `GET /api/v1/sessions/{sessionID}/stream`, cancel it via `POST /api/v1/sessions/{sessionID}/cancel`.
 
----
+### Deprecated: Presets Alias
 
-## Workflow Configs
-
-A workflow config is a saved set of params for a workflow, so recurring runs don't need to resend them.
-
-### Create Config
-
-```
-POST /api/v1/workflow-configs
-```
-
-```json
-{
-  "name": "fix-prod-sentry",
-  "workflow": "sentry-fixer",
-  "params": { "repo_url": "...", "sentry_org": "...", "sentry_project": "..." },
-  "timeout_seconds": 900
-}
-```
-
-### List / Get / Delete Configs
-
-```
-GET /api/v1/workflow-configs
-GET /api/v1/workflow-configs/{id}
-DELETE /api/v1/workflow-configs/{id}
-```
-
-### Run Config
-
-```
-POST /api/v1/workflow-configs/{id}/run
-```
-
-Response `201`:
-```json
-{
-  "session_id": "abc-123-...",
-  "config_id": 1,
-  "config_name": "fix-prod-sentry"
-}
-```
+`/api/v1/presets` is a deprecated alias over the same blueprint store (old create shape without `parameters`, old `{"presets": [...]}` list envelope) — use `/api/v1/blueprints` for new integrations.
 
 ---
 
@@ -1263,14 +1214,21 @@ Cron-driven session templates. The scheduler checks every minute and fires enabl
 POST   /api/v1/schedules              {"name": "...", "cron": "0 3 * * *", "enabled": true, "session_request": {...}}
 GET    /api/v1/schedules
 GET    /api/v1/schedules/{scheduleID}
-PATCH  /api/v1/schedules/{scheduleID} partial: name, cron, enabled, session_request
+PATCH  /api/v1/schedules/{scheduleID} partial: name, cron, enabled, session_request / blueprint_id + blueprint_params
 DELETE /api/v1/schedules/{scheduleID} (204)
 POST   /api/v1/schedules/{scheduleID}/run   fire immediately → 202 {"schedule_id": "...", "session_id": "..."}
 ```
 
-`cron` accepts standard 5-field expressions plus `@daily`/`@weekly`/`@every 2h` descriptors. `session_request` is a stored create-session request (`repo_url` required) used verbatim on each firing. `session_request.session_type` may be `code`, `plan`, `review`, or `knowledge` — `pr_review` schedules are rejected (`400`) since a schedule cannot target a fixed PR number. `prompt` is required for `code`/`plan`; `review` and `knowledge` accept an empty prompt (a non-empty one is an optional focus). Responses include a computed `next_run_at`; `last_run_at`/`last_session_id` track the previous firing.
+`cron` accepts standard 5-field expressions plus `@daily`/`@weekly`/`@every 2h` descriptors.
 
-Example — nightly dependency update:
+A schedule's session template is **either** an inline `session_request` **or** a [blueprint](blueprints.md) reference `{blueprint_id, blueprint_params}` — exactly one of the two (`400` when both or neither are given):
+
+- `session_request` — a stored create-session request (`repo_url` required) used verbatim on each firing.
+- `blueprint_id` + `blueprint_params` — the blueprint (referenced by ID or name) is rendered with the stored params on every firing, so blueprint edits take effect on the next run. Required blueprint parameters must be satisfiable by `blueprint_params` + defaults.
+
+In both cases the (rendered) request must produce a schedulable session: `session_type` may be `code`, `plan`, `review`, or `knowledge` — `pr_review` schedules are rejected (`400`) since a schedule cannot target a fixed PR number. `prompt` is required for `code`/`plan`; `review` and `knowledge` accept an empty prompt (a non-empty one is an optional focus). Responses include a computed `next_run_at`; `last_run_at`/`last_session_id` track the previous firing. A blueprint referenced by schedules cannot be deleted (`409`).
+
+Example — nightly dependency update (inline request):
 
 ```json
 {
@@ -1282,6 +1240,17 @@ Example — nightly dependency update:
     "prompt": "Update dependencies to their latest compatible versions, run tests, and summarize the changes.",
     "config": { "cli": "claude-code" }
   }
+}
+```
+
+Example — weekly repo review from a blueprint:
+
+```json
+{
+  "name": "weekly-repo-review",
+  "cron": "0 6 * * 1",
+  "blueprint_id": "repo-review",
+  "blueprint_params": { "repo_url": "https://github.com/acme/widget.git", "provider_key": "github-acme" }
 }
 ```
 

@@ -27,6 +27,7 @@ CodeForge is a backend orchestrator for AI-powered code work over git repositori
 - **Human-in-the-loop**: inspect the actual diff in the UI before a PR is ever opened; PRs only on explicit action
 - **Code review built in**: review a session's changes, or let GitHub/GitLab webhooks trigger PR reviews automatically
 - **Session types** for every job: code, plan, whole-repo review, PR review, and knowledge sessions that keep `.codeforge/` docs fresh
+- **Blueprints**: reusable session templates with parameters, runnable on demand or on a schedule, with built-ins like the Sentry fixer and repo review
 - **Schedules**: recurring cron sessions with run history, overlap guard, and failure notifications, including scheduled repo reviews and knowledge updates
 - **Cost & usage tracking** per session and per tenant, with quotas and a key pool (subscription mode)
 - **Multi-CLI** (Claude Code, Codex, Cursor) selectable per session, plus MCP tool integration
@@ -65,6 +66,7 @@ task dev
 |----------|-------------|
 | [API Reference](docs/api.md) | Endpoints, request/response, session types, webhooks |
 | [Session Types](docs/session-types.md) | code, plan, review, pr_review, knowledge: behavior, output contracts, scheduling |
+| [Blueprints](docs/blueprints.md) | Named session templates: parameters, built-in library, run API, scheduling |
 | [Architecture](docs/architecture.md) | System design, Redis schema, session lifecycle, streaming |
 | [Code Review](docs/code-review-workflow.md) | Session review, PR review, webhook-triggered reviews |
 | [Configuration](docs/configuration.md) | Environment variables, YAML config, all options |

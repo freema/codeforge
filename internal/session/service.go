@@ -88,20 +88,19 @@ func (s *Service) Create(ctx context.Context, req CreateSessionRequest) (*Sessio
 	}
 
 	t := &Session{
-		ID:            uuid.New().String(),
-		Status:        StatusPending,
-		RepoURL:       req.RepoURL,
-		ProviderKey:   req.ProviderKey,
-		AccessToken:   req.AccessToken,
-		Prompt:        req.Prompt,
-		SessionType:   taskType,
-		CallbackURL:   req.CallbackURL,
-		Config:        req.Config,
-		WorkflowRunID: req.WorkflowRunID,
-		Metadata:      req.Metadata,
-		TenantID:      req.TenantID,
-		Iteration:     1,
-		CreatedAt:     time.Now().UTC(),
+		ID:          uuid.New().String(),
+		Status:      StatusPending,
+		RepoURL:     req.RepoURL,
+		ProviderKey: req.ProviderKey,
+		AccessToken: req.AccessToken,
+		Prompt:      req.Prompt,
+		SessionType: taskType,
+		CallbackURL: req.CallbackURL,
+		Config:      req.Config,
+		Metadata:    req.Metadata,
+		TenantID:    req.TenantID,
+		Iteration:   1,
+		CreatedAt:   time.Now().UTC(),
 	}
 
 	if req.Config != nil && req.Config.AIApiKey != "" {
@@ -431,7 +430,6 @@ type Summary struct {
 	Error          string                 `json:"error,omitempty"`
 	Branch         string                 `json:"branch,omitempty"`
 	PRURL          string                 `json:"pr_url,omitempty"`
-	WorkflowRunID  string                 `json:"workflow_run_id,omitempty"`
 	ChangesSummary *gitpkg.ChangesSummary `json:"changes_summary,omitempty"`
 	InputTokens    int                    `json:"input_tokens,omitempty"`
 	OutputTokens   int                    `json:"output_tokens,omitempty"`
@@ -516,7 +514,6 @@ func (s *Service) List(ctx context.Context, opts ListOptions) ([]Summary, int, e
 			Error:          t.Error,
 			Branch:         t.Branch,
 			PRURL:          t.PRURL,
-			WorkflowRunID:  t.WorkflowRunID,
 			ChangesSummary: t.ChangesSummary,
 			CreatedAt:      t.CreatedAt,
 			StartedAt:      t.StartedAt,
@@ -734,9 +731,6 @@ func (s *Service) sessionToHash(t *Session) map[string]interface{} {
 	if t.Config != nil {
 		fields["config"] = MarshalConfig(t.Config)
 	}
-	if t.WorkflowRunID != "" {
-		fields["workflow_run_id"] = t.WorkflowRunID
-	}
 	if t.TenantID != "" {
 		fields["tenant_id"] = t.TenantID
 	}
@@ -778,7 +772,6 @@ func (s *Service) hashToSession(fields map[string]string) *Session {
 		Branch:        fields["branch"],
 		PRURL:         fields["pr_url"],
 		Error:         fields["error"],
-		WorkflowRunID: fields["workflow_run_id"],
 		TenantID:      fields["tenant_id"],
 		TraceID:       fields["trace_id"],
 	}
@@ -822,15 +815,14 @@ func (s *Service) hashToSession(fields map[string]string) *Session {
 
 // CreateSessionRequest is the payload for session creation.
 type CreateSessionRequest struct {
-	RepoURL       string            `json:"repo_url" validate:"required,url"`
-	ProviderKey   string            `json:"provider_key,omitempty"`
-	AccessToken   string            `json:"access_token,omitempty"`
-	Prompt        string            `json:"prompt" validate:"max=102400"`
-	SessionType   string            `json:"session_type,omitempty"`
-	CallbackURL   string            `json:"callback_url,omitempty" validate:"omitempty,url"`
-	Config        *Config           `json:"config,omitempty"`
-	WorkflowRunID string            `json:"workflow_run_id,omitempty"`
-	Metadata      map[string]string `json:"metadata,omitempty"`
+	RepoURL     string            `json:"repo_url" validate:"required,url"`
+	ProviderKey string            `json:"provider_key,omitempty"`
+	AccessToken string            `json:"access_token,omitempty"`
+	Prompt      string            `json:"prompt" validate:"max=102400"`
+	SessionType string            `json:"session_type,omitempty"`
+	CallbackURL string            `json:"callback_url,omitempty" validate:"omitempty,url"`
+	Config      *Config           `json:"config,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
 	// TenantID is set server-side (never decoded from client JSON) by the session
 	// handler when the request is authenticated as a subscription tenant.
 	TenantID string `json:"-"`

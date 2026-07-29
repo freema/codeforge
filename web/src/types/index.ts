@@ -9,8 +9,6 @@ export type {
   UsageInfo,
   FileDiff,
   SessionDiff,
-  Preset,
-  CreatePresetRequest,
   Iteration,
   MCPServerRef,
   ReviewResult,
@@ -30,14 +28,12 @@ export type { MCPServer, CreateMCPServerRequest } from "./mcp";
 export type { ReviewSettings, UpdateReviewSettingsRequest } from "./settings";
 export type { Workspace } from "./workspace";
 export type {
-  StepType,
+  Blueprint,
+  BlueprintRequestTemplate,
+  CreateBlueprintRequest,
   ParameterDefinition,
-  StepDefinition,
-  WorkflowDefinition,
-  RunWorkflowRequest,
-  WorkflowConfig,
-  CreateWorkflowConfigRequest,
-} from "./workflow";
+  RunBlueprintRequest,
+} from "./blueprint";
 export type {
   SentryOrganization,
   SentryIssue,

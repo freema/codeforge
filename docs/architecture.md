@@ -33,7 +33,7 @@ Client (ScopeBot / curl)
 
 ### HTTP Server (`internal/server/`)
 - Chi router with middleware (auth, logging, rate limiting, metrics, tracing)
-- Handlers for sessions, keys, MCP servers, tools, workspaces, workflows, and SSE streams
+- Handlers for sessions, keys, MCP servers, tools, workspaces, blueprints, schedules, and SSE streams
 - Swagger UI at `/api/docs` with embedded OpenAPI spec
 - Prometheus `/metrics` and health endpoints (no auth required)
 - SSE stream endpoint bypasses `otelhttp` and request timeout middleware (see Streaming below)
@@ -149,30 +149,17 @@ Client (ScopeBot / curl)
 - **Validator** — checks required config fields before session execution
 - Per-session tool requests via `session.Config.Tools` field
 
-### Workflow System (`internal/workflow/`)
-- Multi-step workflow orchestrator consuming from Redis FIFO queue (`BLPOP queue:workflows`)
-- Three step types:
-  - **fetch** — HTTP request to external APIs (e.g., Sentry, GitHub Issues) with JSONPath output extraction
-  - **session** — creates and waits for a CodeForge session (clone + AI CLI run)
-  - **action** — built-in actions (e.g., `create_pr`, `notify`) that operate on previous step results
-- Go `text/template` engine for step configuration: `{{.Params.key}}`, `{{.Steps.step_name.field}}`
-- Built-in workflows: `sentry-fixer`
-- Workflow definitions stored in SQLite (user-created + built-in, seeded on startup)
-- Run state tracked in SQLite with per-step status records
-- Streaming via Redis Pub/Sub (`workflow:{runID}:stream`) with history replay, same SSE pattern as sessions
-
-```
-Workflow Run Lifecycle:
-
-pending ──▶ running ──▶ completed
-   │           │
-   ▼           ▼
- (queue)     failed
-```
+### Blueprint System (`internal/blueprint/`)
+- A blueprint is a named, reusable session request template with optional input parameters — a preset is a blueprint without parameters, a workflow is a blueprint with parameters
+- Stored in SQLite (`blueprints` table, migration `007_blueprints.sql`); built-ins (`sentry-fixer`, `knowledge-update`, `repo-review`) seeded and kept current on startup
+- **Running a blueprint is synchronous**: merge params with declared defaults (missing required → error), render every **string leaf** of the request JSON via Go `text/template` (`{{.Params.x}}`) — never the whole blob as one template, so param values with quotes/newlines cannot break the JSON — resolve the optional `tool_key_ref` into tool `auth_token` configs via the key registry, then submit the result through the normal create-session path
+- **No separate runtime**: no workflow queue, run entities, per-step state, or workflow streams — the created session is a regular session with the ordinary lifecycle and SSE stream
+- Operator-only CRUD + run at `/api/v1/blueprints` (ID-or-name lookup); `/api/v1/presets` is a deprecated alias over the same store
+- Legacy `session_presets` / `workflow_definitions` / `workflow_configs` data auto-migrates into blueprints on startup (idempotent; configs become blueprints whose parameter defaults are the saved values); the legacy tables — including the dead `workflow_runs` / `workflow_run_steps` — remain dormant in the schema as a rollback archive
 
 ### SQLite (`internal/database/`)
-- Embedded SQLite database for persistent storage of workflow definitions, workflow runs, keys, tools, and MCP server configs
-- Auto-migration on startup
+- Embedded SQLite database for persistent storage of blueprints, schedules, keys, tools, and MCP server configs
+- Auto-migration on startup; dormant legacy workflow/preset tables kept in the schema (data migrated into blueprints, retained for rollback)
 - Default path: `/data/codeforge.db` (configurable via `CODEFORGE_SQLITE__PATH`)
 
 ### Git Integration (`internal/tool/git/`)
@@ -218,11 +205,6 @@ All keys use configurable prefix (default: `codeforge:`).
 | `webhook:dedup:{repo}:{pr}:{sha}` | String | Webhook dedup (SETNX + TTL) |
 | `ratelimit:{token_hash}` | Sorted Set | Sliding window rate limit |
 | `input:sessions` | List | Redis-based session input channel |
-| `queue:workflows` | List | FIFO workflow run queue (RPUSH/BLPOP) |
-| `workflow:{runID}:stream` | Pub/Sub | Live workflow event stream |
-| `workflow:{runID}:history` | List | Workflow event history for reconnection |
-| `workflow:{runID}:done` | Pub/Sub | Workflow run completion signal |
-| `workflow:{runID}:context` | Hash | Step outputs for template interpolation |
 
 ## Session Lifecycle
 
@@ -305,6 +287,7 @@ Review and instruct share the same worker pool — no separate execution path.
 cmd/codeforge/          # Application entrypoint
 internal/
   apperror/             # Application error types
+  blueprint/            # Blueprints: session request templates + builtins + legacy migration
   config/               # Configuration loading (koanf)
   crypto/               # AES-256-GCM encryption
   database/             # SQLite wrapper + migrations
@@ -317,6 +300,7 @@ internal/
   server/               # HTTP server + handlers + middleware
     handlers/           # Request handlers (sessions, webhook receiver, stream, etc.)
   session/              # Session model, service, state machine
+  schedule/             # Recurring (cron) sessions — store + scheduler
   tool/                 # Tool subsystem namespace (low-level)
     git/                # Git operations (clone, branch, PR, review posting)
     runner/             # CLI runner interface + implementations (Claude, Codex)
@@ -325,7 +309,6 @@ internal/
   tracing/              # OpenTelemetry setup
   webhook/              # Webhook sender with HMAC + retries
   worker/               # Worker pool, executor, streamer, normalizer
-  workflow/             # Workflow orchestrator, step executors, templates
   workspace/            # Workspace manager + cleanup
 api/                    # OpenAPI specification
 deployments/            # Docker, docker-compose files

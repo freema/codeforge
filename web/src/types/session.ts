@@ -134,22 +134,6 @@ export interface SessionDiff {
   truncated: boolean;
 }
 
-/** A saved, reusable session configuration (operator-only). */
-export interface Preset {
-  id: string;
-  name: string;
-  description?: string;
-  request: CreateSessionRequest;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreatePresetRequest {
-  name: string;
-  description?: string;
-  request: CreateSessionRequest;
-}
-
 export interface Iteration {
   number: number;
   prompt: string;

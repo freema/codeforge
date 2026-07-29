@@ -4,8 +4,9 @@ import type {
   SessionType,
   SessionDiff,
   CreateSessionRequest,
-  Preset,
-  CreatePresetRequest,
+  Blueprint,
+  CreateBlueprintRequest,
+  RunBlueprintRequest,
   PRStatus,
   HealthResponse,
   ProviderKey,
@@ -14,10 +15,6 @@ import type {
   MCPServer,
   CreateMCPServerRequest,
   Workspace,
-  WorkflowDefinition,
-  RunWorkflowRequest,
-  WorkflowConfig,
-  CreateWorkflowConfigRequest,
   Repository,
   PullRequest,
   ToolDefinition,
@@ -127,13 +124,17 @@ export function createApiClient(serverUrl: string, token: string) {
     getPRStatus: (id: string) => get<PRStatus>(`/sessions/${id}/pr-status`),
     getSessionDiff: (id: string) => get<SessionDiff>(`/sessions/${id}/diff`),
 
-    // Presets (operator-only)
-    listPresets: () =>
-      get<{ presets: Preset[] }>("/presets").then((r) => r.presets),
-    createPreset: (req: CreatePresetRequest) => post<Preset>("/presets", req),
-    deletePreset: (id: string) => del<void>(`/presets/${id}`),
-    runPreset: (id: string, prompt?: string) =>
-      post<Session>(`/presets/${id}/run`, prompt ? { prompt } : undefined),
+    // Blueprints (operator-only)
+    listBlueprints: () =>
+      get<{ blueprints: Blueprint[] }>("/blueprints").then((r) => r.blueprints),
+    createBlueprint: (req: CreateBlueprintRequest) =>
+      post<Blueprint>("/blueprints", req),
+    getBlueprint: (id: string) => get<Blueprint>(`/blueprints/${id}`),
+    updateBlueprint: (id: string, req: CreateBlueprintRequest) =>
+      put<Blueprint>(`/blueprints/${id}`, req),
+    deleteBlueprint: (id: string) => del<void>(`/blueprints/${id}`),
+    runBlueprint: (id: string, body?: RunBlueprintRequest) =>
+      post<Session>(`/blueprints/${id}/run`, body),
 
     // Session Types
     listSessionTypes: () =>
@@ -182,36 +183,6 @@ export function createApiClient(serverUrl: string, token: string) {
       get<{ workspaces: Workspace[] }>("/workspaces").then((r) => r.workspaces),
     deleteWorkspace: (sessionId: string) =>
       del<void>(`/workspaces/${sessionId}`),
-
-    // Workflows
-    listWorkflows: () =>
-      get<{ workflows: WorkflowDefinition[] }>("/workflows").then(
-        (r) => r.workflows,
-      ),
-    getWorkflow: (name: string) =>
-      get<WorkflowDefinition>(`/workflows/${encodeURIComponent(name)}`),
-    deleteWorkflow: (name: string) =>
-      del<void>(`/workflows/${encodeURIComponent(name)}`),
-
-    // Workflow Runs (preset → session)
-    runWorkflow: (name: string, req?: RunWorkflowRequest) =>
-      post<{ session_id: string; workflow_name: string }>(
-        `/workflows/${encodeURIComponent(name)}/run`,
-        req,
-      ),
-
-    // Workflow Configs (saved configurations)
-    listWorkflowConfigs: () =>
-      get<{ configs: WorkflowConfig[] }>("/workflow-configs").then(
-        (r) => r.configs,
-      ),
-    createWorkflowConfig: (req: CreateWorkflowConfigRequest) =>
-      post<{ id: number; name: string }>("/workflow-configs", req),
-    deleteWorkflowConfig: (id: number) => del<void>(`/workflow-configs/${id}`),
-    runWorkflowConfig: (id: number) =>
-      post<{ session_id: string; config_id: number; config_name: string }>(
-        `/workflow-configs/${id}/run`,
-      ),
 
     // Sentry (proxied through BE)
     listSentryOrganizations: (keyName: string) =>

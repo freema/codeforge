@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/freema/codeforge/internal/ai"
+	"github.com/freema/codeforge/internal/blueprint"
 	"github.com/freema/codeforge/internal/config"
 	"github.com/freema/codeforge/internal/crypto"
 	"github.com/freema/codeforge/internal/database"
@@ -32,7 +33,6 @@ import (
 	"github.com/freema/codeforge/internal/tracing"
 	"github.com/freema/codeforge/internal/webhook"
 	"github.com/freema/codeforge/internal/worker"
-	"github.com/freema/codeforge/internal/workflow"
 	"github.com/freema/codeforge/internal/workspace"
 )
 
@@ -244,7 +244,7 @@ func run() error {
 		ProviderDomains: domainSource,
 	}, aiClient)
 
-	// Wire the PR service into the executor for auto-PR-enabled sessions (workflows).
+	// Wire the PR service into the executor for auto-PR-enabled sessions (blueprints).
 	executor.SetPRCreator(prService)
 
 	// Initialize workspace cleaner
@@ -254,12 +254,15 @@ func run() error {
 		DiskCriticalThreshold: int64(cfg.Sessions.DiskCriticalThresholdGB) * 1024 * 1024 * 1024,
 	})
 
-	// Initialize workflow subsystem
-	workflowRegistry := workflow.NewSQLiteRegistry(sqliteDB.Unwrap())
-	workflowConfigStore := workflow.NewSQLiteConfigStore(sqliteDB.Unwrap())
-
-	if err := workflow.SeedBuiltins(context.Background(), workflowRegistry, workflowConfigStore); err != nil {
-		return fmt.Errorf("seeding builtin workflows: %w", err)
+	// Initialize blueprint subsystem: copy legacy presets/workflow definitions/
+	// workflow configs into the blueprints table (idempotent, non-destructive),
+	// then seed the built-in blueprints.
+	blueprintStore := blueprint.NewStore(sqliteDB.Unwrap())
+	if err := blueprint.MigrateLegacy(sqliteDB.Unwrap()); err != nil {
+		return fmt.Errorf("migrating legacy blueprints: %w", err)
+	}
+	if err := blueprint.SeedBuiltins(context.Background(), blueprintStore); err != nil {
+		return fmt.Errorf("seeding builtin blueprints: %w", err)
 	}
 
 	// Initialize webhook receiver handler for PR review. Review defaults
@@ -282,10 +285,10 @@ func run() error {
 
 	// Scheduled (cron) sessions
 	scheduleStore := schedule.NewStore(sqliteDB.Unwrap())
-	scheduler := schedule.NewScheduler(scheduleStore, sessionService, time.Minute)
+	scheduler := schedule.NewScheduler(scheduleStore, sessionService, blueprintStore, keyRegistry, time.Minute)
 	scheduler.SetSessionGetter(sessionService) // overlap guard: skip while previous session runs
 	executor.SetScheduleRecorder(scheduler)    // run history: session outcome feedback
-	scheduleHandler := handlers.NewScheduleHandler(scheduleStore, scheduler)
+	scheduleHandler := handlers.NewScheduleHandler(scheduleStore, scheduler, blueprintStore)
 
 	// Wire chat notifications for terminal session and schedule events (nil when unconfigured).
 	if notifier := notify.New(cfg.Notifications); notifier != nil {
@@ -296,7 +299,7 @@ func run() error {
 			"discord", cfg.Notifications.DiscordWebhookURL != "")
 	}
 
-	srv := server.New(cfg, rdb, sqliteDB, sessionService, prService, pool, keyRegistry, mcpRegistry, workspaceMgr, workflowRegistry, workflowConfigStore, cliRegistry, cliConfigs, webhookReceiverHandler, tenantHandler, tenantService, scheduleHandler, version)
+	srv := server.New(cfg, rdb, sqliteDB, sessionService, prService, pool, keyRegistry, mcpRegistry, workspaceMgr, blueprintStore, cliRegistry, cliConfigs, webhookReceiverHandler, tenantHandler, tenantService, scheduleHandler, version)
 
 	// Start background services
 	appCtx, appCancel := context.WithCancel(context.Background())

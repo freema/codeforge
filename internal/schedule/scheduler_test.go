@@ -10,6 +10,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/freema/codeforge/internal/blueprint"
 	"github.com/freema/codeforge/internal/database"
 	"github.com/freema/codeforge/internal/notify"
 	"github.com/freema/codeforge/internal/session"
@@ -59,6 +60,18 @@ func (f *fakeNotifier) Notify(_ context.Context, ev notify.Event) {
 	f.events = append(f.events, ev)
 }
 
+type fakeBlueprintSource struct {
+	blueprints map[string]*blueprint.Blueprint
+}
+
+func (f *fakeBlueprintSource) Get(_ context.Context, id string) (*blueprint.Blueprint, error) {
+	b, ok := f.blueprints[id]
+	if !ok {
+		return nil, blueprint.ErrNotFound
+	}
+	return b, nil
+}
+
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	db, err := sql.Open("sqlite", ":memory:")
@@ -86,6 +99,21 @@ func seedSchedule(t *testing.T, store *Store, cronExpr string, enabled bool) *Sc
 	return sch
 }
 
+func seedBlueprintSchedule(t *testing.T, store *Store, blueprintID string, params map[string]string) *Schedule {
+	t.Helper()
+	sch := &Schedule{
+		Name:            "bp-nightly",
+		Cron:            "@daily",
+		Enabled:         true,
+		BlueprintID:     blueprintID,
+		BlueprintParams: params,
+	}
+	if err := store.Create(context.Background(), sch); err != nil {
+		t.Fatalf("create blueprint schedule: %v", err)
+	}
+	return sch
+}
+
 func TestParseCron(t *testing.T) {
 	for _, ok := range []string{"0 3 * * *", "*/5 * * * *", "@daily", "@every 1h"} {
 		if _, err := ParseCron(ok); err != nil {
@@ -103,7 +131,7 @@ func TestRunDue_FiresDueSchedule(t *testing.T) {
 	store := newTestStore(t)
 	sch := seedSchedule(t, store, "*/5 * * * *", true)
 	creator := &fakeCreator{}
-	s := NewScheduler(store, creator, time.Minute)
+	s := NewScheduler(store, creator, nil, nil, time.Minute)
 
 	// Next occurrence after CreatedAt is within 5 minutes — jump past it.
 	s.RunDue(context.Background(), time.Now().Add(10*time.Minute))
@@ -146,7 +174,7 @@ func TestRunDue_SkipsFutureAndDisabled(t *testing.T) {
 	seedSchedule(t, store, "0 3 1 1 *", true) // once a year — not due now
 	seedSchedule(t, store, "*/5 * * * *", false)
 	creator := &fakeCreator{}
-	s := NewScheduler(store, creator, time.Minute)
+	s := NewScheduler(store, creator, nil, nil, time.Minute)
 
 	s.RunDue(context.Background(), time.Now())
 
@@ -222,7 +250,7 @@ func TestRunDue_OverlapSkipsAndRecords(t *testing.T) {
 	sch := seedSchedule(t, store, "*/5 * * * *", true)
 	creator := &fakeCreator{}
 	getter := &fakeGetter{statuses: map[string]session.Status{}}
-	s := NewScheduler(store, creator, time.Minute)
+	s := NewScheduler(store, creator, nil, nil, time.Minute)
 	s.SetSessionGetter(getter)
 
 	// First occurrence fires normally → sess-a.
@@ -327,7 +355,7 @@ func TestFire_FailureEscalationAutoDisables(t *testing.T) {
 	sch := seedSchedule(t, store, "*/5 * * * *", true)
 	creator := &failingCreator{}
 	notifier := &fakeNotifier{}
-	s := NewScheduler(store, creator, time.Minute)
+	s := NewScheduler(store, creator, nil, nil, time.Minute)
 	s.SetNotifier(notifier)
 
 	// Failed fires never MarkRun, so the schedule stays due and retries each
@@ -391,6 +419,101 @@ func TestFire_FailureEscalationAutoDisables(t *testing.T) {
 	}
 }
 
+func TestFire_BlueprintBacked(t *testing.T) {
+	store := newTestStore(t)
+	bp := &blueprint.Blueprint{
+		ID:   "bp-1",
+		Name: "deps-bump",
+		Request: json.RawMessage(
+			`{"repo_url":"https://example.com/org/{{.Params.repo}}.git","prompt":"update deps in {{.Params.repo}}"}`),
+		Parameters: []blueprint.ParameterDefinition{{Name: "repo", Required: true}},
+	}
+	src := &fakeBlueprintSource{blueprints: map[string]*blueprint.Blueprint{"bp-1": bp}}
+	creator := &fakeCreator{}
+	s := NewScheduler(store, creator, src, nil, time.Minute)
+
+	sch := seedBlueprintSchedule(t, store, "bp-1", map[string]string{"repo": "widget"})
+	if _, err := s.Fire(context.Background(), sch, time.Now(), TriggerCron); err != nil {
+		t.Fatalf("Fire: %v", err)
+	}
+
+	if len(creator.calls) != 1 {
+		t.Fatalf("expected 1 session created, got %d", len(creator.calls))
+	}
+	got := creator.calls[0]
+	if got.RepoURL != "https://example.com/org/widget.git" {
+		t.Errorf("RepoURL = %q, want rendered widget repo", got.RepoURL)
+	}
+	if got.Prompt != "update deps in widget" {
+		t.Errorf("Prompt = %q, want rendered prompt", got.Prompt)
+	}
+	if got.Metadata["schedule_id"] != sch.ID || got.Metadata["schedule_name"] != "bp-nightly" {
+		t.Errorf("schedule metadata missing: %v", got.Metadata)
+	}
+	if got.Metadata["blueprint_name"] != "deps-bump" {
+		t.Errorf("blueprint_name metadata = %q, want deps-bump", got.Metadata["blueprint_name"])
+	}
+
+	runs, err := store.ListRuns(context.Background(), sch.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 || runs[0].Status != RunFired {
+		t.Errorf("run history = %+v, want one fired run", runs)
+	}
+}
+
+func TestFire_BlueprintFailuresRecorded(t *testing.T) {
+	bp := &blueprint.Blueprint{
+		ID:         "bp-1",
+		Name:       "deps-bump",
+		Request:    json.RawMessage(`{"repo_url":"https://example.com/org/{{.Params.repo}}.git","prompt":"x"}`),
+		Parameters: []blueprint.ParameterDefinition{{Name: "repo", Required: true}},
+	}
+
+	tests := []struct {
+		name        string
+		blueprintID string
+		params      map[string]string
+	}{
+		{"blueprint missing", "ghost", map[string]string{"repo": "widget"}},
+		{"missing required param", "bp-1", nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newTestStore(t)
+			src := &fakeBlueprintSource{blueprints: map[string]*blueprint.Blueprint{"bp-1": bp}}
+			creator := &fakeCreator{}
+			s := NewScheduler(store, creator, src, nil, time.Minute)
+
+			sch := seedBlueprintSchedule(t, store, tt.blueprintID, tt.params)
+			if _, err := s.Fire(context.Background(), sch, time.Now(), TriggerCron); err == nil {
+				t.Fatal("Fire: expected error")
+			}
+			if len(creator.calls) != 0 {
+				t.Fatalf("session created despite build failure: %d", len(creator.calls))
+			}
+
+			runs, err := store.ListRuns(context.Background(), sch.ID, 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(runs) != 1 || runs[0].Status != RunFireFailed || runs[0].Error == "" {
+				t.Errorf("run history = %+v, want one fire_failed run with error", runs)
+			}
+
+			got, err := store.Get(context.Background(), sch.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.ConsecutiveFailures != 1 {
+				t.Errorf("ConsecutiveFailures = %d, want 1 (counts toward auto-disable)", got.ConsecutiveFailures)
+			}
+		})
+	}
+}
+
 func TestRecordSessionOutcome(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -410,7 +533,7 @@ func TestRecordSessionOutcome(t *testing.T) {
 			store := newTestStore(t)
 			sch := seedSchedule(t, store, "@daily", true)
 			notifier := &fakeNotifier{}
-			s := NewScheduler(store, &fakeCreator{}, time.Minute)
+			s := NewScheduler(store, &fakeCreator{}, nil, nil, time.Minute)
 			s.SetNotifier(notifier)
 
 			if err := store.InsertRun(context.Background(), &Run{

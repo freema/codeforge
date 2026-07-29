@@ -4,7 +4,7 @@ import {
   Anvil,
   LayoutDashboard,
   SquareTerminal,
-  Network,
+  Layers,
   CalendarClock,
   Settings,
   ShieldCheck,
@@ -31,7 +31,7 @@ interface NavItem {
 const operatorNavItems: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/sessions", label: "Sessions", icon: SquareTerminal, end: false },
-  { to: "/workflows", label: "Workflows", icon: Network, end: false },
+  { to: "/blueprints", label: "Blueprints", icon: Layers, end: false },
   { to: "/schedules", label: "Schedules", icon: CalendarClock, end: false },
   { to: "/settings", label: "Settings", icon: Settings, end: false },
   { to: "/admin", label: "Admin", icon: ShieldCheck, end: false },

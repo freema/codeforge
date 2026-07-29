@@ -8,52 +8,57 @@ import {
   ChevronRight,
   Code,
   KeyRound,
+  Layers,
   Loader2,
-  Network,
   Save,
+  SearchCode,
   type LucideIcon,
 } from "lucide-react";
 import { usePageTitle } from "../hooks/usePageTitle";
-import { useWorkflows } from "../hooks/useWorkflows";
+import { useBlueprints } from "../hooks/useBlueprints";
+import { useCreateBlueprint } from "../hooks/useBlueprintMutations";
 import { useKeys } from "../hooks/useKeys";
 import { useRepositories } from "../hooks/useRepositories";
 import { useSentryOrganizations, useSentryProjects } from "../hooks/useSentry";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useApi } from "../hooks/useApi";
 import { useToast } from "../context/ToastContext";
 import Select from "../components/Select";
+import type {
+  Blueprint,
+  ProviderKey,
+  Repository,
+  SentryOrganization,
+  SentryProject,
+} from "../types";
 
-const workflowIcons: Record<string, LucideIcon> = {
+const blueprintIcons: Record<string, LucideIcon> = {
   "sentry-fixer": Bug,
-  "github-issue-fixer": Code,
-  "gitlab-issue-fixer": Code,
   "knowledge-update": BookOpen,
+  "repo-review": SearchCode,
 };
 
 const inputCls =
   "w-full rounded-md border border-edge bg-input px-3 py-2 font-mono text-sm text-fg placeholder-fg-4 transition-colors focus:border-accent focus:outline-none";
 
-export default function WorkflowCreate() {
-  usePageTitle("New workflow");
+export default function BlueprintCreate() {
+  usePageTitle("New blueprint");
   const navigate = useNavigate();
   const { toast } = useToast();
-  const api = useApi();
-  const qc = useQueryClient();
-  const { data: templates = [] } = useWorkflows();
+  const { data: blueprints = [] } = useBlueprints();
   const { data: allKeys } = useKeys();
+  const createBlueprint = useCreateBlueprint();
 
   const builtinTemplates = useMemo(
-    () => templates.filter((t) => t.builtin),
-    [templates],
+    () => blueprints.filter((b) => b.builtin),
+    [blueprints],
   );
 
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<Blueprint | null>(
+    null,
+  );
   const [params, setParams] = useState<Record<string, string>>({});
   const [customName, setCustomName] = useState("");
   const [timeoutMinutes, setTimeoutMinutes] = useState(15);
   const [error, setError] = useState("");
-
-  const template = builtinTemplates.find((t) => t.name === selectedTemplate);
 
   // Git keys for repo selection
   const gitKeys = useMemo(
@@ -85,21 +90,7 @@ export default function WorkflowCreate() {
     effectiveSentryOrg || undefined,
     sentryOrgRegion || undefined,
   );
-  const isSentryFixer = selectedTemplate === "sentry-fixer";
-
-  const createConfig = useMutation({
-    mutationFn: (req: {
-      name: string;
-      workflow: string;
-      params: Record<string, string>;
-      timeout_seconds?: number;
-    }) => api.createWorkflowConfig(req),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["workflowConfigs"] });
-      toast("success", "Workflow created");
-      void navigate("/workflows");
-    },
-  });
+  const isSentryFixer = selectedTemplate?.name === "sentry-fixer";
 
   function updateParam(key: string, value: string) {
     setParams((prev) => ({ ...prev, [key]: value }));
@@ -108,12 +99,12 @@ export default function WorkflowCreate() {
   function generateName(): string {
     if (customName.trim()) return customName.trim();
     if (!selectedTemplate) return "";
-    const parts = [selectedTemplate];
+    const parts = [selectedTemplate.name];
     if (params.sentry_project) parts.push(params.sentry_project);
     else if (params.repo_url) {
       const match = params.repo_url.match(/\/([^/]+?)(?:\.git)?$/);
       if (match?.[1]) parts.push(match[1]);
-    } else if (params.issue_number) parts.push(`issue-${params.issue_number}`);
+    }
     return parts.join("-");
   }
 
@@ -122,7 +113,7 @@ export default function WorkflowCreate() {
     setError("");
 
     if (!selectedTemplate) {
-      setError("Select a workflow template");
+      setError("Select a blueprint template");
       return;
     }
 
@@ -147,15 +138,32 @@ export default function WorkflowCreate() {
     }
 
     try {
-      await createConfig.mutateAsync({
+      await createBlueprint.mutateAsync({
         name: name.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
-        workflow: selectedTemplate,
-        params: finalParams,
-        timeout_seconds: timeoutMinutes * 60,
+        description: selectedTemplate.description,
+        // Copy of the builtin's request template with the chosen timeout
+        // baked into the session config.
+        request: {
+          ...selectedTemplate.request,
+          config: {
+            ...selectedTemplate.request.config,
+            timeout_seconds: timeoutMinutes * 60,
+          },
+        },
+        // Entered values become the new blueprint's parameter defaults, so
+        // it runs without re-entering them but stays overridable.
+        parameters: selectedTemplate.parameters.map((p) => ({
+          ...p,
+          ...(finalParams[p.name]?.trim()
+            ? { default: finalParams[p.name]!.trim() }
+            : {}),
+        })),
       });
+      toast("success", "Blueprint created");
+      void navigate("/blueprints");
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to create workflow",
+        err instanceof Error ? err.message : "Failed to create blueprint",
       );
     }
   }
@@ -166,31 +174,34 @@ export default function WorkflowCreate() {
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => void navigate("/workflows")}
+            onClick={() => void navigate("/blueprints")}
             className="rounded-md p-2 text-fg-3 transition-colors hover:bg-surface-alt hover:text-fg"
-            title="Back to workflows"
+            title="Back to blueprints"
           >
             <ArrowLeft className="size-5" />
           </button>
           <div>
-            <p className="eyebrow mb-1">Workflows</p>
+            <p className="eyebrow mb-1">Blueprints</p>
             <h2 className="font-expanded text-2xl font-extrabold tracking-tight text-fg">
-              New workflow
+              New blueprint
             </h2>
           </div>
         </div>
 
-        <p className="text-sm text-fg-3">Pick a template to get started.</p>
+        <p className="text-sm text-fg-3">
+          Pick a built-in template. Your entered values become the new
+          blueprint&apos;s defaults.
+        </p>
 
         <div className="grid gap-3">
           {builtinTemplates.map((t) => {
-            const Icon = workflowIcons[t.name] ?? Network;
+            const Icon = blueprintIcons[t.name] ?? Layers;
             return (
               <button
-                key={t.name}
+                key={t.id}
                 type="button"
                 onClick={() => {
-                  setSelectedTemplate(t.name);
+                  setSelectedTemplate(t);
                   // Pre-fill defaults
                   const defaults: Record<string, string> = {};
                   for (const p of t.parameters) {
@@ -210,11 +221,10 @@ export default function WorkflowCreate() {
                   <p className="mt-0.5 text-xs text-fg-3">{t.description}</p>
                   <div className="mt-2 flex items-center gap-2">
                     <span className="rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] text-fg-3">
-                      {t.steps.length} steps
+                      {t.parameters.length} params
                     </span>
                     <span className="rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] text-fg-3">
                       {t.parameters.filter((p) => p.required).length} required
-                      params
                     </span>
                   </div>
                 </div>
@@ -243,11 +253,13 @@ export default function WorkflowCreate() {
           <ArrowLeft className="size-5" />
         </button>
         <div>
-          <p className="eyebrow mb-1">Workflows</p>
+          <p className="eyebrow mb-1">Blueprints</p>
           <h2 className="font-expanded text-2xl font-extrabold tracking-tight text-fg">
-            New workflow
+            New blueprint
           </h2>
-          <p className="mt-1 font-mono text-xs text-fg-3">{selectedTemplate}</p>
+          <p className="mt-1 font-mono text-xs text-fg-3">
+            {selectedTemplate.name}
+          </p>
         </div>
       </div>
 
@@ -289,7 +301,7 @@ export default function WorkflowCreate() {
                 repos={repos}
               />
             ) : (
-              template?.parameters.map((p) => {
+              selectedTemplate.parameters.map((p) => {
                 // Smart: provider_key with git keys selector
                 if (p.name === "provider_key" && gitKeys.length > 0) {
                   return (
@@ -429,19 +441,19 @@ export default function WorkflowCreate() {
         <div className="flex items-center gap-3">
           <button
             type="submit"
-            disabled={createConfig.isPending}
+            disabled={createBlueprint.isPending}
             className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
           >
-            {createConfig.isPending ? (
+            {createBlueprint.isPending ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
               <Save className="size-4" />
             )}
-            Save workflow
+            Save blueprint
           </button>
           <button
             type="button"
-            onClick={() => void navigate("/workflows")}
+            onClick={() => void navigate("/blueprints")}
             className="rounded-md border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg"
           >
             Cancel
@@ -453,13 +465,6 @@ export default function WorkflowCreate() {
 }
 
 // ── Sentry Fixer specific parameter form with cascade selectors ──
-
-import type {
-  ProviderKey,
-  Repository,
-  SentryOrganization,
-  SentryProject,
-} from "../types";
 
 function SentryFixerParams({
   params,

@@ -41,8 +41,18 @@ type Schedule struct {
 	Timezone string `json:"timezone,omitempty"`
 
 	// SessionRequest is the stored session.CreateSessionRequest JSON used
-	// verbatim each time the schedule fires.
-	SessionRequest json.RawMessage `json:"session_request"`
+	// verbatim each time the schedule fires. Empty for blueprint-backed
+	// schedules — a schedule is EITHER inline (SessionRequest set) OR
+	// blueprint-backed (BlueprintID set), never both.
+	SessionRequest json.RawMessage `json:"session_request,omitempty"`
+
+	// BlueprintID references the blueprint rendered on each firing (with
+	// BlueprintParams). Empty for inline schedules.
+	BlueprintID string `json:"blueprint_id,omitempty"`
+
+	// BlueprintParams are the parameter values passed to blueprint.Build when
+	// the schedule fires. Only meaningful when BlueprintID is set.
+	BlueprintParams map[string]string `json:"blueprint_params,omitempty"`
 
 	// ConsecutiveFailures counts fire/session failures since the last success;
 	// at MaxConsecutiveFailures the schedule is auto-disabled with DisabledReason.

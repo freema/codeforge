@@ -15,7 +15,7 @@ import (
 var ErrNotFound = errors.New("schedule not found")
 
 // scheduleColumns is the shared SELECT column list for scanSchedule.
-const scheduleColumns = `id, name, cron, enabled, timezone, session_request,
+const scheduleColumns = `id, name, cron, enabled, timezone, session_request, blueprint_id, blueprint_params,
 	consecutive_failures, disabled_reason, last_run_at, last_session_id, created_at, updated_at`
 
 // Store persists schedules in SQLite.
@@ -37,10 +37,16 @@ func (s *Store) Create(ctx context.Context, sch *Schedule) error {
 	sch.CreatedAt = now
 	sch.UpdatedAt = now
 
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO schedules (id, name, cron, enabled, timezone, session_request, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+	params, err := marshalBlueprintParams(sch.BlueprintParams)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO schedules (id, name, cron, enabled, timezone, session_request, blueprint_id, blueprint_params, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		sch.ID, sch.Name, sch.Cron, boolToInt(sch.Enabled), sch.Timezone, string(sch.SessionRequest),
+		sch.BlueprintID, params,
 		now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano),
 	)
 	if err != nil {
@@ -87,14 +93,22 @@ func (s *Store) list(ctx context.Context, query string) ([]*Schedule, error) {
 }
 
 // Update persists mutable fields (name, cron, enabled, timezone,
-// session_request, consecutive_failures, disabled_reason).
+// session_request, blueprint_id, blueprint_params, consecutive_failures,
+// disabled_reason).
 func (s *Store) Update(ctx context.Context, sch *Schedule) error {
+	params, err := marshalBlueprintParams(sch.BlueprintParams)
+	if err != nil {
+		return err
+	}
+
 	sch.UpdatedAt = time.Now().UTC()
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE schedules SET name = ?, cron = ?, enabled = ?, timezone = ?, session_request = ?,
+		 blueprint_id = ?, blueprint_params = ?,
 		 consecutive_failures = ?, disabled_reason = ?, updated_at = ?
 		 WHERE id = ?`,
 		sch.Name, sch.Cron, boolToInt(sch.Enabled), sch.Timezone, string(sch.SessionRequest),
+		sch.BlueprintID, params,
 		sch.ConsecutiveFailures, sch.DisabledReason,
 		sch.UpdatedAt.Format(time.RFC3339Nano), sch.ID,
 	)
@@ -260,10 +274,10 @@ func (s *Store) Disable(ctx context.Context, id, reason string) error {
 func scanSchedule(scan func(dest ...any) error) (*Schedule, error) {
 	var sch Schedule
 	var enabled int
-	var request, createdAt, updatedAt string
+	var request, blueprintParams, createdAt, updatedAt string
 	var timezone, disabledReason, lastRunAt, lastSessionID sql.NullString
 
-	err := scan(&sch.ID, &sch.Name, &sch.Cron, &enabled, &timezone, &request,
+	err := scan(&sch.ID, &sch.Name, &sch.Cron, &enabled, &timezone, &request, &sch.BlueprintID, &blueprintParams,
 		&sch.ConsecutiveFailures, &disabledReason, &lastRunAt, &lastSessionID, &createdAt, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -275,7 +289,14 @@ func scanSchedule(scan func(dest ...any) error) (*Schedule, error) {
 	sch.Enabled = enabled == 1
 	sch.Timezone = timezone.String
 	sch.DisabledReason = disabledReason.String
-	sch.SessionRequest = json.RawMessage(request)
+	if request != "" {
+		sch.SessionRequest = json.RawMessage(request)
+	}
+	if blueprintParams != "" {
+		if err := json.Unmarshal([]byte(blueprintParams), &sch.BlueprintParams); err != nil {
+			return nil, fmt.Errorf("parsing schedule blueprint params: %w", err)
+		}
+	}
 	sch.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
 	sch.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
 	if lastRunAt.Valid && lastRunAt.String != "" {
@@ -287,6 +308,34 @@ func scanSchedule(scan func(dest ...any) error) (*Schedule, error) {
 		sch.LastSessionID = lastSessionID.String
 	}
 	return &sch, nil
+}
+
+// ListByBlueprint counts schedules referencing a blueprint — the blueprint
+// handler's delete guard (409 while referenced).
+func (s *Store) ListByBlueprint(ctx context.Context, blueprintID string) (int, error) {
+	if blueprintID == "" {
+		return 0, nil
+	}
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM schedules WHERE blueprint_id = ?`, blueprintID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("counting schedules by blueprint: %w", err)
+	}
+	return n, nil
+}
+
+// marshalBlueprintParams serializes blueprint parameter values, normalizing
+// an empty map to "" (the column default).
+func marshalBlueprintParams(params map[string]string) (string, error) {
+	if len(params) == 0 {
+		return "", nil
+	}
+	b, err := json.Marshal(params)
+	if err != nil {
+		return "", fmt.Errorf("marshaling blueprint params: %w", err)
+	}
+	return string(b), nil
 }
 
 func boolToInt(b bool) int {

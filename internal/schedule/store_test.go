@@ -2,6 +2,8 @@ package schedule
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
 	"testing"
 )
 
@@ -136,6 +138,82 @@ func TestStore_FailureTrackingAndDisable(t *testing.T) {
 	}
 	if err := store.Disable(ctx, "nope", "r"); err != ErrNotFound {
 		t.Errorf("Disable(unknown) = %v, want ErrNotFound", err)
+	}
+}
+
+func TestStore_BlueprintFieldsRoundTrip(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	params := map[string]string{"repo": "widget", "branch": "main"}
+	sch := seedBlueprintSchedule(t, store, "bp-1", params)
+
+	got, err := store.Get(ctx, sch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BlueprintID != "bp-1" {
+		t.Errorf("BlueprintID = %q, want bp-1", got.BlueprintID)
+	}
+	if !reflect.DeepEqual(got.BlueprintParams, params) {
+		t.Errorf("BlueprintParams = %v, want %v", got.BlueprintParams, params)
+	}
+	if len(got.SessionRequest) != 0 {
+		t.Errorf("SessionRequest = %q, want empty for blueprint-backed schedule", got.SessionRequest)
+	}
+
+	// Inline schedules round-trip with empty blueprint fields.
+	inline := seedSchedule(t, store, "@daily", true)
+	gotInline, err := store.Get(ctx, inline.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotInline.BlueprintID != "" || gotInline.BlueprintParams != nil {
+		t.Errorf("inline schedule has blueprint fields: %+v", gotInline)
+	}
+
+	// Update can switch a schedule from blueprint-backed to inline.
+	got.BlueprintID = ""
+	got.BlueprintParams = nil
+	got.SessionRequest = json.RawMessage(`{"repo_url":"https://example.com/acme/widget.git","prompt":"x"}`)
+	if err := store.Update(ctx, got); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	again, err := store.Get(ctx, sch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.BlueprintID != "" || again.BlueprintParams != nil || len(again.SessionRequest) == 0 {
+		t.Errorf("mode switch not persisted: %+v", again)
+	}
+}
+
+func TestStore_ListByBlueprint(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	seedBlueprintSchedule(t, store, "bp-1", nil)
+	seedBlueprintSchedule(t, store, "bp-1", map[string]string{"repo": "widget"})
+	seedBlueprintSchedule(t, store, "bp-2", nil)
+	seedSchedule(t, store, "@daily", true) // inline — must never be counted
+
+	tests := []struct {
+		blueprintID string
+		want        int
+	}{
+		{"bp-1", 2},
+		{"bp-2", 1},
+		{"bp-unknown", 0},
+		{"", 0}, // empty id must not match inline schedules
+	}
+	for _, tt := range tests {
+		n, err := store.ListByBlueprint(ctx, tt.blueprintID)
+		if err != nil {
+			t.Fatalf("ListByBlueprint(%q): %v", tt.blueprintID, err)
+		}
+		if n != tt.want {
+			t.Errorf("ListByBlueprint(%q) = %d, want %d", tt.blueprintID, n, tt.want)
+		}
 	}
 }
 

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useParams, Link } from "react-router";
 import {
   ArrowUp,
+  CalendarClock,
   CircleAlert,
   CircleCheck,
   CircleStop,
@@ -569,6 +570,16 @@ export default function SessionDetail() {
               >
                 <RotateCcw className="size-4" />
                 Run again
+              </Link>
+            )}
+            {canRunAgain && (
+              <Link
+                to={`/schedules?from=${session.id}`}
+                title="Create a recurring schedule from this session"
+                className="flex items-center gap-2 rounded-md border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg"
+              >
+                <CalendarClock className="size-4" />
+                Schedule
               </Link>
             )}
           </div>

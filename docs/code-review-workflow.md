@@ -104,25 +104,24 @@ After review, the `ReviewResult` is stored on the session and returned in `GET /
 ### Score
 1-10 scale where 10 is perfect code.
 
-## Workflow-Based Review (Alternative)
+## Blueprint-Based Review (Alternative)
 
-CodeForge also has a built-in `code-review` workflow that chains session execution + review in a single workflow run:
+For a review of the **whole repository** (not one session's changes), the built-in `repo-review` [blueprint](blueprints.md) runs a `review` session in one call — path segments accept the blueprint's ID or name:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/workflows/code-review/run \
+curl -X POST http://localhost:8080/api/v1/blueprints/repo-review/run \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "params": {
       "repo_url": "https://github.com/owner/repo.git",
-      "prompt": "Add input validation",
-      "cli": "claude-code",
-      "review_cli": "codex"
+      "provider_key": "my-github-key",
+      "focus": "focus on error handling and concurrency"
     }
   }'
 ```
 
-This creates two sessions sequentially — the review session reuses the first session's workspace via `WorkspaceSessionID`. The workflow approach is useful for automation, while the direct `POST /review` endpoint is better for interactive use.
+This creates a regular `review` session (`focus` is optional) and returns its ID. The blueprint approach is useful for automation and [scheduling](blueprints.md#scheduling-a-blueprint) — e.g. a weekly repo health review — while the direct `POST /review` endpoint is better for interactively reviewing a session's changes.
 
 ## Internal Architecture
 

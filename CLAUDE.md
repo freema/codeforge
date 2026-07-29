@@ -51,6 +51,7 @@ cmd/codeforge/         Server entry point
 cmd/codeforge-action/  CI Action entry point (GitHub Action / GitLab CI)
 internal/
   apperror/            Application error types
+  blueprint/           Blueprints: named parameterized session templates + builtins
   config/              Configuration (koanf, YAML + env vars)
   crypto/              AES-256-GCM encryption
   database/            SQLite wrapper + migrations
@@ -73,7 +74,6 @@ internal/
   webhook/             HMAC-signed webhook callbacks
   worker/              Worker pool, executor, streaming, normalizer
   schedule/            Recurring (cron) sessions — store + scheduler
-  workflow/            Workflow orchestrator, step executors, templates
   workspace/           Workspace lifecycle, cleanup
 web/                   React UI (Vite + TypeScript + Tailwind CSS 4)
   src/                 Components, hooks, pages, types, lib, context, layouts
@@ -111,7 +111,7 @@ tasks/                 Planning documents (not code)
 - **Session queue**: Redis RPUSH + BLPOP (FIFO)
 - **Streaming**: Redis Pub/Sub `session:{id}:stream` + SSE
 - **State**: Redis hashes `session:{id}:state`
-- **Persistence**: SQLite for workflows, tools, keys, MCP configs
+- **Persistence**: SQLite for blueprints, schedules, tools, keys, MCP configs
 - **Worker pool**: configurable concurrency, graceful shutdown
 - **Session lifecycle**: pending → cloning → running → completed (+ reviewing, awaiting_instruction, creating_pr, pr_created, failed, canceled)
 
@@ -125,7 +125,7 @@ tasks/                 Planning documents (not code)
 6. **Webhook review** → GitHub/GitLab webhooks auto-create `pr_review` sessions
 7. **Post review** → post ReviewResult as PR/MR comments
 8. **Create PR/MR** → push changes + open PR from session workspace
-9. **Workflows** → multi-step fetch → session → action pipelines
+9. **Blueprints** → parameterized session templates, runnable + schedulable
 
 ## Design Philosophy
 
@@ -134,4 +134,4 @@ tasks/                 Planning documents (not code)
 3. Queue-first execution — Redis FIFO, worker pool, state machine, SSE
 4. Human-in-the-loop — review, instruct, create PR at any point
 5. Two integration axes — provider data (GitHub/GitLab/Sentry) + MCP tools
-6. Workflow layer composes multi-step scenarios on top of session runtime
+6. Blueprints compose reusable, parameterized scenarios on top of the session runtime — no separate workflow engine

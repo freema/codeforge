@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/freema/codeforge/internal/blueprint"
+	"github.com/freema/codeforge/internal/keys"
 	"github.com/freema/codeforge/internal/notify"
 	"github.com/freema/codeforge/internal/session"
 )
@@ -28,20 +30,31 @@ type Notifier interface {
 	Notify(ctx context.Context, ev notify.Event)
 }
 
+// BlueprintSource resolves blueprints for blueprint-backed schedules —
+// implemented by *blueprint.Store. Nil disables blueprint-backed firing
+// (such schedules fail with a fire_failed run).
+type BlueprintSource interface {
+	Get(ctx context.Context, id string) (*blueprint.Blueprint, error)
+}
+
 // Scheduler fires enabled schedules whose cron expression is due.
 // One firing per schedule per tick — a backlog of missed occurrences
 // (server downtime) collapses into a single catch-up run.
 type Scheduler struct {
-	store    *Store
-	creator  SessionCreator
-	sessions SessionGetter // optional
-	notifier Notifier      // optional
-	interval time.Duration
+	store      *Store
+	creator    SessionCreator
+	blueprints BlueprintSource // optional — blueprint-backed schedules
+	keys       keys.Registry   // optional — tool_key_ref resolution in blueprint.Build
+	sessions   SessionGetter   // optional
+	notifier   Notifier        // optional
+	interval   time.Duration
 }
 
-// NewScheduler creates a scheduler that checks for due schedules every interval.
-func NewScheduler(store *Store, creator SessionCreator, interval time.Duration) *Scheduler {
-	return &Scheduler{store: store, creator: creator, interval: interval}
+// NewScheduler creates a scheduler that checks for due schedules every
+// interval. blueprints and keyReg feed blueprint.Build for blueprint-backed
+// schedules; both may be nil in setups without blueprints.
+func NewScheduler(store *Store, creator SessionCreator, blueprints BlueprintSource, keyReg keys.Registry, interval time.Duration) *Scheduler {
+	return &Scheduler{store: store, creator: creator, blueprints: blueprints, keys: keyReg, interval: interval}
 }
 
 // SetSessionGetter wires session-state lookups for the overlap guard.
@@ -142,9 +155,8 @@ func (s *Scheduler) recordOverlapSkip(ctx context.Context, sch *Schedule, now ti
 // TriggerCron (scheduler tick — shifts the cron base) or TriggerManual
 // (run-now endpoint — records the session without shifting the cron base).
 func (s *Scheduler) Fire(ctx context.Context, sch *Schedule, now time.Time, trigger string) (*session.Session, error) {
-	var req session.CreateSessionRequest
-	if err := json.Unmarshal(sch.SessionRequest, &req); err != nil {
-		err = fmt.Errorf("decoding session request: %w", err)
+	req, err := s.buildRequest(ctx, sch)
+	if err != nil {
 		s.recordFireFailure(ctx, sch, trigger, err)
 		return nil, err
 	}
@@ -154,7 +166,7 @@ func (s *Scheduler) Fire(ctx context.Context, sch *Schedule, now time.Time, trig
 	req.Metadata["schedule_id"] = sch.ID
 	req.Metadata["schedule_name"] = sch.Name
 
-	t, err := s.creator.Create(ctx, req)
+	t, err := s.creator.Create(ctx, *req)
 	if err != nil {
 		err = fmt.Errorf("creating session: %w", err)
 		s.recordFireFailure(ctx, sch, trigger, err)
@@ -184,6 +196,36 @@ func (s *Scheduler) Fire(ctx context.Context, sch *Schedule, now time.Time, trig
 
 	slog.Info("scheduler: schedule fired", "schedule_id", sch.ID, "name", sch.Name, "session_id", t.ID, "trigger", trigger)
 	return t, nil
+}
+
+// buildRequest produces the session request for one occurrence: the rendered
+// blueprint for blueprint-backed schedules, the stored inline template
+// otherwise. Blueprint-backed requests get a blueprint_name metadata entry.
+func (s *Scheduler) buildRequest(ctx context.Context, sch *Schedule) (*session.CreateSessionRequest, error) {
+	if sch.BlueprintID == "" {
+		var req session.CreateSessionRequest
+		if err := json.Unmarshal(sch.SessionRequest, &req); err != nil {
+			return nil, fmt.Errorf("decoding session request: %w", err)
+		}
+		return &req, nil
+	}
+
+	if s.blueprints == nil {
+		return nil, fmt.Errorf("schedule references blueprint %s but no blueprint source is configured", sch.BlueprintID)
+	}
+	bp, err := s.blueprints.Get(ctx, sch.BlueprintID)
+	if err != nil {
+		return nil, fmt.Errorf("loading blueprint %s: %w", sch.BlueprintID, err)
+	}
+	req, err := blueprint.Build(ctx, bp, sch.BlueprintParams, s.keys)
+	if err != nil {
+		return nil, fmt.Errorf("building blueprint %q: %w", bp.Name, err)
+	}
+	if req.Metadata == nil {
+		req.Metadata = map[string]string{}
+	}
+	req.Metadata["blueprint_name"] = bp.Name
+	return req, nil
 }
 
 // RecordSessionOutcome implements the worker's schedule feedback: it stamps

@@ -6,9 +6,8 @@ import Dashboard from "./pages/Dashboard";
 import SessionList from "./pages/SessionList";
 import NewSession from "./pages/NewSession";
 import SessionDetail from "./pages/SessionDetail";
-import WorkflowList from "./pages/WorkflowList";
-import WorkflowCreate from "./pages/WorkflowCreate";
-import WorkflowDetail from "./pages/WorkflowDetail";
+import Blueprints from "./pages/Blueprints";
+import BlueprintCreate from "./pages/BlueprintCreate";
 import Schedules from "./pages/Schedules";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
@@ -25,13 +24,26 @@ export default function App() {
           <Route path="/sessions" element={<SessionList />} />
           <Route path="/sessions/new" element={<NewSession />} />
           <Route path="/sessions/:id" element={<SessionDetail />} />
-          <Route path="/workflows" element={<WorkflowList />} />
-          <Route path="/workflows/new" element={<WorkflowCreate />} />
+          <Route path="/blueprints" element={<Blueprints />} />
+          <Route path="/blueprints/new" element={<BlueprintCreate />} />
+          {/* Legacy workflow URLs → blueprints (runs redirect stays first
+              so it keeps winning for /workflows/runs/*) */}
           <Route
             path="/workflows/runs/*"
             element={<Navigate to="/sessions" replace />}
           />
-          <Route path="/workflows/:name" element={<WorkflowDetail />} />
+          <Route
+            path="/workflows"
+            element={<Navigate to="/blueprints" replace />}
+          />
+          <Route
+            path="/workflows/new"
+            element={<Navigate to="/blueprints/new" replace />}
+          />
+          <Route
+            path="/workflows/*"
+            element={<Navigate to="/blueprints" replace />}
+          />
           <Route path="/schedules" element={<Schedules />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/admin" element={<Admin />} />

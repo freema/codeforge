@@ -5,7 +5,11 @@ export interface Schedule {
   name: string;
   cron: string;
   enabled: boolean;
-  session_request: CreateSessionRequest;
+  /** Present on custom schedules; absent when blueprint-backed. */
+  session_request?: CreateSessionRequest;
+  /** Present when the schedule runs a blueprint instead of a raw request. */
+  blueprint_id?: string;
+  blueprint_params?: Record<string, string>;
   timezone?: string;
   consecutive_failures: number;
   disabled_reason?: string;
@@ -16,12 +20,15 @@ export interface Schedule {
   updated_at: string;
 }
 
+/** Exactly one of session_request or blueprint_id must be set. */
 export interface CreateScheduleRequest {
   name: string;
   cron: string;
   enabled?: boolean;
   timezone?: string;
-  session_request: CreateSessionRequest;
+  session_request?: CreateSessionRequest;
+  blueprint_id?: string;
+  blueprint_params?: Record<string, string>;
 }
 
 export interface UpdateScheduleRequest {

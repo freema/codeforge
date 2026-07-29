@@ -163,6 +163,7 @@ The multi-strategy parser (`internal/review/parser.go`) extracts this from the C
 - **UI:** the New Session form has a toggle for every type; `review` and `knowledge` accept an empty prompt there as well
 - **API:** `POST /api/v1/sessions` with `session_type` (examples above); `GET /api/v1/session-types` returns the list with labels and descriptions — see [API Reference](api.md#session-types)
 - **Schedules:** `code`, `plan`, `review`, and `knowledge` can run on a cron via [Schedules](api.md#schedules--recurring-sessions-operator-only); `pr_review` schedules are rejected with `400`
+- **Blueprints:** any session type composes into a named, parameterized session template that can be run on demand or referenced from a schedule — see [Blueprints](blueprints.md)
 
 Example — weekly knowledge refresh schedule:
 

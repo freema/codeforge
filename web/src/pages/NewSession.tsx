@@ -6,7 +6,7 @@ import {
   useCallback,
   type FormEvent,
 } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   Bookmark,
   BookmarkPlus,
@@ -42,20 +42,20 @@ import { usePullRequests } from "../hooks/usePullRequests";
 import { useCLIs } from "../hooks/useCLIs";
 import { useSession } from "../hooks/useSession";
 import { useSessionTypes } from "../hooks/useSessionTypes";
+import { useBlueprints } from "../hooks/useBlueprints";
 import {
-  usePresets,
-  useCreatePreset,
-  useDeletePreset,
-} from "../hooks/usePresets";
+  useCreateBlueprint,
+  useDeleteBlueprint,
+} from "../hooks/useBlueprintMutations";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import Select from "../components/Select";
 import RepoSelector from "../components/RepoSelector";
 import type {
+  Blueprint,
   CreateSessionRequest,
   SessionConfig,
-  Preset,
   Repository,
   PullRequest,
 } from "../types";
@@ -120,13 +120,24 @@ export default function NewSession() {
   const fromId = searchParams.get("from") ?? undefined;
   const { data: fromSession } = useSession(fromId);
 
-  // Presets (operator-only endpoints)
-  const { data: presets } = usePresets(isOperator);
-  const createPreset = useCreatePreset();
-  const deletePreset = useDeletePreset();
-  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
-  const [savingPreset, setSavingPreset] = useState(false);
-  const [presetName, setPresetName] = useState("");
+  // Blueprints (operator-only endpoints). Only parameterless blueprints can
+  // prefill the form directly; parameterized ones live on /blueprints.
+  const { data: blueprints } = useBlueprints(isOperator);
+  const createBlueprint = useCreateBlueprint();
+  const deleteBlueprint = useDeleteBlueprint();
+  const applicableBlueprints = useMemo(
+    () => blueprints?.filter((b) => b.parameters.length === 0) ?? [],
+    [blueprints],
+  );
+  const hasParameterizedBlueprints = useMemo(
+    () => blueprints?.some((b) => b.parameters.length > 0) ?? false,
+    [blueprints],
+  );
+  const [selectedBlueprintId, setSelectedBlueprintId] = useState<string | null>(
+    null,
+  );
+  const [savingBlueprint, setSavingBlueprint] = useState(false);
+  const [blueprintName, setBlueprintName] = useState("");
 
   const { data: allKeys } = useKeys();
   const keys = useMemo(
@@ -229,7 +240,7 @@ export default function NewSession() {
   }, [availableClis, selectedCli]);
 
   // Prefill the whole form from a CreateSessionRequest-shaped template
-  // (preset or "run again" source session).
+  // (blueprint or "run again" source session).
   const applyRequest = useCallback((req: CreateSessionRequest) => {
     const c = req.config ?? {};
     setTaskType(req.session_type ?? "code");
@@ -358,36 +369,42 @@ export default function NewSession() {
     }
   }
 
-  function applyPreset(p: Preset) {
-    setSelectedPresetId(p.id);
-    applyRequest(p.request);
+  function applyBlueprint(b: Blueprint) {
+    setSelectedBlueprintId(b.id);
+    applyRequest(b.request);
   }
 
-  async function handleSavePreset() {
-    const name = presetName.trim();
+  async function handleSaveBlueprint() {
+    const name = blueprintName.trim();
     if (!name) return;
+    // Blueprint names allow only alphanumerics, hyphens and underscores.
+    const slug = name.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
     try {
-      await createPreset.mutateAsync({ name, request: buildRequest() });
-      toast("success", `Preset "${name}" saved`);
-      setPresetName("");
-      setSavingPreset(false);
+      await createBlueprint.mutateAsync({
+        name: slug,
+        request: buildRequest(),
+        parameters: [],
+      });
+      toast("success", `Blueprint "${slug}" saved`);
+      setBlueprintName("");
+      setSavingBlueprint(false);
     } catch (err) {
       toast(
         "error",
-        err instanceof Error ? err.message : "Failed to save preset",
+        err instanceof Error ? err.message : "Failed to save blueprint",
       );
     }
   }
 
-  async function handleDeletePreset(p: Preset) {
+  async function handleDeleteBlueprint(b: Blueprint) {
     try {
-      await deletePreset.mutateAsync(p.id);
-      if (selectedPresetId === p.id) setSelectedPresetId(null);
-      toast("success", `Preset "${p.name}" deleted`);
+      await deleteBlueprint.mutateAsync(b.id);
+      if (selectedBlueprintId === b.id) setSelectedBlueprintId(null);
+      toast("success", `Blueprint "${b.name}" deleted`);
     } catch (err) {
       toast(
         "error",
-        err instanceof Error ? err.message : "Failed to delete preset",
+        err instanceof Error ? err.message : "Failed to delete blueprint",
       );
     }
   }
@@ -421,54 +438,71 @@ export default function NewSession() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* 0. Presets — prefill the form from a saved configuration */}
-        {isOperator && presets && presets.length > 0 && (
-          <div className="overflow-hidden rounded-md border border-edge bg-surface">
-            <div className="border-b border-edge px-5 py-3.5">
-              <span className="eyebrow">Presets</span>
-            </div>
-            <div className="p-5">
-              <div className="flex flex-wrap gap-2">
-                {presets.map((p) => (
-                  <div
-                    key={p.id}
-                    className={`flex items-center overflow-hidden rounded-md border transition-colors ${
-                      selectedPresetId === p.id
-                        ? "border-accent-muted bg-accent-soft"
-                        : "border-edge bg-surface-alt"
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => applyPreset(p)}
-                      title={p.description || undefined}
-                      className={`flex items-center gap-2 py-2 pr-2 pl-3 text-sm font-medium transition-colors ${
-                        selectedPresetId === p.id
-                          ? "text-accent"
-                          : "text-fg-3 hover:text-fg"
-                      }`}
-                    >
-                      <Bookmark className="size-4" />
-                      {p.name}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleDeletePreset(p)}
-                      disabled={deletePreset.isPending}
-                      aria-label={`Delete preset ${p.name}`}
-                      className="p-2 text-fg-4 transition-colors hover:text-danger disabled:opacity-50"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </div>
-                ))}
+        {/* 0. Blueprints — prefill the form from a saved request template */}
+        {isOperator &&
+          (applicableBlueprints.length > 0 || hasParameterizedBlueprints) && (
+            <div className="overflow-hidden rounded-md border border-edge bg-surface">
+              <div className="border-b border-edge px-5 py-3.5">
+                <span className="eyebrow">Blueprints</span>
               </div>
-              <p className="mt-2 text-xs text-fg-4">
-                Select a preset to prefill the form
-              </p>
+              <div className="p-5">
+                {applicableBlueprints.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {applicableBlueprints.map((b) => (
+                      <div
+                        key={b.id}
+                        className={`flex items-center overflow-hidden rounded-md border transition-colors ${
+                          selectedBlueprintId === b.id
+                            ? "border-accent-muted bg-accent-soft"
+                            : "border-edge bg-surface-alt"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => applyBlueprint(b)}
+                          title={b.description || undefined}
+                          className={`flex items-center gap-2 py-2 pr-2 pl-3 text-sm font-medium transition-colors ${
+                            selectedBlueprintId === b.id
+                              ? "text-accent"
+                              : "text-fg-3 hover:text-fg"
+                          }`}
+                        >
+                          <Bookmark className="size-4" />
+                          {b.name}
+                        </button>
+                        {!b.builtin && (
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteBlueprint(b)}
+                            disabled={deleteBlueprint.isPending}
+                            aria-label={`Delete blueprint ${b.name}`}
+                            className="p-2 text-fg-4 transition-colors hover:text-danger disabled:opacity-50"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-fg-4">
+                    {applicableBlueprints.length > 0
+                      ? "Select a blueprint to prefill the form"
+                      : "No directly applicable blueprints yet"}
+                  </p>
+                  {hasParameterizedBlueprints && (
+                    <Link
+                      to="/blueprints"
+                      className="text-xs text-fg-3 transition-colors hover:text-fg"
+                    >
+                      Parameterized blueprints &rarr;
+                    </Link>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
         {/* 1. Session type — FIRST */}
         {taskTypes && taskTypes.length > 0 && (
@@ -935,45 +969,45 @@ export default function NewSession() {
             >
               Cancel
             </button>
-            {isOperator && !savingPreset && (
+            {isOperator && !savingBlueprint && (
               <button
                 type="button"
-                onClick={() => setSavingPreset(true)}
+                onClick={() => setSavingBlueprint(true)}
                 disabled={!repoUrl}
                 title={
                   repoUrl
                     ? undefined
-                    : "Select a repository before saving a preset"
+                    : "Select a repository before saving a blueprint"
                 }
                 className="flex items-center gap-2 rounded-md border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg disabled:opacity-40"
               >
                 <BookmarkPlus className="size-4" />
-                Save as preset
+                Save as blueprint
               </button>
             )}
-            {isOperator && savingPreset && (
+            {isOperator && savingBlueprint && (
               <div className="flex items-center gap-2">
                 <input
                   type="text"
-                  value={presetName}
-                  onChange={(e) => setPresetName(e.target.value)}
-                  placeholder="Preset name"
+                  value={blueprintName}
+                  onChange={(e) => setBlueprintName(e.target.value)}
+                  placeholder="Blueprint name"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
-                      void handleSavePreset();
+                      void handleSaveBlueprint();
                     }
                   }}
                   className={inputCls + " w-44"}
                 />
                 <button
                   type="button"
-                  onClick={() => void handleSavePreset()}
-                  disabled={!presetName.trim() || createPreset.isPending}
+                  onClick={() => void handleSaveBlueprint()}
+                  disabled={!blueprintName.trim() || createBlueprint.isPending}
                   className="flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-40"
                 >
-                  {createPreset.isPending ? (
+                  {createBlueprint.isPending ? (
                     <Loader2 className="size-4 animate-spin" />
                   ) : (
                     "Save"
@@ -982,10 +1016,10 @@ export default function NewSession() {
                 <button
                   type="button"
                   onClick={() => {
-                    setSavingPreset(false);
-                    setPresetName("");
+                    setSavingBlueprint(false);
+                    setBlueprintName("");
                   }}
-                  aria-label="Cancel saving preset"
+                  aria-label="Cancel saving blueprint"
                   className="rounded-md p-2 text-fg-3 transition-colors hover:bg-surface-alt hover:text-fg"
                 >
                   <X className="size-4" />

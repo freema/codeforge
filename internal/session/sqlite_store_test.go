@@ -40,7 +40,6 @@ func openTestDB(t *testing.T) *sql.DB {
 			branch          TEXT NOT NULL DEFAULT '',
 			pr_number       INTEGER NOT NULL DEFAULT 0,
 			pr_url          TEXT NOT NULL DEFAULT '',
-			workflow_run_id TEXT NOT NULL DEFAULT '',
 			trace_id        TEXT NOT NULL DEFAULT '',
 			tenant_id       TEXT NOT NULL DEFAULT '',
 			created_at      TEXT NOT NULL,

@@ -15,7 +15,7 @@ import {
   useSentryProjects,
   useSentryIssues,
 } from "../hooks/useSentry";
-import { useRunWorkflow } from "../hooks/useWorkflowMutations";
+import { useRunBlueprint } from "../hooks/useBlueprintMutations";
 import Select from "./Select";
 import type { SentryConfig } from "../types";
 
@@ -50,11 +50,15 @@ const LEVEL_COLORS: Record<string, string> = {
   info: "bg-info",
 };
 
-export default function SentryFixerRunForm() {
+export default function SentryFixerRunForm({
+  blueprintId,
+}: {
+  blueprintId: string;
+}) {
   const navigate = useNavigate();
   const { data: allKeys } = useKeys();
   const config = loadConfig();
-  const runWorkflow = useRunWorkflow();
+  const runBlueprint = useRunBlueprint();
 
   // ── Sentry key ──
   const sentryKeys = useMemo(
@@ -128,8 +132,8 @@ export default function SentryFixerRunForm() {
 
   async function handleRun() {
     if (!configComplete) return;
-    const run = await runWorkflow.mutateAsync({
-      name: "sentry-fixer",
+    const created = await runBlueprint.mutateAsync({
+      id: blueprintId,
       params: {
         sentry_org: effectiveOrg,
         sentry_project: projectSlug,
@@ -139,7 +143,7 @@ export default function SentryFixerRunForm() {
         max_issues: maxIssues,
       },
     });
-    void navigate(`/sessions/${run.session_id}`);
+    void navigate(`/sessions/${created.id}`);
   }
 
   // Cascade step
@@ -407,11 +411,11 @@ export default function SentryFixerRunForm() {
               <button
                 onClick={() => void handleRun()}
                 disabled={
-                  !configComplete || runWorkflow.isPending || !issues?.length
+                  !configComplete || runBlueprint.isPending || !issues?.length
                 }
                 className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
               >
-                {runWorkflow.isPending ? (
+                {runBlueprint.isPending ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
                   <Play className="size-4" />

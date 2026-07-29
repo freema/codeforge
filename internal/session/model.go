@@ -73,9 +73,6 @@ type Session struct {
 	// Metadata — optional key-value data (sentry URL, ticket link, etc.)
 	Metadata map[string]string `json:"metadata,omitempty"`
 
-	// Workflow linkage
-	WorkflowRunID string `json:"workflow_run_id,omitempty"`
-
 	// Subscription tenant that owns this session (empty = operator/BYOK).
 	// Set server-side from the authenticated tenant, never from client input.
 	TenantID string `json:"tenant_id,omitempty"`

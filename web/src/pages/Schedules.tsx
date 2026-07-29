@@ -19,6 +19,7 @@ import {
   useDeleteSchedule,
   useRunSchedule,
 } from "../hooks/useSchedules";
+import { useBlueprints } from "../hooks/useBlueprints";
 import AddScheduleForm from "../components/schedules/AddScheduleForm";
 import { formatTimeAgo } from "../lib/formatters";
 import type { Schedule, ScheduleRunStatus } from "../types";
@@ -123,8 +124,16 @@ function ScheduleCard({ schedule }: { schedule: Schedule }) {
   const { toast } = useToast();
   const runSchedule = useRunSchedule();
   const deleteSchedule = useDeleteSchedule();
+  const { data: blueprints } = useBlueprints(!!schedule.blueprint_id);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+
+  // Custom schedules show their repo; blueprint-backed ones show the
+  // blueprint name.
+  const sourceLabel = schedule.session_request
+    ? extractRepoName(schedule.session_request.repo_url)
+    : (blueprints?.find((b) => b.id === schedule.blueprint_id)?.name ??
+      "blueprint");
 
   function handleRun() {
     runSchedule.mutate(schedule.id, {
@@ -184,9 +193,7 @@ function ScheduleCard({ schedule }: { schedule: Schedule }) {
               )}
             </div>
             <p className="mt-0.5 text-xs text-fg-4">
-              <span className="font-mono">
-                {extractRepoName(schedule.session_request.repo_url)}
-              </span>
+              <span className="font-mono">{sourceLabel}</span>
               <span className="mx-1.5">·</span>
               {schedule.enabled && schedule.next_run_at && (
                 <span className="mr-1.5 inline-block size-1.5 animate-soft-pulse rounded-full bg-ok align-middle" />

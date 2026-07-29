@@ -89,6 +89,7 @@ The mock CLI (`tests/mockcli/main.go`) supports special prompts:
 cmd/codeforge/          Application entry point + review adapter
 internal/
   apperror/             Application error types (NotFound, Validation, Conflict, etc.)
+  blueprint/            Blueprints: session request templates + builtins + legacy migration
   config/               Configuration loading (koanf, YAML + env vars)
   crypto/               AES-256-GCM encryption
   database/             SQLite wrapper + auto-migrations
@@ -99,9 +100,10 @@ internal/
   redisclient/          Redis client wrapper
   review/               Code review types, output parser, comment formatting
   server/               HTTP server + handlers + middleware
-    handlers/           Request handlers (sessions, webhook receiver, keys, tools, workflows, stream, etc.)
+    handlers/           Request handlers (sessions, webhook receiver, keys, tools, blueprints, schedules, stream, etc.)
     middleware/         Auth, logging, recovery, rate limit, metrics, tracing
   session/              Session model, service, state machine, PR service
+  schedule/             Recurring (cron) sessions — store + scheduler
   tool/                 Tool subsystem namespace (low-level)
     git/                Git operations (clone, branch, PR creation, review posting)
     runner/             CLI runner interface + implementations (Claude Code, Codex)
@@ -110,7 +112,6 @@ internal/
   tracing/              OpenTelemetry setup
   webhook/              Webhook sender with HMAC signatures + retries
   worker/               Worker pool, executor, streamer, stream normalizer
-  workflow/             Workflow orchestrator, step executors, templates
   workspace/            Workspace manager + cleanup
 api/                    OpenAPI specification (openapi.yaml)
 configs/                Example configuration files

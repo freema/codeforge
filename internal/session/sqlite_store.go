@@ -36,13 +36,13 @@ func (s *SQLiteStore) Save(ctx context.Context, t *Session) error {
 			result, error, changes_json, usage_json,
 			iteration, current_prompt,
 			branch, pr_number, pr_url,
-			workflow_run_id, trace_id, tenant_id,
+			trace_id, tenant_id,
 			created_at, started_at, finished_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?,
 			?, ?, ?, ?,
 			?, ?,
 			?, ?, ?,
-			?, ?, ?,
+			?, ?,
 			?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 			status = excluded.status,
@@ -61,7 +61,6 @@ func (s *SQLiteStore) Save(ctx context.Context, t *Session) error {
 			branch = excluded.branch,
 			pr_number = excluded.pr_number,
 			pr_url = excluded.pr_url,
-			workflow_run_id = excluded.workflow_run_id,
 			trace_id = excluded.trace_id,
 			started_at = excluded.started_at,
 			finished_at = excluded.finished_at,
@@ -70,7 +69,7 @@ func (s *SQLiteStore) Save(ctx context.Context, t *Session) error {
 		t.Result, t.Error, changesJSON, usageJSON,
 		t.Iteration, t.CurrentPrompt,
 		t.Branch, t.PRNumber, t.PRURL,
-		t.WorkflowRunID, t.TraceID, t.TenantID,
+		t.TraceID, t.TenantID,
 		t.CreatedAt.Format(time.RFC3339Nano), nullableTime(t.StartedAt), nullableTime(t.FinishedAt), now,
 	)
 	if err != nil {
@@ -197,7 +196,7 @@ func (s *SQLiteStore) Get(ctx context.Context, sessionID string) (*Session, erro
 			result, error, changes_json, usage_json,
 			iteration, current_prompt,
 			branch, pr_number, pr_url,
-			workflow_run_id, trace_id, tenant_id, created_at, started_at, finished_at, updated_at,
+			trace_id, tenant_id, created_at, started_at, finished_at, updated_at,
 			review_result_json
 		 FROM sessions WHERE id = ?`,
 		sessionID,
@@ -206,7 +205,7 @@ func (s *SQLiteStore) Get(ctx context.Context, sessionID string) (*Session, erro
 		&t.Result, &t.Error, &changesJSON, &usageJSON,
 		&t.Iteration, &t.CurrentPrompt,
 		&t.Branch, &t.PRNumber, &t.PRURL,
-		&t.WorkflowRunID, &t.TraceID, &t.TenantID, &createdAt, &startedAt, &finishedAt, &updatedAt,
+		&t.TraceID, &t.TenantID, &createdAt, &startedAt, &finishedAt, &updatedAt,
 		&reviewJSON,
 	)
 	if err == sql.ErrNoRows {
@@ -304,7 +303,7 @@ func (s *SQLiteStore) List(ctx context.Context, opts ListOptions) ([]Summary, in
 		return nil, 0, fmt.Errorf("counting sessions: %w", err)
 	}
 
-	const cols = `id, status, repo_url, prompt, session_type, iteration, error, branch, pr_url, workflow_run_id, changes_json, usage_json, created_at, started_at, finished_at`
+	const cols = `id, status, repo_url, prompt, session_type, iteration, error, branch, pr_url, changes_json, usage_json, created_at, started_at, finished_at`
 	query := "SELECT " + cols + " FROM sessions" + whereClause + " ORDER BY created_at DESC LIMIT ? OFFSET ?"
 	args := append(append([]interface{}{}, filterArgs...), limit, opts.Offset)
 
@@ -322,7 +321,7 @@ func (s *SQLiteStore) List(ctx context.Context, opts ListOptions) ([]Summary, in
 		var startedAt, finishedAt sql.NullString
 
 		if err := rows.Scan(&ts.ID, &statusStr, &ts.RepoURL, &prompt, &ts.SessionType, &ts.Iteration,
-			&ts.Error, &ts.Branch, &ts.PRURL, &ts.WorkflowRunID, &changesJSON, &usageJSON, &createdAt, &startedAt, &finishedAt); err != nil {
+			&ts.Error, &ts.Branch, &ts.PRURL, &changesJSON, &usageJSON, &createdAt, &startedAt, &finishedAt); err != nil {
 			return nil, 0, fmt.Errorf("scanning session: %w", err)
 		}
 
@@ -409,7 +408,7 @@ func (s *SQLiteStore) FindByPR(ctx context.Context, repoURL string, prNumber int
 			result, error, changes_json, usage_json,
 			iteration, current_prompt,
 			branch, pr_number, pr_url,
-			workflow_run_id, trace_id, created_at, started_at, finished_at, updated_at,
+			trace_id, created_at, started_at, finished_at, updated_at,
 			review_result_json
 		 FROM sessions
 		 WHERE repo_url = ? AND pr_number = ? AND status != 'failed'
@@ -420,7 +419,7 @@ func (s *SQLiteStore) FindByPR(ctx context.Context, repoURL string, prNumber int
 		&t.Result, &t.Error, &changesJSON, &usageJSON,
 		&t.Iteration, &t.CurrentPrompt,
 		&t.Branch, &t.PRNumber, &t.PRURL,
-		&t.WorkflowRunID, &t.TraceID, &createdAt, &startedAt, &finishedAt, &updatedAt,
+		&t.TraceID, &createdAt, &startedAt, &finishedAt, &updatedAt,
 		&reviewJSON,
 	)
 	if err == sql.ErrNoRows {

@@ -1,4 +1,4 @@
-package workflow
+package blueprint
 
 import (
 	"bytes"
@@ -10,10 +10,9 @@ import (
 
 const maxTemplateOutput = 1 << 20 // 1MB
 
-// TemplateContext holds data available to Go templates in workflow steps.
+// TemplateContext holds data available to Go templates in blueprint requests.
 type TemplateContext struct {
-	Params map[string]string            // workflow input parameters
-	Steps  map[string]map[string]string // step name → output key → value
+	Params map[string]string // blueprint input parameters
 }
 
 // Render evaluates a Go text/template string against the given context.
@@ -29,7 +28,7 @@ func Render(tmpl string, ctx TemplateContext) (string, error) {
 		"urlEncode": url.PathEscape,
 	}
 
-	t, err := template.New("workflow").
+	t, err := template.New("blueprint").
 		Option("missingkey=error").
 		Funcs(funcMap).
 		Parse(tmpl)

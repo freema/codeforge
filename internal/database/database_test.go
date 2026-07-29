@@ -33,8 +33,8 @@ func TestMigrations_AllApply(t *testing.T) {
 	if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM schema_migrations").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 6 {
-		t.Errorf("expected 6 migrations, got %d", count)
+	if count != 8 {
+		t.Errorf("expected 8 migrations, got %d", count)
 	}
 }
 
@@ -101,7 +101,7 @@ func TestSchema_SessionsTable(t *testing.T) {
 		"id", "status", "repo_url", "provider_key", "prompt", "session_type",
 		"callback_url", "config_json", "result", "error", "changes_json",
 		"usage_json", "iteration", "current_prompt", "branch", "pr_number",
-		"pr_url", "workflow_run_id", "trace_id", "created_at", "started_at",
+		"pr_url", "trace_id", "created_at", "started_at",
 		"finished_at", "updated_at", "review_result_json",
 	}
 	for _, col := range required {
@@ -190,33 +190,35 @@ func TestSchema_SessionsRoundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Insert — matches what sqlite_store.go does
+	// Insert — matches what sqlite_store.go does. Dormant legacy columns
+	// (e.g. the old workflow run id) are deliberately omitted: they carry
+	// NOT NULL DEFAULT '' so store writes succeed without them.
 	now := "2026-03-14T12:00:00.000"
 	_, err := db.ExecContext(context.Background(), `
 		INSERT INTO sessions (id, status, repo_url, provider_key, prompt, session_type,
 			callback_url, config_json, result, error, changes_json, usage_json,
 			iteration, current_prompt, branch, pr_number, pr_url,
-			workflow_run_id, trace_id, review_result_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			trace_id, review_result_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"session-1", "pending", "https://github.com/test/repo", "my-key",
 		"do something", "code", "", "{}", "", "", "{}", "{}",
-		1, "", "", 0, "", "run-1", "", "", now, now,
+		1, "", "", 0, "", "", "", now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Select + Scan — matches sqlite_store.go Get() query
-	var id, status, repoURL, prompt, sessionType, workflowRunID string
+	var id, status, repoURL, prompt, sessionType string
 	var iteration int
 	err = db.QueryRowContext(context.Background(), `
-		SELECT id, status, repo_url, prompt, session_type, iteration, workflow_run_id
+		SELECT id, status, repo_url, prompt, session_type, iteration
 		FROM sessions WHERE id = ?`, "session-1",
-	).Scan(&id, &status, &repoURL, &prompt, &sessionType, &iteration, &workflowRunID)
+	).Scan(&id, &status, &repoURL, &prompt, &sessionType, &iteration)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if workflowRunID != "run-1" {
-		t.Errorf("workflow_run_id: got %q, want %q", workflowRunID, "run-1")
+	if id != "session-1" || status != "pending" || iteration != 1 {
+		t.Errorf("roundtrip mismatch: id=%s status=%s iteration=%d", id, status, iteration)
 	}
 }

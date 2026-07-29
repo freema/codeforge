@@ -123,8 +123,8 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 // createSession validates a session request and creates the session — the
-// shared tail of the normal create path, also reused by preset runs so both
-// apply identical validation and tenant enforcement.
+// shared tail of the normal create path, also reused by blueprint runs so
+// both apply identical validation and tenant enforcement.
 func (h *SessionHandler) createSession(w http.ResponseWriter, r *http.Request, req session.CreateSessionRequest) {
 	if err := validate.Struct(req); err != nil {
 		var validationErrs validator.ValidationErrors
