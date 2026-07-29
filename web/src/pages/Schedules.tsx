@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import {
   CalendarClock,
@@ -7,7 +7,6 @@ import {
   History,
   Loader2,
   Play,
-  Plus,
   Trash2,
   TriangleAlert,
 } from "lucide-react";
@@ -16,27 +15,13 @@ import { useToast } from "../context/ToastContext";
 import {
   useSchedules,
   useScheduleRuns,
-  useCreateSchedule,
   useUpdateSchedule,
   useDeleteSchedule,
   useRunSchedule,
 } from "../hooks/useSchedules";
-import { useCLIs } from "../hooks/useCLIs";
+import AddScheduleForm from "../components/schedules/AddScheduleForm";
 import { formatTimeAgo } from "../lib/formatters";
 import type { Schedule, ScheduleRunStatus } from "../types";
-
-const inputCls =
-  "w-full rounded-md border border-edge bg-input px-3 py-2 text-sm text-fg placeholder-fg-4 transition-colors focus:border-accent focus:outline-none";
-
-const DEFAULT_CRON = "*/15 * * * *";
-
-const CRON_PRESETS = [
-  { value: DEFAULT_CRON, label: "Every 15 min" },
-  { value: "0 * * * *", label: "Hourly" },
-  { value: "0 3 * * *", label: "Daily 03:00" },
-  { value: "0 3 * * 0", label: "Weekly Sun 03:00" },
-  { value: "custom", label: "Custom" },
-];
 
 /* Run-history status → semantic tint (ok = fired/completed, danger = failed,
    muted = skipped) */
@@ -350,164 +335,6 @@ function RunHistory({ scheduleId }: { scheduleId: string }) {
         </div>
       ))}
     </div>
-  );
-}
-
-function AddScheduleForm() {
-  const { toast } = useToast();
-  const createSchedule = useCreateSchedule();
-  const { data: clis } = useCLIs();
-
-  const [name, setName] = useState("");
-  const [cronPreset, setCronPreset] = useState(DEFAULT_CRON);
-  const [customCron, setCustomCron] = useState("");
-  const [repoUrl, setRepoUrl] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [cli, setCli] = useState("");
-  const [providerKey, setProviderKey] = useState("");
-  const [timezone, setTimezone] = useState("");
-
-  const availableClis = useMemo(
-    () => clis?.filter((c) => c.available) ?? [],
-    [clis],
-  );
-
-  // Auto-select default CLI once the list loads (same pattern as NewSession)
-  useEffect(() => {
-    if (availableClis.length > 0 && !cli) {
-      const defaultCli = availableClis.find((c) => c.is_default);
-      setCli(defaultCli?.name ?? availableClis[0]!.name);
-    }
-  }, [availableClis, cli]);
-
-  async function handleCreate(e: FormEvent) {
-    e.preventDefault();
-    const cron = cronPreset === "custom" ? customCron.trim() : cronPreset;
-    try {
-      await createSchedule.mutateAsync({
-        name,
-        cron,
-        ...(timezone.trim() ? { timezone: timezone.trim() } : {}),
-        session_request: {
-          repo_url: repoUrl,
-          prompt,
-          ...(providerKey.trim() ? { provider_key: providerKey.trim() } : {}),
-          ...(cli ? { config: { cli } } : {}),
-        },
-      });
-      toast("success", "Schedule created");
-      setName("");
-      setCronPreset(DEFAULT_CRON);
-      setCustomCron("");
-      setRepoUrl("");
-      setPrompt("");
-      setCli("");
-      setProviderKey("");
-      setTimezone("");
-    } catch (err) {
-      toast(
-        "error",
-        `Create failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
-
-  return (
-    <form
-      onSubmit={(e) => void handleCreate(e)}
-      className="overflow-hidden rounded-md border border-edge bg-surface"
-    >
-      <div className="border-b border-edge px-5 py-3.5">
-        <span className="eyebrow">New schedule</span>
-      </div>
-      <div className="p-5">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Name"
-            required
-            className={inputCls}
-          />
-          <select
-            value={cronPreset}
-            onChange={(e) => setCronPreset(e.target.value)}
-            className={inputCls}
-          >
-            {CRON_PRESETS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-          {cronPreset === "custom" && (
-            <input
-              type="text"
-              value={customCron}
-              onChange={(e) => setCustomCron(e.target.value)}
-              placeholder="Cron expression (e.g. 0 6 * * 1-5)"
-              required
-              className={`${inputCls} font-mono sm:col-span-2`}
-            />
-          )}
-          <input
-            type="text"
-            value={repoUrl}
-            onChange={(e) => setRepoUrl(e.target.value)}
-            placeholder="Repository URL"
-            required
-            className={`${inputCls} font-mono sm:col-span-2`}
-          />
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Prompt"
-            required
-            rows={3}
-            className={`${inputCls} resize-y sm:col-span-2`}
-          />
-          <select
-            value={cli}
-            onChange={(e) => setCli(e.target.value)}
-            className={`${inputCls} font-mono`}
-          >
-            {availableClis.map((c) => (
-              <option key={c.name} value={c.name}>
-                {c.name + (c.is_default ? " (default)" : "")}
-              </option>
-            ))}
-          </select>
-          <input
-            type="text"
-            value={providerKey}
-            onChange={(e) => setProviderKey(e.target.value)}
-            placeholder="Provider key name (optional)"
-            className={`${inputCls} font-mono`}
-          />
-          <input
-            type="text"
-            value={timezone}
-            onChange={(e) => setTimezone(e.target.value)}
-            placeholder="Europe/Prague — optional"
-            title="Timezone for cron evaluation (IANA name)"
-            className={`${inputCls} font-mono`}
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={createSchedule.isPending}
-          className="mt-4 flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
-        >
-          {createSchedule.isPending ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Plus className="size-4" />
-          )}
-          Create schedule
-        </button>
-      </div>
-    </form>
   );
 }
 
