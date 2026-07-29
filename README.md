@@ -12,9 +12,34 @@
 
 ## Overview
 
-CodeForge is a backend orchestrator for AI-powered code work over git repositories. A **session** is a stateful work unit over a repo — it clones, runs an AI CLI (Claude Code, Codex, Cursor), streams progress via SSE, and supports multi-turn follow-ups, code review, PR creation, and webhook-triggered PR reviews. A React web UI is included.
+CodeForge is a backend orchestrator for AI-powered code work over git repositories. A **session** is a stateful work unit over a repo — it clones, runs an AI CLI (Claude Code, Codex, Cursor), streams progress live, and keeps the workspace around for follow-ups, review, and PR creation. A React web UI is included.
 
 **Two modes:** Server (queue + workers + API + UI) or **CI Action** (self-contained GitHub Action / GitLab CI step for automated PR review).
+
+### Highlights
+
+- **Multi-turn sessions** with native conversation resume (`claude --resume`) — follow-ups keep full context
+- **Live stream** of tool calls, thinking, plan progress, and per-turn token/dollar cost (SSE)
+- **Human-in-the-loop** — inspect the actual diff in the UI before a PR is ever opened; PRs only on explicit action
+- **Code review built in** — review a session's changes, or let GitHub/GitLab webhooks trigger PR reviews automatically
+- **Schedules** — recurring cron sessions with run history, overlap guard, and failure notifications
+- **Cost & usage tracking** per session and per tenant, with quotas and a key pool (subscription mode)
+- **Multi-CLI** (Claude Code, Codex, Cursor) selectable per session, plus MCP tool integration
+- **Ops-friendly** — Redis queue with crash-safe recovery, Prometheus metrics, Slack/Discord/Teams notifications
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" alt="Dashboard — success rate, cost, sessions" width="900"/>
+</p>
+
+| Session with live stream, cost & diff | Recurring schedules |
+|---|---|
+| ![Session detail](docs/screenshots/session-changes.png) | ![Schedules](docs/screenshots/schedules.png) |
+
+| New session | Session list |
+|---|---|
+| ![New session](docs/screenshots/new-session.png) | ![Sessions](docs/screenshots/sessions.png) |
 
 ## Quick Start
 
