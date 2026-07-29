@@ -17,6 +17,10 @@ export function formatTimeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
+export function formatCost(usd: number): string {
+  return `$${usd >= 1 ? usd.toFixed(2) : usd.toFixed(3)}`;
+}
+
 export function formatChangesSummary(c: {
   files_modified: number;
   files_created: number;

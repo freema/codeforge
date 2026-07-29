@@ -49,6 +49,12 @@ type Session struct {
 	CurrentPrompt string      `json:"current_prompt,omitempty"` // follow-up prompt for current iteration (set by Instruct)
 	Iterations    []Iteration `json:"iterations,omitempty"`     // populated on demand via ?include=iterations
 
+	// CLISessionID is the CLI-native conversation id from the last successful
+	// main run (Claude Code session_id). Used to resume the conversation natively
+	// via `claude --resume` on follow-up instructions. Empty for CLIs without
+	// native resume (codex, cursor) or after a failed resume attempt.
+	CLISessionID string `json:"cli_session_id,omitempty"`
+
 	// Git integration — PRNumber is the PR created by CodeForge (via create-pr).
 	// For the input PR number on pr_review sessions, see Config.PRNumber.
 	Branch   string `json:"branch,omitempty"`
@@ -78,11 +84,34 @@ type Session struct {
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
 }
 
-// UsageInfo tracks token usage and duration.
+// UsageInfo tracks token usage, cost, and duration.
 type UsageInfo struct {
-	InputTokens     int `json:"input_tokens"`
-	OutputTokens    int `json:"output_tokens"`
-	DurationSeconds int `json:"duration_seconds"`
+	InputTokens         int     `json:"input_tokens"`
+	OutputTokens        int     `json:"output_tokens"`
+	CacheReadTokens     int     `json:"cache_read_tokens,omitempty"`
+	CacheCreationTokens int     `json:"cache_creation_tokens,omitempty"`
+	CostUSD             float64 `json:"cost_usd,omitempty"`
+	DurationSeconds     int     `json:"duration_seconds"`
+}
+
+// AccumulateUsage returns the element-wise sum of two usage records.
+// Used to keep Session.Usage the true multi-turn total while per-iteration
+// usage stays in Iteration.Usage. Either argument may be nil.
+func AccumulateUsage(existing, delta *UsageInfo) *UsageInfo {
+	if existing == nil {
+		return delta
+	}
+	if delta == nil {
+		return existing
+	}
+	return &UsageInfo{
+		InputTokens:         existing.InputTokens + delta.InputTokens,
+		OutputTokens:        existing.OutputTokens + delta.OutputTokens,
+		CacheReadTokens:     existing.CacheReadTokens + delta.CacheReadTokens,
+		CacheCreationTokens: existing.CacheCreationTokens + delta.CacheCreationTokens,
+		CostUSD:             existing.CostUSD + delta.CostUSD,
+		DurationSeconds:     existing.DurationSeconds + delta.DurationSeconds,
+	}
 }
 
 // Config holds per-session configuration overrides.

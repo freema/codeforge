@@ -276,7 +276,9 @@ func (s *Service) UpdateStatus(ctx context.Context, sessionID string, newStatus 
 	return nil
 }
 
-// SetResult stores the session result and changes summary.
+// SetResult stores the session result and changes summary. Usage is
+// accumulated on top of the session's existing usage so Session.Usage is the
+// true multi-turn total; per-iteration usage stays in Iteration.Usage.
 func (s *Service) SetResult(ctx context.Context, sessionID string, result string, changes *gitpkg.ChangesSummary, usage *UsageInfo) error {
 	resultKey := s.redis.Key("session", sessionID, "result")
 	stateKey := s.redis.Key("session", sessionID, "state")
@@ -286,6 +288,9 @@ func (s *Service) SetResult(ctx context.Context, sessionID string, result string
 		fields["changes_summary"] = MarshalChangesSummary(changes)
 	}
 	if usage != nil {
+		if existing, err := s.redis.Unwrap().HGet(ctx, stateKey, "usage").Result(); err == nil {
+			usage = AccumulateUsage(UnmarshalUsageInfo(existing), usage)
+		}
 		fields["usage"] = MarshalUsageInfo(usage)
 	}
 
@@ -425,6 +430,9 @@ type Summary struct {
 	PRURL          string                 `json:"pr_url,omitempty"`
 	WorkflowRunID  string                 `json:"workflow_run_id,omitempty"`
 	ChangesSummary *gitpkg.ChangesSummary `json:"changes_summary,omitempty"`
+	InputTokens    int                    `json:"input_tokens,omitempty"`
+	OutputTokens   int                    `json:"output_tokens,omitempty"`
+	CostUSD        float64                `json:"cost_usd,omitempty"`
 	CreatedAt      time.Time              `json:"created_at"`
 	StartedAt      *time.Time             `json:"started_at,omitempty"`
 	FinishedAt     *time.Time             `json:"finished_at,omitempty"`
@@ -495,7 +503,7 @@ func (s *Service) List(ctx context.Context, opts ListOptions) ([]Summary, int, e
 			continue
 		}
 
-		sessions = append(sessions, Summary{
+		summary := Summary{
 			ID:             t.ID,
 			Status:         t.Status,
 			RepoURL:        t.RepoURL,
@@ -510,7 +518,13 @@ func (s *Service) List(ctx context.Context, opts ListOptions) ([]Summary, int, e
 			CreatedAt:      t.CreatedAt,
 			StartedAt:      t.StartedAt,
 			FinishedAt:     t.FinishedAt,
-		})
+		}
+		if t.Usage != nil {
+			summary.InputTokens = t.Usage.InputTokens
+			summary.OutputTokens = t.Usage.OutputTokens
+			summary.CostUSD = t.Usage.CostUSD
+		}
+		sessions = append(sessions, summary)
 	}
 
 	sortByCreatedDesc(sessions)
@@ -660,6 +674,18 @@ func (s *Service) UpdateConfig(ctx context.Context, sessionID string, cfg *Confi
 	return nil
 }
 
+// SetCLISessionID stores (or clears, when empty) the CLI-native conversation id
+// used for native resume (claude --resume) on follow-up iterations. Redis-only:
+// the id is an operational hint tied to the live workspace, not part of the
+// durable session record.
+func (s *Service) SetCLISessionID(ctx context.Context, sessionID, cliSessionID string) error {
+	stateKey := s.redis.Key("session", sessionID, "state")
+	if err := s.redis.Unwrap().HSet(ctx, stateKey, "cli_session_id", cliSessionID).Err(); err != nil {
+		return fmt.Errorf("setting cli session id: %w", err)
+	}
+	return nil
+}
+
 // SetError stores an error message on the session.
 func (s *Service) SetError(ctx context.Context, sessionID string, errMsg string) error {
 	stateKey := s.redis.Key("session", sessionID, "state")
@@ -711,6 +737,9 @@ func (s *Service) sessionToHash(t *Session) map[string]interface{} {
 	if t.ReviewModel != "" {
 		fields["review_model"] = t.ReviewModel
 	}
+	if t.CLISessionID != "" {
+		fields["cli_session_id"] = t.CLISessionID
+	}
 	if len(t.Metadata) > 0 {
 		b, _ := json.Marshal(t.Metadata)
 		fields["metadata"] = string(b)
@@ -730,6 +759,7 @@ func (s *Service) hashToSession(fields map[string]string) *Session {
 		SessionType:   fields["session_type"],
 		CallbackURL:   fields["callback_url"],
 		CurrentPrompt: fields["current_prompt"],
+		CLISessionID:  fields["cli_session_id"],
 		Branch:        fields["branch"],
 		PRURL:         fields["pr_url"],
 		Error:         fields["error"],

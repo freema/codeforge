@@ -1,24 +1,29 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
 import {
   CalendarClock,
+  ChevronDown,
   CircleAlert,
+  History,
   Loader2,
   Play,
   Plus,
   Trash2,
+  TriangleAlert,
 } from "lucide-react";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useToast } from "../context/ToastContext";
 import {
   useSchedules,
+  useScheduleRuns,
   useCreateSchedule,
   useUpdateSchedule,
   useDeleteSchedule,
   useRunSchedule,
 } from "../hooks/useSchedules";
+import { useCLIs } from "../hooks/useCLIs";
 import { formatTimeAgo } from "../lib/formatters";
-import type { Schedule } from "../types";
+import type { Schedule, ScheduleRunStatus } from "../types";
 
 const inputCls =
   "w-full rounded-md border border-edge bg-input px-3 py-2 text-sm text-fg placeholder-fg-4 transition-colors focus:border-accent focus:outline-none";
@@ -33,11 +38,15 @@ const CRON_PRESETS = [
   { value: "custom", label: "Custom" },
 ];
 
-const CLI_OPTIONS = [
-  { value: "claude-code", label: "Claude Code" },
-  { value: "codex", label: "Codex" },
-  { value: "cursor", label: "Cursor" },
-];
+/* Run-history status → semantic tint (ok = fired/completed, danger = failed,
+   muted = skipped) */
+const RUN_STATUS_STYLES: Record<ScheduleRunStatus, string> = {
+  fired: "border-ok/25 bg-ok/10 text-ok",
+  session_completed: "border-ok/25 bg-ok/10 text-ok",
+  fire_failed: "border-danger/25 bg-danger/10 text-danger",
+  session_failed: "border-danger/25 bg-danger/10 text-danger",
+  skipped_overlap: "border-edge bg-surface text-fg-4",
+};
 
 function extractRepoName(repoUrl: string): string {
   return repoUrl
@@ -130,6 +139,7 @@ function ScheduleCard({ schedule }: { schedule: Schedule }) {
   const runSchedule = useRunSchedule();
   const deleteSchedule = useDeleteSchedule();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   function handleRun() {
     runSchedule.mutate(schedule.id, {
@@ -167,11 +177,26 @@ function ScheduleCard({ schedule }: { schedule: Schedule }) {
             />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium text-fg">{schedule.name}</span>
               <span className="rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-xs text-fg-2">
                 {schedule.cron}
               </span>
+              {schedule.timezone && (
+                <span className="rounded-[4px] border border-edge bg-surface-alt px-1.5 py-0.5 font-mono text-xs text-fg-3">
+                  {schedule.timezone}
+                </span>
+              )}
+              {schedule.consecutive_failures > 0 && (
+                <span
+                  className="flex items-center gap-1 rounded-[4px] border border-warn/25 bg-warn/10 px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-warn uppercase"
+                  title="Consecutive failures"
+                >
+                  <TriangleAlert className="size-3" />
+                  {schedule.consecutive_failures}{" "}
+                  {schedule.consecutive_failures === 1 ? "failure" : "failures"}
+                </span>
+              )}
             </div>
             <p className="mt-0.5 text-xs text-fg-4">
               <span className="font-mono">
@@ -239,6 +264,91 @@ function ScheduleCard({ schedule }: { schedule: Schedule }) {
           )}
         </div>
       </div>
+
+      {schedule.disabled_reason && (
+        <div className="mt-3 flex items-center gap-2 rounded-md border border-danger/25 bg-danger/10 px-3 py-2 text-xs text-danger">
+          <CircleAlert className="size-3.5 shrink-0" />
+          <span>Disabled: {schedule.disabled_reason}</span>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setShowHistory((v) => !v)}
+        className="mt-3 flex items-center gap-1.5 text-xs font-medium text-fg-3 transition-colors hover:text-fg"
+      >
+        <History className="size-3.5" />
+        Run history
+        <ChevronDown
+          className={`size-3.5 ${showHistory ? "rotate-180" : ""}`}
+        />
+      </button>
+      {showHistory && <RunHistory scheduleId={schedule.id} />}
+    </div>
+  );
+}
+
+function RunHistory({ scheduleId }: { scheduleId: string }) {
+  const { data: runs, isLoading, isError } = useScheduleRuns(scheduleId);
+
+  if (isLoading) {
+    return (
+      <div className="mt-2 flex items-center gap-2 rounded-md border border-edge bg-surface-alt px-3 py-2.5 text-xs text-fg-4">
+        <Loader2 className="size-3.5 animate-spin" />
+        Loading run history…
+      </div>
+    );
+  }
+  if (isError) {
+    return (
+      <div className="mt-2 rounded-md border border-danger/25 bg-danger/10 px-3 py-2.5 text-xs text-danger">
+        Failed to load run history.
+      </div>
+    );
+  }
+  if (!runs || runs.length === 0) {
+    return (
+      <div className="mt-2 rounded-md border border-edge bg-surface-alt px-3 py-2.5 text-xs text-fg-4">
+        No runs recorded yet.
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2 divide-y divide-edge overflow-hidden rounded-md border border-edge bg-surface-alt">
+      {runs.map((run) => (
+        <div key={run.id} className="flex items-center gap-3 px-3 py-2">
+          <span
+            className="w-16 shrink-0 font-mono text-xs text-fg-4"
+            title={new Date(run.created_at).toLocaleString()}
+          >
+            {formatTimeAgo(run.created_at)}
+          </span>
+          <span className="shrink-0 rounded-[4px] border border-edge bg-surface px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-fg-3 uppercase">
+            {run.trigger}
+          </span>
+          <span
+            className={`shrink-0 rounded-[4px] border px-1.5 py-0.5 font-mono text-[10px] tracking-wider uppercase ${RUN_STATUS_STYLES[run.status]}`}
+          >
+            {run.status.replace(/_/g, " ")}
+          </span>
+          {run.session_id && (
+            <Link
+              to={`/sessions/${run.session_id}`}
+              className="shrink-0 font-mono text-xs text-accent transition-colors hover:text-accent-hover"
+            >
+              {run.session_id.slice(0, 8)}
+            </Link>
+          )}
+          {run.error && (
+            <span
+              className="min-w-0 flex-1 truncate text-xs text-danger"
+              title={run.error}
+            >
+              {run.error}
+            </span>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -246,14 +356,29 @@ function ScheduleCard({ schedule }: { schedule: Schedule }) {
 function AddScheduleForm() {
   const { toast } = useToast();
   const createSchedule = useCreateSchedule();
+  const { data: clis } = useCLIs();
 
   const [name, setName] = useState("");
   const [cronPreset, setCronPreset] = useState(DEFAULT_CRON);
   const [customCron, setCustomCron] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [cli, setCli] = useState("claude-code");
+  const [cli, setCli] = useState("");
   const [providerKey, setProviderKey] = useState("");
+  const [timezone, setTimezone] = useState("");
+
+  const availableClis = useMemo(
+    () => clis?.filter((c) => c.available) ?? [],
+    [clis],
+  );
+
+  // Auto-select default CLI once the list loads (same pattern as NewSession)
+  useEffect(() => {
+    if (availableClis.length > 0 && !cli) {
+      const defaultCli = availableClis.find((c) => c.is_default);
+      setCli(defaultCli?.name ?? availableClis[0]!.name);
+    }
+  }, [availableClis, cli]);
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
@@ -262,11 +387,12 @@ function AddScheduleForm() {
       await createSchedule.mutateAsync({
         name,
         cron,
+        ...(timezone.trim() ? { timezone: timezone.trim() } : {}),
         session_request: {
           repo_url: repoUrl,
           prompt,
           ...(providerKey.trim() ? { provider_key: providerKey.trim() } : {}),
-          config: { cli },
+          ...(cli ? { config: { cli } } : {}),
         },
       });
       toast("success", "Schedule created");
@@ -275,8 +401,9 @@ function AddScheduleForm() {
       setCustomCron("");
       setRepoUrl("");
       setPrompt("");
-      setCli("claude-code");
+      setCli("");
       setProviderKey("");
+      setTimezone("");
     } catch (err) {
       toast(
         "error",
@@ -343,11 +470,11 @@ function AddScheduleForm() {
           <select
             value={cli}
             onChange={(e) => setCli(e.target.value)}
-            className={inputCls}
+            className={`${inputCls} font-mono`}
           >
-            {CLI_OPTIONS.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
+            {availableClis.map((c) => (
+              <option key={c.name} value={c.name}>
+                {c.name + (c.is_default ? " (default)" : "")}
               </option>
             ))}
           </select>
@@ -356,6 +483,14 @@ function AddScheduleForm() {
             value={providerKey}
             onChange={(e) => setProviderKey(e.target.value)}
             placeholder="Provider key name (optional)"
+            className={`${inputCls} font-mono`}
+          />
+          <input
+            type="text"
+            value={timezone}
+            onChange={(e) => setTimezone(e.target.value)}
+            placeholder="Europe/Prague — optional"
+            title="Timezone for cron evaluation (IANA name)"
             className={`${inputCls} font-mono`}
           />
         </div>

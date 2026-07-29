@@ -245,6 +245,57 @@ func TestStartReviewAsync_StoresReviewParams(t *testing.T) {
 	}
 }
 
+func TestSetResult_AccumulatesUsage(t *testing.T) {
+	svc, _ := setupTestService(t)
+	ctx := context.Background()
+
+	sess := createTestSession(t, svc, StatusCompleted)
+
+	// First iteration usage
+	if err := svc.SetResult(ctx, sess.ID, "first result", nil, &UsageInfo{
+		InputTokens:         100,
+		OutputTokens:        50,
+		CacheReadTokens:     1000,
+		CacheCreationTokens: 200,
+		CostUSD:             0.25,
+		DurationSeconds:     30,
+	}); err != nil {
+		t.Fatalf("SetResult first: %v", err)
+	}
+
+	// Second iteration usage must accumulate on top of the first
+	if err := svc.SetResult(ctx, sess.ID, "second result", nil, &UsageInfo{
+		InputTokens:         40,
+		OutputTokens:        20,
+		CacheReadTokens:     500,
+		CacheCreationTokens: 100,
+		CostUSD:             0.125,
+		DurationSeconds:     15,
+	}); err != nil {
+		t.Fatalf("SetResult second: %v", err)
+	}
+
+	got, err := svc.Get(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Usage == nil {
+		t.Fatal("usage is nil, want accumulated usage")
+	}
+
+	want := UsageInfo{
+		InputTokens:         140,
+		OutputTokens:        70,
+		CacheReadTokens:     1500,
+		CacheCreationTokens: 300,
+		CostUSD:             0.375,
+		DurationSeconds:     45,
+	}
+	if *got.Usage != want {
+		t.Errorf("accumulated usage = %+v, want %+v", *got.Usage, want)
+	}
+}
+
 // isConflictError checks if an error is a 409 conflict.
 func isConflictError(err error) bool {
 	return err != nil && (contains(err.Error(), "cannot start review") || contains(err.Error(), "cannot be reviewed"))

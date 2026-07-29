@@ -304,7 +304,7 @@ func (s *SQLiteStore) List(ctx context.Context, opts ListOptions) ([]Summary, in
 		return nil, 0, fmt.Errorf("counting sessions: %w", err)
 	}
 
-	const cols = `id, status, repo_url, prompt, session_type, iteration, error, branch, pr_url, workflow_run_id, changes_json, created_at, started_at, finished_at`
+	const cols = `id, status, repo_url, prompt, session_type, iteration, error, branch, pr_url, workflow_run_id, changes_json, usage_json, created_at, started_at, finished_at`
 	query := "SELECT " + cols + " FROM sessions" + whereClause + " ORDER BY created_at DESC LIMIT ? OFFSET ?"
 	args := append(append([]interface{}{}, filterArgs...), limit, opts.Offset)
 
@@ -318,11 +318,11 @@ func (s *SQLiteStore) List(ctx context.Context, opts ListOptions) ([]Summary, in
 	for rows.Next() {
 		var ts Summary
 		var statusStr, prompt, createdAt string
-		var changesJSON sql.NullString
+		var changesJSON, usageJSON sql.NullString
 		var startedAt, finishedAt sql.NullString
 
 		if err := rows.Scan(&ts.ID, &statusStr, &ts.RepoURL, &prompt, &ts.SessionType, &ts.Iteration,
-			&ts.Error, &ts.Branch, &ts.PRURL, &ts.WorkflowRunID, &changesJSON, &createdAt, &startedAt, &finishedAt); err != nil {
+			&ts.Error, &ts.Branch, &ts.PRURL, &ts.WorkflowRunID, &changesJSON, &usageJSON, &createdAt, &startedAt, &finishedAt); err != nil {
 			return nil, 0, fmt.Errorf("scanning session: %w", err)
 		}
 
@@ -332,6 +332,13 @@ func (s *SQLiteStore) List(ctx context.Context, opts ListOptions) ([]Summary, in
 			cs := UnmarshalChangesSummary(changesJSON.String)
 			if cs != nil && (cs.FilesModified > 0 || cs.FilesCreated > 0 || cs.FilesDeleted > 0) {
 				ts.ChangesSummary = cs
+			}
+		}
+		if usageJSON.Valid {
+			if u := UnmarshalUsageInfo(usageJSON.String); u != nil {
+				ts.InputTokens = u.InputTokens
+				ts.OutputTokens = u.OutputTokens
+				ts.CostUSD = u.CostUSD
 			}
 		}
 		ts.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)

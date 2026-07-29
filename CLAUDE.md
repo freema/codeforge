@@ -83,7 +83,6 @@ api/                   OpenAPI specification
 configs/               Example config files
 deployments/           Dockerfiles, docker-compose
 tests/                 Integration + E2E tests
-tasks/                 Planning documents (not code)
 ```
 
 ## Conventions

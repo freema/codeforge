@@ -104,6 +104,49 @@ export interface UsageInfo {
   input_tokens: number;
   output_tokens: number;
   duration_seconds: number;
+  cost_usd?: number;
+  cache_read_tokens?: number;
+  cache_creation_tokens?: number;
+}
+
+/** One item of GET /sessions — a Summary with accumulated usage totals. */
+export interface SessionSummary extends Session {
+  input_tokens?: number;
+  output_tokens?: number;
+  cost_usd?: number;
+}
+
+/** One changed file in GET /sessions/:id/diff. */
+export interface FileDiff {
+  path: string;
+  status: "added" | "modified" | "deleted" | "renamed";
+  additions: number;
+  deletions: number;
+}
+
+/** Response of GET /sessions/:id/diff — uncommitted workspace changes. */
+export interface SessionDiff {
+  files: FileDiff[] | null;
+  diff: string;
+  total_additions: number;
+  total_deletions: number;
+  truncated: boolean;
+}
+
+/** A saved, reusable session configuration (operator-only). */
+export interface Preset {
+  id: string;
+  name: string;
+  description?: string;
+  request: CreateSessionRequest;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePresetRequest {
+  name: string;
+  description?: string;
+  request: CreateSessionRequest;
 }
 
 export interface Iteration {

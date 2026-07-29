@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -36,6 +37,14 @@ type tenantSessionCounter interface {
 	CountActiveByTenant(ctx context.Context, tenantID string) (int, error)
 }
 
+// workspacePathResolver resolves a session's live workspace directory and
+// records workspace activity (Touch extends the TTL window on access).
+// Implemented by *workspace.Manager; kept as an interface so handler tests can fake it.
+type workspacePathResolver interface {
+	WorkspacePath(ctx context.Context, sessionID string) string
+	Touch(ctx context.Context, sessionID string)
+}
+
 // SessionHandler handles session-related HTTP endpoints.
 type SessionHandler struct {
 	service         *session.Service
@@ -44,13 +53,14 @@ type SessionHandler struct {
 	cliRegistry     *runner.Registry
 	keyRegistry     keys.Registry
 	providerDomains map[string]string
-	tenantService   *tenant.Service      // optional, nil = subscription disabled
-	sessionCounter  tenantSessionCounter // optional, nil = concurrency limit not enforced
+	tenantService   *tenant.Service       // optional, nil = subscription disabled
+	sessionCounter  tenantSessionCounter  // optional, nil = concurrency limit not enforced
+	workspaces      workspacePathResolver // optional, nil = diff endpoint reports workspace missing
 }
 
 // NewSessionHandler creates a new session handler.
-func NewSessionHandler(service *session.Service, prService *session.PRService, canceller Canceller, cliRegistry *runner.Registry, keyRegistry keys.Registry, providerDomains map[string]string, tenantService *tenant.Service) *SessionHandler {
-	h := &SessionHandler{service: service, prService: prService, canceller: canceller, cliRegistry: cliRegistry, keyRegistry: keyRegistry, providerDomains: providerDomains, tenantService: tenantService}
+func NewSessionHandler(service *session.Service, prService *session.PRService, canceller Canceller, cliRegistry *runner.Registry, keyRegistry keys.Registry, providerDomains map[string]string, tenantService *tenant.Service, workspaces workspacePathResolver) *SessionHandler {
+	h := &SessionHandler{service: service, prService: prService, canceller: canceller, cliRegistry: cliRegistry, keyRegistry: keyRegistry, providerDomains: providerDomains, tenantService: tenantService, workspaces: workspaces}
 	if service != nil {
 		h.sessionCounter = service
 	}
@@ -98,6 +108,13 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.createSession(w, r, req)
+}
+
+// createSession validates a session request and creates the session — the
+// shared tail of the normal create path, also reused by preset runs so both
+// apply identical validation and tenant enforcement.
+func (h *SessionHandler) createSession(w http.ResponseWriter, r *http.Request, req session.CreateSessionRequest) {
 	if err := validate.Struct(req); err != nil {
 		var validationErrs validator.ValidationErrors
 		if errors.As(err, &validationErrs) {
@@ -619,6 +636,46 @@ func (h *SessionHandler) GetPRStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, status)
+}
+
+// Diff handles GET /api/v1/sessions/{sessionID}/diff.
+// Returns the uncommitted diff of the session workspace against HEAD,
+// including untracked files. 404 when the workspace has expired.
+func (h *SessionHandler) Diff(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "session ID is required")
+		return
+	}
+
+	if _, err := h.service.Get(r.Context(), sessionID); err != nil {
+		writeAppError(w, err)
+		return
+	}
+
+	var wsPath string
+	if h.workspaces != nil {
+		wsPath = h.workspaces.WorkspacePath(r.Context(), sessionID)
+	}
+	if wsPath == "" {
+		writeAppError(w, apperror.NotFound("workspace expired or not found"))
+		return
+	}
+	if info, err := os.Stat(wsPath); err != nil || !info.IsDir() {
+		writeAppError(w, apperror.NotFound("workspace expired or not found"))
+		return
+	}
+
+	// Reading the diff is workspace activity — extend the TTL window.
+	h.workspaces.Touch(r.Context(), sessionID)
+
+	diff, err := gitpkg.Diff(r.Context(), wsPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to compute workspace diff: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, diff)
 }
 
 // ListSessionTypes handles GET /api/v1/session-types.

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -67,6 +68,13 @@ type SessionNotifier interface {
 	Notify(ctx context.Context, ev notify.Event)
 }
 
+// ScheduleRecorder feeds terminal outcomes of schedule-fired sessions back to
+// the schedule subsystem (run history + consecutive-failure tracking).
+// Implemented by *schedule.Scheduler; optional (nil = no recording).
+type ScheduleRecorder interface {
+	RecordSessionOutcome(ctx context.Context, scheduleID, sessionID string, succeeded bool, errMsg string)
+}
+
 // Executor orchestrates the full session lifecycle: clone → run CLI → diff → report.
 type Executor struct {
 	sessionService *session.Service
@@ -77,9 +85,10 @@ type Executor struct {
 	mcpInstaller   *mcp.Installer
 	toolResolver   *tools.Resolver
 	workspaceMgr   *workspace.Manager
-	prCreator      PRCreator       // optional, nil = auto-PR disabled
-	usageLogger    UsageLogger     // optional, nil = no per-tenant usage tracking
-	notifier       SessionNotifier // optional, nil = notifications disabled
+	prCreator      PRCreator        // optional, nil = auto-PR disabled
+	usageLogger    UsageLogger      // optional, nil = no per-tenant usage tracking
+	notifier       SessionNotifier  // optional, nil = notifications disabled
+	scheduleRec    ScheduleRecorder // optional, nil = no schedule outcome feedback
 	cfg            ExecutorConfig
 }
 
@@ -99,6 +108,25 @@ func (e *Executor) SetUsageLogger(ul UsageLogger) {
 // Optional — when unset, no notifications are sent.
 func (e *Executor) SetNotifier(n SessionNotifier) {
 	e.notifier = n
+}
+
+// SetScheduleRecorder wires schedule outcome feedback for schedule-fired
+// sessions. Optional — when unset, outcomes are not recorded.
+func (e *Executor) SetScheduleRecorder(r ScheduleRecorder) {
+	e.scheduleRec = r
+}
+
+// maybeRecordScheduleOutcome reports the terminal outcome to the schedule
+// subsystem when this session was fired by a schedule (best-effort).
+func (e *Executor) maybeRecordScheduleOutcome(ctx context.Context, t *session.Session, succeeded bool, errMsg string) {
+	if e.scheduleRec == nil {
+		return
+	}
+	scheduleID := t.Metadata["schedule_id"]
+	if scheduleID == "" {
+		return
+	}
+	e.scheduleRec.RecordSessionOutcome(ctx, scheduleID, t.ID, succeeded, errMsg)
 }
 
 // maybeNotify fills session identity into the event and delivers it (best-effort).
@@ -165,6 +193,10 @@ func (e *Executor) Execute(ctx context.Context, t *session.Session) {
 	log := slog.With("session_id", t.ID, "iteration", t.Iteration, "trace_id", t.TraceID)
 	startTime := time.Now().UTC()
 
+	// A panic in the executor would kill the whole process (chi's Recoverer only
+	// guards HTTP handlers) — recover, log, and fail the session instead.
+	defer e.recoverPanic(ctx, t, startTime, log)
+
 	// Emit user instruction for follow-up iterations so the UI shows what the user asked
 	if t.Iteration > 1 && t.CurrentPrompt != "" {
 		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "user_instruction", map[string]string{
@@ -185,7 +217,7 @@ func (e *Executor) Execute(ctx context.Context, t *session.Session) {
 
 	// Phase 1: resolve token + prepare workspace
 	e.resolveToken(sessionCtx, t, log)
-	workDir, err := e.setupWorkspace(sessionCtx, ctx, t, startTime, log)
+	workDir, freshClone, err := e.setupWorkspace(sessionCtx, ctx, t, startTime, log)
 	if err != nil {
 		return // failSession already called inside setupWorkspace
 	}
@@ -198,7 +230,7 @@ func (e *Executor) Execute(ctx context.Context, t *session.Session) {
 	}
 
 	// Phase 3: run CLI
-	result, err := e.runStep(sessionCtx, t, workDir, mcpConfigPath, log)
+	result, err := e.runStep(sessionCtx, t, workDir, mcpConfigPath, freshClone, log)
 	if err != nil {
 		// Timeout: complete gracefully with partial result instead of failing
 		if sessionCtx.Err() == context.DeadlineExceeded {
@@ -211,6 +243,22 @@ func (e *Executor) Execute(ctx context.Context, t *session.Session) {
 
 	// Phase 4: finalize
 	e.completeSession(ctx, t, result, workDir, startTime, false, log)
+}
+
+// recoverPanic is deferred at the top of Execute and executeReview: it turns a
+// panic anywhere in the execution pipeline into a failed session instead of a
+// process crash. The detached context ensures the failure state is persisted
+// even when the session context is already canceled.
+func (e *Executor) recoverPanic(ctx context.Context, t *session.Session, startTime time.Time, log *slog.Logger) {
+	r := recover()
+	if r == nil {
+		return
+	}
+	log.Error("panic during session execution",
+		"panic", fmt.Sprintf("%v", r),
+		"stack", string(debug.Stack()),
+	)
+	e.failSession(context.WithoutCancel(ctx), t, "internal error: panic during execution", startTime, log)
 }
 
 // resolveTimeout determines the effective session timeout in seconds.
@@ -239,8 +287,10 @@ func (e *Executor) resolveToken(ctx context.Context, t *session.Session, log *sl
 }
 
 // setupWorkspace resolves or clones the workspace directory.
-// Returns the workDir path or calls failSession and returns an error.
-func (e *Executor) setupWorkspace(sessionCtx, parentCtx context.Context, t *session.Session, startTime time.Time, log *slog.Logger) (string, error) {
+// Returns the workDir path plus freshClone=true when the directory was
+// (re-)cloned this iteration — a fresh clone has no prior CLI conversation
+// to resume. On failure it calls failSession and returns the error.
+func (e *Executor) setupWorkspace(sessionCtx, parentCtx context.Context, t *session.Session, startTime time.Time, log *slog.Logger) (string, bool, error) {
 	workDir := filepath.Join(e.cfg.WorkspaceBase, t.ID)
 	if e.workspaceMgr != nil {
 		if ws := e.workspaceMgr.Get(parentCtx, t.ID); ws != nil && ws.Path != "" {
@@ -254,7 +304,8 @@ func (e *Executor) setupWorkspace(sessionCtx, parentCtx context.Context, t *sess
 			if _, statErr := os.Stat(refWs.Path); statErr == nil {
 				log.Info("reusing workspace from referenced session",
 					"ref_session_id", t.Config.WorkspaceSessionID, "work_dir", refWs.Path)
-				return refWs.Path, nil
+				e.workspaceMgr.Touch(parentCtx, t.Config.WorkspaceSessionID)
+				return refWs.Path, false, nil
 			}
 		}
 	}
@@ -263,7 +314,7 @@ func (e *Executor) setupWorkspace(sessionCtx, parentCtx context.Context, t *sess
 	if t.Iteration <= 1 {
 		if err := e.cloneStep(sessionCtx, t, workDir, log); err != nil {
 			e.terminateOnError(parentCtx, t, fmt.Sprintf("clone failed: %v", err), startTime, log)
-			return "", err
+			return "", false, err
 		}
 		// Re-resolve workDir — cloneStep may have created workspace at a slug-based path
 		if e.workspaceMgr != nil {
@@ -271,7 +322,7 @@ func (e *Executor) setupWorkspace(sessionCtx, parentCtx context.Context, t *sess
 				workDir = ws.Path
 			}
 		}
-		return workDir, nil
+		return workDir, true, nil
 	}
 
 	// Follow-up iteration: reuse or re-clone
@@ -279,16 +330,33 @@ func (e *Executor) setupWorkspace(sessionCtx, parentCtx context.Context, t *sess
 		log.Warn("workspace missing for iteration, re-cloning", "work_dir", workDir)
 		if err := e.cloneStep(sessionCtx, t, workDir, log); err != nil {
 			e.terminateOnError(parentCtx, t, fmt.Sprintf("re-clone failed: %v", err), startTime, log)
-			return "", err
+			return "", false, err
 		}
-	} else {
-		log.Info("reusing existing workspace", "work_dir", workDir)
-		if t.Branch != "" {
-			e.pullBranch(sessionCtx, t, workDir, log)
-		}
+		return workDir, true, nil
 	}
 
-	return workDir, nil
+	log.Info("reusing existing workspace", "work_dir", workDir)
+	if e.workspaceMgr != nil {
+		e.workspaceMgr.Touch(parentCtx, t.ID)
+	}
+	if t.Branch != "" {
+		e.pullBranch(sessionCtx, t, workDir, log)
+	}
+
+	return workDir, false, nil
+}
+
+// touchWorkspace refreshes the last-access timestamp of the workspace(s) this
+// session runs in so an actively used workspace is not TTL-expired. Touch is a
+// no-op for ids without a registered workspace.
+func (e *Executor) touchWorkspace(ctx context.Context, t *session.Session) {
+	if e.workspaceMgr == nil {
+		return
+	}
+	e.workspaceMgr.Touch(ctx, t.ID)
+	if t.Config != nil && t.Config.WorkspaceSessionID != "" {
+		e.workspaceMgr.Touch(ctx, t.Config.WorkspaceSessionID)
+	}
 }
 
 // setupMCP resolves tool definitions and MCP server configs, writes .mcp.json.
@@ -425,14 +493,12 @@ func (e *Executor) cancelSession(ctx context.Context, t *session.Session, startT
 	e.emitOrLog(e.streamer.EmitDone(finalCtx, t.ID, session.StatusCanceled, nil), log, "task_done_canceled", t.ID)
 
 	if t.CallbackURL != "" && e.webhook != nil {
-		if err := e.webhook.Send(finalCtx, t.CallbackURL, webhook.Payload{
+		e.sendWebhookAsync(finalCtx, t.ID, t.CallbackURL, webhook.Payload{
 			TaskID:     t.ID,
 			Status:     string(session.StatusCanceled),
 			TraceID:    t.TraceID,
 			FinishedAt: time.Now().UTC(),
-		}); err != nil {
-			log.Warn("failed to send cancellation webhook", "error", err)
-		}
+		})
 	}
 }
 
@@ -476,9 +542,24 @@ func (e *Executor) completeSession(ctx context.Context, t *session.Session, resu
 	}
 
 	usage := &session.UsageInfo{
-		InputTokens:     result.InputTokens,
-		OutputTokens:    result.OutputTokens,
-		DurationSeconds: int(result.Duration.Seconds()),
+		InputTokens:         result.InputTokens,
+		OutputTokens:        result.OutputTokens,
+		CacheReadTokens:     result.CacheReadInputTokens,
+		CacheCreationTokens: result.CacheCreationInputTokens,
+		CostUSD:             result.CostUSD,
+		DurationSeconds:     int(result.Duration.Seconds()),
+	}
+	recordUsageMetrics(sessionCLI(t), usage)
+
+	// Persist the CLI-native conversation id so a follow-up instruction can
+	// resume the conversation natively (claude --resume). Each run reports a
+	// fresh id (resume forks the session), so always store the latest.
+	if result.CLISessionID != "" && result.CLISessionID != t.CLISessionID {
+		if err := e.sessionService.SetCLISessionID(ctx, t.ID, result.CLISessionID); err != nil {
+			log.Warn("failed to store CLI session id", "error", err)
+		} else {
+			t.CLISessionID = result.CLISessionID
+		}
 	}
 
 	if err := e.sessionService.SetResult(ctx, t.ID, result.Output, changes, usage); err != nil {
@@ -561,11 +642,34 @@ func (e *Executor) completeSession(ctx context.Context, t *session.Session, resu
 		OutputTokens:    usage.OutputTokens,
 	})
 
+	// Feed the outcome back to the schedule subsystem (schedule-fired sessions).
+	e.maybeRecordScheduleOutcome(ctx, t, true, "")
+
 	if t.CallbackURL != "" && e.webhook != nil {
-		e.sendWebhook(ctx, t, result.Output, changes, usage, log)
+		e.sendWebhook(ctx, t, result.Output, changes, usage)
 	}
 
 	log.Info("session completed", "duration", result.Duration, "final_status", finalStatus)
+}
+
+// sessionCLI resolves the effective CLI name for a session (config or default).
+func sessionCLI(t *session.Session) string {
+	if t.Config != nil && t.Config.CLI != "" {
+		return t.Config.CLI
+	}
+	return defaultCLI
+}
+
+// recordUsageMetrics increments the token and cost counters for a single CLI run.
+func recordUsageMetrics(cli string, usage *session.UsageInfo) {
+	if usage == nil {
+		return
+	}
+	metrics.TokensTotal.WithLabelValues(cli, "input").Add(float64(usage.InputTokens))
+	metrics.TokensTotal.WithLabelValues(cli, "output").Add(float64(usage.OutputTokens))
+	if usage.CostUSD > 0 {
+		metrics.CostUSDTotal.WithLabelValues(cli).Add(usage.CostUSD)
+	}
 }
 
 // maybeLogUsage records a usage_logs row for the tenant that owns this session.
@@ -580,12 +684,9 @@ func (e *Executor) maybeLogUsage(ctx context.Context, t *session.Session, usage 
 		return
 	}
 
-	cli := defaultCLI
+	cli := sessionCLI(t)
 	model := ""
 	if t.Config != nil {
-		if t.Config.CLI != "" {
-			cli = t.Config.CLI
-		}
 		model = t.Config.AIModel
 	}
 	if model == "" {
@@ -593,12 +694,13 @@ func (e *Executor) maybeLogUsage(ctx context.Context, t *session.Session, usage 
 	}
 
 	if err := e.usageLogger.LogUsage(ctx, &tenant.UsageLog{
-		TenantID:     tenantID,
-		SessionID:    t.ID,
-		CLI:          cli,
-		Model:        model,
-		InputTokens:  usage.InputTokens,
-		OutputTokens: usage.OutputTokens,
+		TenantID:         tenantID,
+		SessionID:        t.ID,
+		CLI:              cli,
+		Model:            model,
+		InputTokens:      usage.InputTokens,
+		OutputTokens:     usage.OutputTokens,
+		EstimatedCostUSD: usage.CostUSD,
 	}); err != nil {
 		log.Warn("failed to log tenant usage", "tenant_id", tenantID, "error", err)
 	}
@@ -842,7 +944,7 @@ func (e *Executor) pullBranch(ctx context.Context, t *session.Session, workDir s
 	}
 }
 
-func (e *Executor) runStep(ctx context.Context, t *session.Session, workDir string, mcpConfigPath string, log *slog.Logger) (*runner.RunResult, error) {
+func (e *Executor) runStep(ctx context.Context, t *session.Session, workDir string, mcpConfigPath string, freshClone bool, log *slog.Logger) (*runner.RunResult, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "task.run")
 	defer span.End()
 
@@ -884,8 +986,17 @@ func (e *Executor) runStep(ctx context.Context, t *session.Session, workDir stri
 		"iteration": fmt.Sprintf("%d", t.Iteration),
 	}), log, "cli_started", t.ID)
 
-	// Build prompt with conversation context for iterations > 1
-	prompt := e.buildPrompt(ctx, t)
+	// Native multi-turn: resume the CLI's own conversation when possible,
+	// passing only the new user instruction. Otherwise rebuild the full
+	// conversation context into the prompt (legacy behavior).
+	resume := shouldResumeSession(resolvedCLI, t.CLISessionID, t.Iteration, freshClone)
+	var prompt string
+	if resume {
+		prompt = currentPrompt(t)
+		log.Info("resuming native CLI session", "cli_session_id", t.CLISessionID)
+	} else {
+		prompt = e.buildPrompt(ctx, t)
+	}
 
 	model := e.cfg.DefaultModels[resolvedCLI]
 	apiKey := ""
@@ -908,7 +1019,7 @@ func (e *Executor) runStep(ctx context.Context, t *session.Session, workDir stri
 		}
 	}
 
-	result, err := cliRunner.Run(ctx, runner.RunOptions{
+	opts := runner.RunOptions{
 		Prompt:        prompt,
 		WorkDir:       workDir,
 		Model:         model,
@@ -927,7 +1038,31 @@ func (e *Executor) runStep(ctx context.Context, t *session.Session, workDir stri
 			}
 			e.emitOrLog(e.streamer.EmitCLIOutput(ctx, t.ID, event), log, "cli_output", t.ID)
 		},
-	})
+	}
+	if resume {
+		opts.ResumeSessionID = t.CLISessionID
+	}
+
+	result, err := cliRunner.Run(ctx, opts)
+
+	// A failed --resume run (stale/lost CLI session state) gets one retry with
+	// the legacy rebuilt-context prompt before the session is failed. Skipped
+	// when the context is done (timeout / cancel / shutdown routing applies).
+	if err != nil && resume && ctx.Err() == nil {
+		log.Warn("resume run failed, clearing CLI session id and retrying with rebuilt context",
+			"cli_session_id", t.CLISessionID, "error", err)
+		if clearErr := e.sessionService.SetCLISessionID(ctx, t.ID, ""); clearErr != nil {
+			log.Warn("failed to clear CLI session id", "error", clearErr)
+		}
+		t.CLISessionID = ""
+		e.emitOrLog(e.streamer.EmitSystem(ctx, t.ID, "resume_fallback", map[string]string{
+			"reason": err.Error(),
+		}), log, "resume_fallback", t.ID)
+
+		opts.ResumeSessionID = ""
+		opts.Prompt = e.buildPrompt(ctx, t)
+		result, err = cliRunner.Run(ctx, opts)
+	}
 
 	if err != nil {
 		return result, err
@@ -937,12 +1072,36 @@ func (e *Executor) runStep(ctx context.Context, t *session.Session, workDir stri
 	return result, nil
 }
 
+// currentPrompt returns the user instruction for the current iteration:
+// the follow-up prompt when set, otherwise the original session prompt.
+func currentPrompt(t *session.Session) string {
+	if t.CurrentPrompt != "" {
+		return t.CurrentPrompt
+	}
+	return t.Prompt
+}
+
+// shouldResumeSession decides whether a follow-up iteration can resume the
+// CLI's native conversation (claude --resume) instead of rebuilding the whole
+// context into the prompt. Requirements: a follow-up iteration, a CLI with
+// native resume support (Claude Code family), a stored CLI session id, and a
+// workspace that survived since the last run (a fresh re-clone has no CLI
+// conversation state to resume).
+func shouldResumeSession(cli, cliSessionID string, iteration int, freshClone bool) bool {
+	if iteration <= 1 || cliSessionID == "" || freshClone {
+		return false
+	}
+	switch cli {
+	case "claude-code", "claude-agent":
+		return true
+	default:
+		return false
+	}
+}
+
 // buildPrompt constructs the prompt with conversation context for multi-turn iterations.
 func (e *Executor) buildPrompt(ctx context.Context, t *session.Session) string {
-	currentPrompt := t.CurrentPrompt
-	if currentPrompt == "" {
-		currentPrompt = t.Prompt
-	}
+	userPrompt := currentPrompt(t)
 
 	// Apply session type template for first iteration only
 	if t.Iteration <= 1 && t.SessionType != "" && t.SessionType != "code" {
@@ -956,32 +1115,32 @@ func (e *Executor) buildPrompt(ctx context.Context, t *session.Session) string {
 				baseBranch = "main"
 			}
 			rendered, err = prompt.RenderPRReviewPrompt(prompt.PRReviewData{
-				UserPrompt: currentPrompt,
+				UserPrompt: userPrompt,
 				PRNumber:   t.Config.PRNumber,
 				PRBranch:   t.Config.SourceBranch,
 				BaseBranch: baseBranch,
 			})
 		} else {
-			rendered, err = prompt.RenderTaskPrompt(t.SessionType, currentPrompt)
+			rendered, err = prompt.RenderTaskPrompt(t.SessionType, userPrompt)
 		}
 
 		if err != nil {
 			slog.Warn("failed to render session type template, using raw prompt",
 				"session_type", t.SessionType, "error", err)
 		} else {
-			currentPrompt = rendered
+			userPrompt = rendered
 		}
 	}
 
 	// First iteration — no context needed
 	if t.Iteration <= 1 {
-		return currentPrompt
+		return userPrompt
 	}
 
 	// Load previous iterations for context
 	iterations, err := e.sessionService.GetIterations(ctx, t.ID)
 	if err != nil || len(iterations) == 0 {
-		return currentPrompt
+		return userPrompt
 	}
 
 	var ctx2 strings.Builder
@@ -1004,7 +1163,7 @@ func (e *Executor) buildPrompt(ctx context.Context, t *session.Session) string {
 	}
 
 	ctx2.WriteString("## Current instruction:\n\n")
-	ctx2.WriteString(currentPrompt)
+	ctx2.WriteString(userPrompt)
 
 	return ctx2.String()
 }
@@ -1052,21 +1211,22 @@ func (e *Executor) failSession(ctx context.Context, t *session.Session, errMsg s
 		DurationSeconds: int(time.Since(startTime).Seconds()),
 	})
 
+	// Feed the failure back to the schedule subsystem (schedule-fired sessions).
+	e.maybeRecordScheduleOutcome(finalCtx, t, false, errMsg)
+
 	if t.CallbackURL != "" && e.webhook != nil {
-		if err := e.webhook.Send(finalCtx, t.CallbackURL, webhook.Payload{
+		e.sendWebhookAsync(finalCtx, t.ID, t.CallbackURL, webhook.Payload{
 			TaskID:     t.ID,
 			Status:     string(session.StatusFailed),
 			Error:      errMsg,
 			TraceID:    t.TraceID,
 			FinishedAt: time.Now().UTC(),
-		}); err != nil {
-			log.Warn("failed to send failure webhook", "error", err)
-		}
+		})
 	}
 }
 
-func (e *Executor) sendWebhook(ctx context.Context, t *session.Session, result string, changes *gitpkg.ChangesSummary, usage *session.UsageInfo, log *slog.Logger) {
-	if err := e.webhook.Send(ctx, t.CallbackURL, webhook.Payload{
+func (e *Executor) sendWebhook(ctx context.Context, t *session.Session, result string, changes *gitpkg.ChangesSummary, usage *session.UsageInfo) {
+	e.sendWebhookAsync(ctx, t.ID, t.CallbackURL, webhook.Payload{
 		TaskID:         t.ID,
 		Status:         string(session.StatusCompleted),
 		Result:         result,
@@ -1074,9 +1234,38 @@ func (e *Executor) sendWebhook(ctx context.Context, t *session.Session, result s
 		Usage:          usage,
 		TraceID:        t.TraceID,
 		FinishedAt:     time.Now().UTC(),
-	}); err != nil {
-		log.Error("webhook delivery failed", "error", err)
+	})
+}
+
+// sendWebhookAsync delivers a callback webhook without blocking the worker.
+// The sender retries with backoff internally (worst case >150s against a dead
+// URL), so delivery runs on its own goroutine, detached from the session
+// context and bounded by an overall 5-minute cap. Fire-and-forget: the final
+// failure is only logged.
+func (e *Executor) sendWebhookAsync(ctx context.Context, sessionID, callbackURL string, payload webhook.Payload) {
+	// Defensive copies — the spawned goroutine must not share memory with
+	// structs the caller may still touch.
+	if payload.ChangesSummary != nil {
+		cs := *payload.ChangesSummary
+		payload.ChangesSummary = &cs
 	}
+	if payload.Usage != nil {
+		u := *payload.Usage
+		payload.Usage = &u
+	}
+
+	detached := context.WithoutCancel(ctx)
+	go func() {
+		sendCtx, cancel := context.WithTimeout(detached, 5*time.Minute)
+		defer cancel()
+		if err := e.webhook.Send(sendCtx, callbackURL, payload); err != nil {
+			slog.Error("webhook delivery failed",
+				"session_id", sessionID,
+				"status", payload.Status,
+				"error", err,
+			)
+		}
+	}()
 }
 
 // fetchAndCheckoutPR fetches a PR ref from origin and checks out a local branch.
@@ -1237,6 +1426,10 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 	log := slog.With("session_id", t.ID, "trace_id", t.TraceID, "review", true)
 	startTime := time.Now().UTC()
 
+	// A panic in the review path would kill the whole process — recover, log,
+	// and fail the session instead.
+	defer e.recoverPanic(ctx, t, startTime, log)
+
 	metrics.TasksInProgress.Inc()
 	defer func() {
 		metrics.TasksInProgress.Dec()
@@ -1253,6 +1446,7 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 		e.failSession(ctx, t, "workspace not found for review — it may have been cleaned up", startTime, log)
 		return
 	}
+	e.touchWorkspace(ctx, t)
 
 	// Resolve CLI: review param → session config → default
 	cli := defaultCLI
@@ -1364,10 +1558,14 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 
 	// Store raw result + usage
 	usage := &session.UsageInfo{
-		InputTokens:     result.InputTokens,
-		OutputTokens:    result.OutputTokens,
-		DurationSeconds: int(result.Duration.Seconds()),
+		InputTokens:         result.InputTokens,
+		OutputTokens:        result.OutputTokens,
+		CacheReadTokens:     result.CacheReadInputTokens,
+		CacheCreationTokens: result.CacheCreationInputTokens,
+		CostUSD:             result.CostUSD,
+		DurationSeconds:     int(result.Duration.Seconds()),
 	}
+	recordUsageMetrics(cli, usage)
 	if err := e.sessionService.SetResult(ctx, t.ID, result.Output, nil, usage); err != nil {
 		log.Error("failed to store review result", "error", err)
 	}
@@ -1407,16 +1605,14 @@ func (e *Executor) executeReview(ctx context.Context, t *session.Session) {
 	})
 
 	if t.CallbackURL != "" && e.webhook != nil {
-		if err := e.webhook.Send(ctx, t.CallbackURL, webhook.Payload{
+		e.sendWebhookAsync(ctx, t.ID, t.CallbackURL, webhook.Payload{
 			TaskID:     t.ID,
 			Status:     string(session.StatusCompleted),
 			Result:     result.Output,
 			Usage:      usage,
 			TraceID:    t.TraceID,
 			FinishedAt: time.Now().UTC(),
-		}); err != nil {
-			log.Warn("failed to send review completion webhook", "error", err)
-		}
+		})
 	}
 
 	log.Info("review completed",

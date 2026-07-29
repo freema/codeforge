@@ -1,7 +1,11 @@
 import type {
   Session,
+  SessionSummary,
   SessionType,
+  SessionDiff,
   CreateSessionRequest,
+  Preset,
+  CreatePresetRequest,
   PRStatus,
   HealthResponse,
   ProviderKey,
@@ -34,6 +38,7 @@ import type {
   CreateScheduleRequest,
   UpdateScheduleRequest,
   RunScheduleResult,
+  ScheduleRun,
 } from "../types";
 
 export class ApiError extends Error {
@@ -92,7 +97,7 @@ export function createApiClient(serverUrl: string, token: string) {
   return {
     // Sessions
     listSessions: () =>
-      get<{ sessions: Session[] }>("/sessions").then((r) => r.sessions),
+      get<{ sessions: SessionSummary[] }>("/sessions").then((r) => r.sessions),
     createSession: (req: CreateSessionRequest) =>
       post<Session>("/sessions", req),
     getSession: (id: string, include?: string) =>
@@ -113,6 +118,15 @@ export function createApiClient(serverUrl: string, token: string) {
     postReviewComments: (id: string) =>
       post<{ posted: boolean; message: string }>(`/sessions/${id}/post-review`),
     getPRStatus: (id: string) => get<PRStatus>(`/sessions/${id}/pr-status`),
+    getSessionDiff: (id: string) => get<SessionDiff>(`/sessions/${id}/diff`),
+
+    // Presets (operator-only)
+    listPresets: () =>
+      get<{ presets: Preset[] }>("/presets").then((r) => r.presets),
+    createPreset: (req: CreatePresetRequest) => post<Preset>("/presets", req),
+    deletePreset: (id: string) => del<void>(`/presets/${id}`),
+    runPreset: (id: string, prompt?: string) =>
+      post<Session>(`/presets/${id}/run`, prompt ? { prompt } : undefined),
 
     // Session Types
     listSessionTypes: () =>
@@ -261,6 +275,8 @@ export function createApiClient(serverUrl: string, token: string) {
     deleteSchedule: (id: string) => del<void>(`/schedules/${id}`),
     runSchedule: (id: string) =>
       post<RunScheduleResult>(`/schedules/${id}/run`),
+    listScheduleRuns: (id: string) =>
+      get<{ runs: ScheduleRun[] }>(`/schedules/${id}/runs`).then((r) => r.runs),
 
     // Health
     getHealth: () => get<HealthResponse>("/health"),

@@ -4,3 +4,11 @@ services:
   app:
     environment:
       CODEFORGE_CLI__CLAUDE_CODE__PATH: /app/bin/mock-claude
+      # The suite creates well over 10 sessions/minute — disable the
+      # session-creation rate limit for E2E runs.
+      CODEFORGE_RATE_LIMIT__ENABLED: "false"
+  redis:
+    # Remap the host port so the e2e stack can run alongside other local
+    # Redis containers; in-network access (redis:6379) is unaffected.
+    ports: !override
+      - "6390:6379"

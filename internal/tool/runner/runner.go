@@ -22,16 +22,22 @@ type RunOptions struct {
 	MCPConfigPath      string // path to .mcp.json (Claude Code --mcp-config)
 	AppendSystemPrompt string // extra context appended to system prompt (Claude Code --append-system-prompt)
 	AllowedTools       string // comma-separated tool allowlist (Claude Code --allowedTools)
+	ResumeSessionID    string // CLI-native conversation id to resume (Claude Code --resume)
 	OnEvent            func(event json.RawMessage)
 }
 
 // RunResult holds the output of a CLI run.
 type RunResult struct {
-	Output       string
-	ExitCode     int
-	Duration     time.Duration
-	InputTokens  int
-	OutputTokens int
+	Output                   string
+	ExitCode                 int
+	Duration                 time.Duration
+	InputTokens              int
+	OutputTokens             int
+	CacheReadInputTokens     int
+	CacheCreationInputTokens int
+	CostUSD                  float64
+	NumTurns                 int
+	CLISessionID             string // CLI-native conversation id (Claude Code session_id), empty for CLIs without one
 }
 
 // RunnerMeta holds CLI-specific metadata used by the executor to select

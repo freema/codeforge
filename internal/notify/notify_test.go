@@ -190,6 +190,25 @@ func TestFormat_FailedIncludesTruncatedError(t *testing.T) {
 	}
 }
 
+func TestFormat_ScheduleFailed(t *testing.T) {
+	n := &Notifier{uiBaseURL: "https://cf.example.com"}
+	msg := n.format(Event{
+		Type:         EventScheduleFailed,
+		ScheduleName: "nightly-deps",
+		RepoURL:      "https://github.com/acme/widget.git",
+		Error:        "creating session: queue unavailable",
+	})
+	for _, want := range []string{"⏰", "nightly-deps", "acme/widget", "queue unavailable"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("schedule_failed message missing %q:\n%s", want, msg)
+		}
+	}
+	// No session exists — no session link.
+	if strings.Contains(msg, "/sessions/") {
+		t.Errorf("schedule_failed message must not link a session:\n%s", msg)
+	}
+}
+
 func TestShortRepo(t *testing.T) {
 	cases := map[string]string{
 		"https://github.com/acme/widget.git": "acme/widget",

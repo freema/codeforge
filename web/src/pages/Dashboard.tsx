@@ -6,6 +6,8 @@ import {
   CircleCheck,
   CircleX,
   Layers,
+  Percent,
+  CircleDollarSign,
   ChevronRight,
   SquareTerminal,
   type LucideIcon,
@@ -13,7 +15,7 @@ import {
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useSessions } from "../hooks/useSessions";
 import StatusBadge from "../components/StatusBadge";
-import { formatTimeAgo } from "../lib/formatters";
+import { formatCost, formatTimeAgo } from "../lib/formatters";
 
 /* Status → semantic token (heat semantics, see DESIGN.md) */
 const STATUS_COLORS: Record<string, string> = {
@@ -57,6 +59,20 @@ export default function Dashboard() {
     [sessions],
   );
   const total = sessions?.length ?? 0;
+
+  const finished = completed + failed;
+  const successRate =
+    finished > 0 ? `${Math.round((completed / finished) * 100)}%` : "—";
+
+  const { totalCost, totalTokens } = useMemo(() => {
+    let cost = 0;
+    let tokens = 0;
+    for (const t of sessions ?? []) {
+      cost += t.cost_usd ?? 0;
+      tokens += (t.input_tokens ?? 0) + (t.output_tokens ?? 0);
+    }
+    return { totalCost: cost, totalTokens: tokens };
+  }, [sessions]);
 
   const sessionsByStatus = useMemo(() => {
     if (!sessions || sessions.length === 0) return [];
@@ -115,11 +131,20 @@ export default function Dashboard() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard label="Active" value={running} icon={Flame} live />
         <StatCard label="Completed" value={completed} icon={CircleCheck} />
         <StatCard label="Failed" value={failed} icon={CircleX} />
         <StatCard label="Total" value={total} icon={Layers} />
+        <StatCard label="Success rate" value={successRate} icon={Percent} />
+        <StatCard
+          label="Total cost"
+          value={totalCost > 0 ? formatCost(totalCost) : "—"}
+          icon={CircleDollarSign}
+          sub={
+            totalTokens > 0 ? `${totalTokens.toLocaleString()} tok` : undefined
+          }
+        />
       </div>
 
       {/* Main content grid */}
@@ -247,26 +272,31 @@ function StatCard({
   value,
   icon: Icon,
   live = false,
+  sub,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   icon: LucideIcon;
   live?: boolean;
+  sub?: string;
 }) {
-  const isHot = live && value > 0;
+  const isHot = live && typeof value === "number" && value > 0;
   return (
     <div className="flex flex-col justify-between gap-3 rounded-md border border-edge bg-surface p-5">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-fg-3">{label}</p>
         <Icon className={`size-4 ${isHot ? "text-accent" : "text-fg-4"}`} />
       </div>
-      <div className="flex items-center gap-2.5">
-        <p className="font-mono text-3xl font-semibold tracking-tight text-fg">
-          {value.toLocaleString()}
-        </p>
-        {isHot && (
-          <span className="animate-ember size-2 rounded-full bg-accent" />
-        )}
+      <div>
+        <div className="flex items-center gap-2.5">
+          <p className="font-mono text-3xl font-semibold tracking-tight text-fg">
+            {typeof value === "number" ? value.toLocaleString() : value}
+          </p>
+          {isHot && (
+            <span className="animate-ember size-2 rounded-full bg-accent" />
+          )}
+        </div>
+        {sub && <p className="mt-1 font-mono text-xs text-fg-4">{sub}</p>}
       </div>
     </div>
   );

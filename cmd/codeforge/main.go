@@ -276,11 +276,14 @@ func run() error {
 	// Scheduled (cron) sessions
 	scheduleStore := schedule.NewStore(sqliteDB.Unwrap())
 	scheduler := schedule.NewScheduler(scheduleStore, sessionService, time.Minute)
+	scheduler.SetSessionGetter(sessionService) // overlap guard: skip while previous session runs
+	executor.SetScheduleRecorder(scheduler)    // run history: session outcome feedback
 	scheduleHandler := handlers.NewScheduleHandler(scheduleStore, scheduler)
 
-	// Wire chat notifications for terminal session events (nil when unconfigured).
+	// Wire chat notifications for terminal session and schedule events (nil when unconfigured).
 	if notifier := notify.New(cfg.Notifications); notifier != nil {
 		executor.SetNotifier(notifier)
+		scheduler.SetNotifier(notifier)
 		slog.Info("notifications enabled",
 			"slack", cfg.Notifications.SlackWebhookURL != "",
 			"discord", cfg.Notifications.DiscordWebhookURL != "")

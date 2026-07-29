@@ -33,8 +33,8 @@ func TestMigrations_AllApply(t *testing.T) {
 	if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM schema_migrations").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 4 {
-		t.Errorf("expected 4 migrations, got %d", count)
+	if count != 6 {
+		t.Errorf("expected 6 migrations, got %d", count)
 	}
 }
 

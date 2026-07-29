@@ -1,6 +1,15 @@
-import { useState, useMemo, useEffect, type FormEvent } from "react";
-import { useNavigate } from "react-router";
 import {
+  useState,
+  useMemo,
+  useEffect,
+  useRef,
+  useCallback,
+  type FormEvent,
+} from "react";
+import { useNavigate, useSearchParams } from "react-router";
+import {
+  Bookmark,
+  BookmarkPlus,
   Braces,
   ChevronDown,
   ChevronsUpDown,
@@ -21,7 +30,9 @@ import {
   SearchCode,
   SlidersHorizontal,
   SquareTerminal,
+  Trash2,
   TriangleAlert,
+  X,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -32,12 +43,21 @@ import { useRepositories } from "../hooks/useRepositories";
 import { useBranches } from "../hooks/useBranches";
 import { usePullRequests } from "../hooks/usePullRequests";
 import { useCLIs } from "../hooks/useCLIs";
+import { useSession } from "../hooks/useSession";
 import { useSessionTypes } from "../hooks/useSessionTypes";
+import {
+  usePresets,
+  useCreatePreset,
+  useDeletePreset,
+} from "../hooks/usePresets";
 import { usePageTitle } from "../hooks/usePageTitle";
+import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext";
 import Select from "../components/Select";
 import type {
   CreateSessionRequest,
   SessionConfig,
+  Preset,
   Repository,
   PullRequest,
 } from "../types";
@@ -86,6 +106,23 @@ export default function NewSession() {
   usePageTitle("New session");
   const navigate = useNavigate();
   const createSession = useCreateSession();
+  const { role } = useAuth();
+  const isOperator = role === "operator";
+  const { toast } = useToast();
+
+  // "Run again" — prefill from an existing session
+  const [searchParams] = useSearchParams();
+  const fromId = searchParams.get("from") ?? undefined;
+  const { data: fromSession } = useSession(fromId);
+
+  // Presets (operator-only endpoints)
+  const { data: presets } = usePresets(isOperator);
+  const createPreset = useCreatePreset();
+  const deletePreset = useDeletePreset();
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
+  const [savingPreset, setSavingPreset] = useState(false);
+  const [presetName, setPresetName] = useState("");
+
   const { data: allKeys } = useKeys();
   const keys = useMemo(
     () =>
@@ -183,6 +220,59 @@ export default function NewSession() {
     }
   }, [availableClis, selectedCli]);
 
+  // Prefill the whole form from a CreateSessionRequest-shaped template
+  // (preset or "run again" source session).
+  const applyRequest = useCallback((req: CreateSessionRequest) => {
+    const c = req.config ?? {};
+    setTaskType(req.session_type ?? "code");
+    setSelectedRepo(null);
+    setRepoUrl(req.repo_url ?? "");
+    setPrompt(req.prompt ?? "");
+    if (req.provider_key) setProviderKey(req.provider_key);
+    setCallbackUrl(req.callback_url ?? "");
+    setSelectedCli(c.cli ?? "");
+    setAiModel(c.ai_model ?? "");
+    setSourceBranch(c.source_branch ?? "");
+    setTargetBranch(c.target_branch ?? "");
+    setTimeout(c.timeout_seconds ? String(c.timeout_seconds) : "");
+    setMaxTurns(c.max_turns ? String(c.max_turns) : "");
+    setMaxBudget(c.max_budget_usd ? String(c.max_budget_usd) : "");
+    setSelectedMcp(c.mcp_servers?.map((s) => s.name) ?? []);
+    setPrNumber(c.pr_number ? String(c.pr_number) : "");
+    setOutputMode(c.output_mode ?? "api_only");
+    if (
+      c.timeout_seconds ||
+      c.max_turns ||
+      c.max_budget_usd ||
+      req.callback_url
+    ) {
+      setShowAdvanced(true);
+    }
+  }, []);
+
+  // ?from=<sessionID> — prefill once from that session
+  const prefilledRef = useRef(false);
+  useEffect(() => {
+    if (!fromSession || prefilledRef.current) return;
+    prefilledRef.current = true;
+    applyRequest({
+      repo_url: fromSession.repo_url,
+      prompt: fromSession.prompt,
+      session_type: fromSession.session_type,
+      provider_key: fromSession.provider_key,
+      config: fromSession.config,
+    });
+  }, [fromSession, applyRequest]);
+
+  // After a prefill, re-select the matching repository once the list loads so
+  // the form shows the repo instead of the bare clone URL.
+  useEffect(() => {
+    if (!selectedRepo && repoUrl && repos) {
+      const match = repos.find((r) => r.clone_url === repoUrl);
+      if (match) setSelectedRepo(match);
+    }
+  }, [repos, repoUrl, selectedRepo]);
+
   // Models available for the selected CLI — from backend API, not hardcoded
   const selectedCliEntry = useMemo(
     () => availableClis.find((c) => c.name === selectedCli),
@@ -215,10 +305,7 @@ export default function NewSession() {
     setTargetBranch(repo.default_branch);
   }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError("");
-
+  function buildRequest(): CreateSessionRequest {
     const config: SessionConfig = {};
     if (selectedCli) config.cli = selectedCli;
     if (aiModel) config.ai_model = aiModel;
@@ -241,7 +328,7 @@ export default function NewSession() {
       if (targetBranch && showTargetBranch) config.target_branch = targetBranch;
     }
 
-    const req: CreateSessionRequest = {
+    return {
       repo_url: repoUrl,
       prompt,
       session_type: taskType,
@@ -249,12 +336,51 @@ export default function NewSession() {
       ...(callbackUrl ? { callback_url: callbackUrl } : {}),
       ...(Object.keys(config).length > 0 ? { config } : {}),
     };
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError("");
 
     try {
-      const created = await createSession.mutateAsync(req);
+      const created = await createSession.mutateAsync(buildRequest());
       void navigate(`/sessions/${created.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create session");
+    }
+  }
+
+  function applyPreset(p: Preset) {
+    setSelectedPresetId(p.id);
+    applyRequest(p.request);
+  }
+
+  async function handleSavePreset() {
+    const name = presetName.trim();
+    if (!name) return;
+    try {
+      await createPreset.mutateAsync({ name, request: buildRequest() });
+      toast("success", `Preset "${name}" saved`);
+      setPresetName("");
+      setSavingPreset(false);
+    } catch (err) {
+      toast(
+        "error",
+        err instanceof Error ? err.message : "Failed to save preset",
+      );
+    }
+  }
+
+  async function handleDeletePreset(p: Preset) {
+    try {
+      await deletePreset.mutateAsync(p.id);
+      if (selectedPresetId === p.id) setSelectedPresetId(null);
+      toast("success", `Preset "${p.name}" deleted`);
+    } catch (err) {
+      toast(
+        "error",
+        err instanceof Error ? err.message : "Failed to delete preset",
+      );
     }
   }
 
@@ -279,9 +405,63 @@ export default function NewSession() {
         <h2 className="font-expanded text-2xl font-extrabold tracking-tight text-fg">
           New session
         </h2>
+        {fromId && (
+          <p className="mt-1 font-mono text-xs text-fg-4">
+            Prefilled from session {fromId.slice(0, 8)}
+          </p>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* 0. Presets — prefill the form from a saved configuration */}
+        {isOperator && presets && presets.length > 0 && (
+          <div className="overflow-hidden rounded-md border border-edge bg-surface">
+            <div className="border-b border-edge px-5 py-3.5">
+              <span className="eyebrow">Presets</span>
+            </div>
+            <div className="p-5">
+              <div className="flex flex-wrap gap-2">
+                {presets.map((p) => (
+                  <div
+                    key={p.id}
+                    className={`flex items-center overflow-hidden rounded-md border transition-colors ${
+                      selectedPresetId === p.id
+                        ? "border-accent-muted bg-accent-soft"
+                        : "border-edge bg-surface-alt"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => applyPreset(p)}
+                      title={p.description || undefined}
+                      className={`flex items-center gap-2 py-2 pr-2 pl-3 text-sm font-medium transition-colors ${
+                        selectedPresetId === p.id
+                          ? "text-accent"
+                          : "text-fg-3 hover:text-fg"
+                      }`}
+                    >
+                      <Bookmark className="size-4" />
+                      {p.name}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeletePreset(p)}
+                      disabled={deletePreset.isPending}
+                      aria-label={`Delete preset ${p.name}`}
+                      className="p-2 text-fg-4 transition-colors hover:text-danger disabled:opacity-50"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-fg-4">
+                Select a preset to prefill the form
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* 1. Session type — FIRST */}
         {taskTypes && taskTypes.length > 0 && (
           <div className="overflow-hidden rounded-md border border-edge bg-surface">
@@ -738,14 +918,73 @@ export default function NewSession() {
         )}
 
         {/* Submit */}
-        <div className="flex items-center justify-between pt-2">
-          <button
-            type="button"
-            onClick={() => void navigate(-1)}
-            className="rounded-md border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg"
-          >
-            Cancel
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void navigate(-1)}
+              className="rounded-md border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg"
+            >
+              Cancel
+            </button>
+            {isOperator && !savingPreset && (
+              <button
+                type="button"
+                onClick={() => setSavingPreset(true)}
+                disabled={!repoUrl}
+                title={
+                  repoUrl
+                    ? undefined
+                    : "Select a repository before saving a preset"
+                }
+                className="flex items-center gap-2 rounded-md border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg disabled:opacity-40"
+              >
+                <BookmarkPlus className="size-4" />
+                Save as preset
+              </button>
+            )}
+            {isOperator && savingPreset && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={presetName}
+                  onChange={(e) => setPresetName(e.target.value)}
+                  placeholder="Preset name"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void handleSavePreset();
+                    }
+                  }}
+                  className={inputCls + " w-44"}
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleSavePreset()}
+                  disabled={!presetName.trim() || createPreset.isPending}
+                  className="flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-40"
+                >
+                  {createPreset.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    "Save"
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSavingPreset(false);
+                    setPresetName("");
+                  }}
+                  aria-label="Cancel saving preset"
+                  className="rounded-md p-2 text-fg-3 transition-colors hover:bg-surface-alt hover:text-fg"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+            )}
+          </div>
           <button
             type="submit"
             disabled={isSubmitDisabled}

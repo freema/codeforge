@@ -60,3 +60,15 @@ func IsFinished(s Status) bool {
 func IsIdle(s Status) bool {
 	return s == StatusCompleted || s == StatusPRCreated
 }
+
+// IsActive returns true while the session is queued or actively being
+// processed by a worker — used by the scheduler's overlap guard so a
+// recurring schedule never fires on top of its still-running predecessor.
+func IsActive(s Status) bool {
+	switch s {
+	case StatusPending, StatusCloning, StatusRunning, StatusReviewing, StatusCreatingPR:
+		return true
+	default:
+		return false
+	}
+}

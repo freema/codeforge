@@ -492,6 +492,40 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /api/v1/sessions/{sessionID}/diff:
+    get:
+      summary: Get the uncommitted workspace diff of a session
+      operationId: getSessionDiff
+      tags: [Sessions]
+      description: |
+        Returns the full uncommitted diff of the session workspace against HEAD,
+        including untracked files, with per-file change statistics. The unified
+        diff is capped at 1 MB and cut at a line boundary (truncated=true).
+        Requires the session workspace to still exist — workspaces expire after
+        their TTL, after which this endpoint returns 404.
+      parameters:
+        - name: sessionID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Workspace diff
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceDiff"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: Session not found, or workspace expired or not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /api/v1/sessions/{sessionID}/review:
     post:
       summary: Run code review on a completed session
@@ -1786,6 +1820,10 @@ paths:
                 enabled:
                   type: boolean
                   default: true
+                timezone:
+                  type: string
+                  description: Optional IANA timezone the cron is evaluated in (empty = server local)
+                  example: "Europe/Prague"
                 session_request:
                   $ref: "#/components/schemas/CreateSessionRequest"
       responses:
@@ -1796,7 +1834,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Schedule"
         "400":
-          description: Invalid cron expression or session request
+          description: Invalid cron expression, timezone or session request
     get:
       summary: List schedules
       operationId: listSchedules
@@ -1851,6 +1889,10 @@ paths:
                   type: string
                 enabled:
                   type: boolean
+                  description: Re-enabling clears disabled_reason and resets consecutive_failures
+                timezone:
+                  type: string
+                  description: IANA timezone (empty string = server local)
                 session_request:
                   $ref: "#/components/schemas/CreateSessionRequest"
       responses:
@@ -1897,6 +1939,183 @@ paths:
                     type: string
         "404":
           description: Not found
+
+  /api/v1/schedules/{scheduleID}/runs:
+    get:
+      summary: Schedule run history
+      operationId: listScheduleRuns
+      tags: [Schedules]
+      description: |
+        Operator only. Newest-first history of schedule occurrences (fired,
+        fire_failed, skipped_overlap) later stamped with the fired session's
+        terminal outcome (session_completed, session_failed). Limited to the
+        50 most recent runs.
+      parameters:
+        - name: scheduleID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Run history, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ScheduleRun"
+        "404":
+          description: Not found
+
+  /api/v1/presets:
+    post:
+      summary: Create a session preset
+      operationId: createPreset
+      tags: [Presets]
+      description: |
+        Operator only. Saves a named, reusable session request template.
+        The template must include repo_url; prompt is optional because the
+        run endpoint can supply it as an override.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresetRequest"
+      responses:
+        "201":
+          description: Preset created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Preset"
+        "400":
+          description: Missing name or invalid session request template
+        "409":
+          description: Preset name already exists
+    get:
+      summary: List session presets
+      operationId: listPresets
+      tags: [Presets]
+      responses:
+        "200":
+          description: All presets ordered by name
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  presets:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Preset"
+
+  /api/v1/presets/{presetID}:
+    parameters:
+      - name: presetID
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get a preset
+      operationId: getPreset
+      tags: [Presets]
+      responses:
+        "200":
+          description: Preset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Preset"
+        "404":
+          description: Not found
+    put:
+      summary: Replace a preset
+      operationId: updatePreset
+      tags: [Presets]
+      description: Full replacement — name and request are required, description is reset when omitted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresetRequest"
+      responses:
+        "200":
+          description: Updated preset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Preset"
+        "400":
+          description: Missing name or invalid session request template
+        "404":
+          description: Not found
+        "409":
+          description: Preset name already exists
+    delete:
+      summary: Delete a preset
+      operationId: deletePreset
+      tags: [Presets]
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /api/v1/presets/{presetID}/run:
+    post:
+      summary: Create a session from a preset
+      operationId: runPreset
+      tags: [Presets]
+      description: |
+        Operator only. Merges the optional prompt override into the stored
+        template and creates a session through the same validation as
+        POST /api/v1/sessions. Subject to the session-creation rate limit.
+      parameters:
+        - name: presetID
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                prompt:
+                  type: string
+                  description: Replaces the template's prompt for this run
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    example: pending
+                  created_at:
+                    type: string
+                    format: date-time
+        "400":
+          description: Invalid override body or merged request fails session validation
+        "404":
+          description: Preset not found
+        "429":
+          $ref: "#/components/responses/RateLimited"
 
   /api/v1/admin/tenants:
     post:
@@ -2393,6 +2612,12 @@ components:
           type: integer
         current_prompt:
           type: string
+        cli_session_id:
+          type: string
+          description: >
+            CLI-native conversation id from the last successful run
+            (Claude Code session_id). Used to resume the conversation natively
+            on follow-up instructions; empty for CLIs without native resume.
         iterations:
           type: array
           items:
@@ -2456,6 +2681,16 @@ components:
           type: string
         changes_summary:
           $ref: "#/components/schemas/ChangesSummary"
+        input_tokens:
+          type: integer
+          description: Total input tokens across all iterations (omitted when zero)
+        output_tokens:
+          type: integer
+          description: Total output tokens across all iterations (omitted when zero)
+        cost_usd:
+          type: number
+          format: double
+          description: Total estimated cost in USD across all iterations (omitted when zero)
         created_at:
           type: string
           format: date-time
@@ -2484,6 +2719,42 @@ components:
           description: "Short diff summary, e.g. \"+142 -38\""
           example: "+142 -38"
 
+    FileDiff:
+      type: object
+      description: A single changed file in a workspace diff
+      properties:
+        path:
+          type: string
+          description: File path relative to the workspace root
+        status:
+          type: string
+          enum: [added, modified, deleted, renamed]
+        additions:
+          type: integer
+          description: Lines added in this file
+        deletions:
+          type: integer
+          description: Lines deleted in this file
+
+    WorkspaceDiff:
+      type: object
+      description: Uncommitted workspace changes against HEAD, including untracked files
+      properties:
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/FileDiff"
+        diff:
+          type: string
+          description: Unified diff (git diff HEAD), capped at 1 MB
+        total_additions:
+          type: integer
+        total_deletions:
+          type: integer
+        truncated:
+          type: boolean
+          description: True when the unified diff was cut at the 1 MB cap
+
     UsageInfo:
       type: object
       properties:
@@ -2491,6 +2762,16 @@ components:
           type: integer
         output_tokens:
           type: integer
+        cache_read_tokens:
+          type: integer
+          description: Prompt cache read tokens (omitted when zero)
+        cache_creation_tokens:
+          type: integer
+          description: Prompt cache creation tokens (omitted when zero)
+        cost_usd:
+          type: number
+          format: double
+          description: Estimated cost in USD as reported by the CLI (omitted when zero)
         duration_seconds:
           type: integer
 
@@ -2936,8 +3217,18 @@ components:
           example: "0 3 * * *"
         enabled:
           type: boolean
+        timezone:
+          type: string
+          description: IANA timezone the cron is evaluated in (absent = server local)
+          example: "Europe/Prague"
         session_request:
           $ref: "#/components/schemas/CreateSessionRequest"
+        consecutive_failures:
+          type: integer
+          description: Fire/session failures since the last success; the schedule is auto-disabled at 5
+        disabled_reason:
+          type: string
+          description: Set when the scheduler auto-disabled the schedule; cleared on manual re-enable
         last_run_at:
           type: string
           format: date-time
@@ -2955,6 +3246,64 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    ScheduleRun:
+      type: object
+      description: One recorded occurrence of a schedule
+      properties:
+        id:
+          type: string
+        schedule_id:
+          type: string
+        session_id:
+          type: string
+          description: Session created by this occurrence (absent for fire_failed)
+        trigger:
+          type: string
+          enum: [cron, manual]
+        status:
+          type: string
+          enum: [fired, fire_failed, skipped_overlap, session_completed, session_failed]
+        error:
+          type: string
+          description: Fire error or the failed session's error message
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Preset:
+      type: object
+      description: A saved, reusable session request template
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          description: Unique preset name
+        description:
+          type: string
+        request:
+          $ref: "#/components/schemas/CreateSessionRequest"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PresetRequest:
+      type: object
+      required: [name, request]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        request:
+          $ref: "#/components/schemas/CreateSessionRequest"
 
     Tenant:
       type: object

@@ -106,7 +106,9 @@ Chat notifications for terminal session events. Disabled unless at least one web
 | `CODEFORGE_NOTIFICATIONS__DISCORD_WEBHOOK_URL` | *(empty)* | Discord webhook URL (both may be set at once) |
 | `CODEFORGE_NOTIFICATIONS__TEAMS_WEBHOOK_URL` | *(empty)* | Microsoft Teams webhook URL — classic incoming webhooks (`webhook.office.com`) get a plain text payload, any other host (e.g. Power Automate / Teams Workflows) gets an Adaptive Card |
 | `CODEFORGE_NOTIFICATIONS__UI_BASE_URL` | *(empty)* | Public UI base URL — adds a session link to messages |
-| `CODEFORGE_NOTIFICATIONS__EVENTS` | *(empty = all)* | Comma-separated subset of `session_completed`, `session_failed`, `pr_created`, `review_completed` |
+| `CODEFORGE_NOTIFICATIONS__EVENTS` | *(empty = all)* | Comma-separated subset of `session_completed`, `session_failed`, `pr_created`, `review_completed`, `schedule_failed` |
+
+`schedule_failed` fires when a recurring schedule fails to create its session (and once more when a schedule is auto-disabled after 5 consecutive failures).
 
 ### Workflow
 
@@ -214,7 +216,7 @@ notifications:
   discord_webhook_url: ""    # Discord webhook (both may be set at once)
   teams_webhook_url: ""      # Microsoft Teams webhook (classic webhook.office.com or Power Automate workflow URL)
   ui_base_url: ""            # e.g. https://cf.example.com — adds a session link to messages
-  events: []                 # empty = all; subset of session_completed, session_failed, pr_created, review_completed
+  events: []                 # empty = all; subset of session_completed, session_failed, pr_created, review_completed, schedule_failed
 
 logging:
   level: "info"

@@ -27,6 +27,7 @@ type scheduleRequest struct {
 	Name           string          `json:"name"`
 	Cron           string          `json:"cron"`
 	Enabled        *bool           `json:"enabled"`
+	Timezone       *string         `json:"timezone"` // IANA name; pointer so PATCH can clear it
 	SessionRequest json.RawMessage `json:"session_request"`
 }
 
@@ -61,6 +62,14 @@ func (h *ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	timezone := ""
+	if req.Timezone != nil {
+		timezone = *req.Timezone
+	}
+	if err := schedule.ValidateTimezone(timezone); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := validateSessionRequest(req.SessionRequest); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -70,6 +79,7 @@ func (h *ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Name:           req.Name,
 		Cron:           req.Cron,
 		Enabled:        req.Enabled == nil || *req.Enabled,
+		Timezone:       timezone,
 		SessionRequest: req.SessionRequest,
 	}
 	if err := h.store.Create(r.Context(), sch); err != nil {
@@ -134,6 +144,18 @@ func (h *ScheduleHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Enabled != nil {
 		sch.Enabled = *req.Enabled
+		if sch.Enabled {
+			// A human re-enabling an auto-disabled schedule gets a clean slate.
+			sch.DisabledReason = ""
+			sch.ConsecutiveFailures = 0
+		}
+	}
+	if req.Timezone != nil {
+		if err := schedule.ValidateTimezone(*req.Timezone); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		sch.Timezone = *req.Timezone
 	}
 	if len(req.SessionRequest) > 0 {
 		if err := validateSessionRequest(req.SessionRequest); err != nil {
@@ -161,6 +183,8 @@ func (h *ScheduleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 // Run handles POST /schedules/{scheduleID}/run — fire immediately.
+// Manual runs record run history and last_session_id but never shift the
+// cron base (last_run_at), so the regular cadence is unaffected.
 func (h *ScheduleHandler) Run(w http.ResponseWriter, r *http.Request) {
 	sch, err := h.store.Get(r.Context(), chi.URLParam(r, "scheduleID"))
 	if err != nil {
@@ -168,7 +192,7 @@ func (h *ScheduleHandler) Run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := h.scheduler.Fire(r.Context(), sch, time.Now())
+	t, err := h.scheduler.Fire(r.Context(), sch, time.Now(), schedule.TriggerManual)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -177,6 +201,24 @@ func (h *ScheduleHandler) Run(w http.ResponseWriter, r *http.Request) {
 		"schedule_id": sch.ID,
 		"session_id":  t.ID,
 	})
+}
+
+// Runs handles GET /schedules/{scheduleID}/runs — run history, newest first.
+func (h *ScheduleHandler) Runs(w http.ResponseWriter, r *http.Request) {
+	scheduleID := chi.URLParam(r, "scheduleID")
+	if _, err := h.store.Get(r.Context(), scheduleID); err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	runs, err := h.store.ListRuns(r.Context(), scheduleID, 50)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if runs == nil {
+		runs = []*schedule.Run{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"runs": runs})
 }
 
 func (h *ScheduleHandler) writeStoreError(w http.ResponseWriter, err error) {

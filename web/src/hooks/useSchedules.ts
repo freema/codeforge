@@ -48,6 +48,18 @@ export function useRunSchedule() {
 
   return useMutation({
     mutationFn: (id: string) => api.runSchedule(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["schedules"] });
+      void qc.invalidateQueries({ queryKey: ["schedule-runs"] });
+    },
+  });
+}
+
+export function useScheduleRuns(scheduleId: string) {
+  const api = useApi();
+
+  return useQuery({
+    queryKey: ["schedule-runs", scheduleId],
+    queryFn: () => api.listScheduleRuns(scheduleId),
   });
 }

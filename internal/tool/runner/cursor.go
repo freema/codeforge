@@ -128,6 +128,11 @@ func (c *CursorRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 			resultText = text
 		}
 	}
+	if scanErr := scanner.Err(); scanErr != nil {
+		// e.g. a line exceeding the 1MB buffer — the stream (and the result
+		// extracted from it) may be truncated.
+		slog.Warn("cursor CLI stream scan error, output may be truncated", "error", scanErr)
+	}
 
 	err = cmd.Wait()
 	duration := time.Since(startTime)

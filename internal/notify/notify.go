@@ -17,12 +17,13 @@ import (
 	"github.com/freema/codeforge/internal/config"
 )
 
-// Event types emitted by the executor.
+// Event types emitted by the executor and the scheduler.
 const (
 	EventSessionCompleted = "session_completed"
 	EventSessionFailed    = "session_failed"
 	EventPRCreated        = "pr_created"
 	EventReviewCompleted  = "review_completed"
+	EventScheduleFailed   = "schedule_failed"
 )
 
 // Event describes a terminal session state worth telling a human about.
@@ -36,6 +37,7 @@ type Event struct {
 	InputTokens     int
 	OutputTokens    int
 	ReviewScore     int
+	ScheduleName    string // schedule_failed events
 }
 
 // Notifier delivers events to the configured chat webhooks.
@@ -131,11 +133,15 @@ func (n *Notifier) format(ev Event) string {
 		b.WriteString("🔀 Session completed — PR created")
 	case EventReviewCompleted:
 		b.WriteString(fmt.Sprintf("📋 Review completed (score %d/10)", ev.ReviewScore))
+	case EventScheduleFailed:
+		b.WriteString(fmt.Sprintf("⏰ Schedule %q failed", ev.ScheduleName))
 	default:
 		b.WriteString("✅ Session completed")
 	}
 
-	b.WriteString(fmt.Sprintf(" — %s", shortRepo(ev.RepoURL)))
+	if ev.RepoURL != "" {
+		b.WriteString(fmt.Sprintf(" — %s", shortRepo(ev.RepoURL)))
+	}
 	if ev.SessionType != "" {
 		b.WriteString(fmt.Sprintf(" (%s)", ev.SessionType))
 	}
@@ -157,7 +163,7 @@ func (n *Notifier) format(ev Event) string {
 		b.WriteString(strings.Join(stats, " · "))
 	}
 
-	if n.uiBaseURL != "" {
+	if n.uiBaseURL != "" && ev.SessionID != "" {
 		b.WriteString(fmt.Sprintf("\n%s/sessions/%s", n.uiBaseURL, ev.SessionID))
 	}
 

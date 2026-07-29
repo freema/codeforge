@@ -99,7 +99,7 @@ tasks:
   test:e2e:
     desc: Run E2E tests (requires dev:e2e running)
     cmds:
-      - "{{.DC_E2E}} run --rm -e CODEFORGE_TEST_URL=http://app:8080 -e CODEFORGE_TEST_TOKEN=dev-token app go test -tags integration -v -count=1 -timeout 120s ./tests/e2e/..."
+      - "{{.DC_E2E}} run --rm -e CODEFORGE_TEST_URL=http://app:8080 -e CODEFORGE_TEST_TOKEN=dev-token app go test -tags integration -v -count=1 -timeout 300s ./tests/e2e/..."
 
   build:action:
     desc: Build CI Action Docker image

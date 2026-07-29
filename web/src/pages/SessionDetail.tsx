@@ -11,6 +11,7 @@ import {
   GitPullRequest,
   Loader2,
   MessageSquare,
+  RotateCcw,
   SearchCheck,
   Upload,
 } from "lucide-react";
@@ -35,7 +36,12 @@ import {
 } from "../components/session/PromptCard";
 import { StreamEvents } from "../components/session/StreamEvents";
 import { ReviewResultCard } from "../components/session/ReviewResultCard";
-import { formatDuration, formatChangesSummary } from "../lib/formatters";
+import { ChangesPanel } from "../components/session/ChangesPanel";
+import {
+  formatDuration,
+  formatChangesSummary,
+  formatCost,
+} from "../lib/formatters";
 import type { SessionStatus } from "../types";
 
 const ACTIVE_STATUSES: SessionStatus[] = [
@@ -63,6 +69,7 @@ export default function SessionDetail() {
 
   const [instructPrompt, setInstructPrompt] = useState("");
   const [pushed, setPushed] = useState(false);
+  const [showChanges, setShowChanges] = useState(false);
   const terminalRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll terminal to bottom on new events
@@ -71,6 +78,13 @@ export default function SessionDetail() {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
   }, [stream.events.length]);
+
+  // Bring the changes panel into view when it opens
+  useEffect(() => {
+    if (showChanges && terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    }
+  }, [showChanges]);
 
   if (isLoading) {
     return (
@@ -110,6 +124,11 @@ export default function SessionDetail() {
     session.status === "completed" && !isPlan && !isPrReview && !isReview;
   const canPostComments =
     isPrReview && session.status === "completed" && !!session.review_result;
+  const canShowChanges =
+    session.status === "completed" ||
+    session.status === "awaiting_instruction" ||
+    session.status === "pr_created";
+  const canRunAgain = !isActive;
 
   const repoShort = session.repo_url
     .replace(/^https?:\/\//, "")
@@ -229,6 +248,14 @@ export default function SessionDetail() {
               {totalTokens > 0 ? totalTokens.toLocaleString() : "\u2014"}
             </span>
           </span>
+          {!!session.usage?.cost_usd && session.usage.cost_usd > 0 && (
+            <span title="Cost">
+              <span className="text-fg-4">cost</span>{" "}
+              <span className="text-fg">
+                {formatCost(session.usage.cost_usd)}
+              </span>
+            </span>
+          )}
           <span title="Iteration">
             <span className="text-fg-4">iter</span>{" "}
             <span className="text-fg">{session.iteration}</span>
@@ -351,6 +378,9 @@ export default function SessionDetail() {
               )}
           </>
         )}
+
+        {/* Workspace changes (uncommitted diff) */}
+        {canShowChanges && showChanges && id && <ChangesPanel sessionId={id} />}
       </div>
 
       {/* Bottom bar */}
@@ -395,6 +425,19 @@ export default function SessionDetail() {
               >
                 <CircleStop className="size-4" />
                 {cancelSession.isPending ? "Canceling…" : "Cancel"}
+              </button>
+            )}
+            {canShowChanges && (
+              <button
+                onClick={() => setShowChanges((v) => !v)}
+                className={`flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+                  showChanges
+                    ? "border-accent-muted bg-accent-soft text-accent"
+                    : "border-edge bg-surface text-fg-2 hover:border-fg-4 hover:text-fg"
+                }`}
+              >
+                <FileDiff className="size-4" />
+                Changes
               </button>
             )}
             {canReview && (
@@ -497,6 +540,15 @@ export default function SessionDetail() {
                     {prStatus.state}
                   </span>
                 )}
+              </Link>
+            )}
+            {canRunAgain && (
+              <Link
+                to={`/sessions/new?from=${session.id}`}
+                className="flex items-center gap-2 rounded-md border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:border-fg-4 hover:text-fg"
+              >
+                <RotateCcw className="size-4" />
+                Run again
               </Link>
             )}
           </div>

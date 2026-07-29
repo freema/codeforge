@@ -72,7 +72,7 @@ func TestApplyTenant_ConcurrencyLimit(t *testing.T) {
 	res, _ := svc.CreateTenant(ctx, "c", "c", tenant.TierFree) // free: MaxConcurrentSessions = 2
 	tnt, _ := store.GetTenant(ctx, res.Tenant.ID)
 
-	h := NewSessionHandler(nil, nil, nil, testCLIRegistry(), nil, nil, svc)
+	h := NewSessionHandler(nil, nil, nil, testCLIRegistry(), nil, nil, svc, nil)
 
 	h.sessionCounter = fakeCounter{active: tnt.MaxConcurrentSessions}
 	if status, _ := h.applyTenant(ctx, &session.CreateSessionRequest{}, tnt); status != 429 {
@@ -108,7 +108,7 @@ func TestApplyTenant(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h := NewSessionHandler(nil, nil, nil, testCLIRegistry(), nil, nil, svc)
+	h := NewSessionHandler(nil, nil, nil, testCLIRegistry(), nil, nil, svc, nil)
 
 	t.Run("disallowed CLI -> 403", func(t *testing.T) {
 		req := &session.CreateSessionRequest{Config: &session.Config{CLI: "cursor"}}

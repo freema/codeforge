@@ -17,22 +17,34 @@ import (
 
 // Workspace holds metadata about a session workspace.
 type Workspace struct {
-	TaskID    string    `json:"task_id"`
-	Path      string    `json:"path"`
-	Slug      string    `json:"slug"`
-	CreatedAt time.Time `json:"created_at"`
-	TTL       int64     `json:"ttl"` // seconds
-	SizeBytes int64     `json:"size_bytes"`
+	TaskID     string    `json:"task_id"`
+	Path       string    `json:"path"`
+	Slug       string    `json:"slug"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastAccess time.Time `json:"last_access,omitzero"` // updated on reuse (instruct/review/diff)
+	TTL        int64     `json:"ttl"`                  // seconds
+	SizeBytes  int64     `json:"size_bytes"`
 }
 
-// IsExpired checks if the workspace TTL has elapsed.
+// lastActivity returns the TTL reference time: the last recorded access,
+// falling back to creation time for workspaces registered before last_access
+// tracking existed.
+func (w *Workspace) lastActivity() time.Time {
+	if !w.LastAccess.IsZero() {
+		return w.LastAccess
+	}
+	return w.CreatedAt
+}
+
+// IsExpired checks if the workspace TTL has elapsed since the last access
+// (creation time when no access was ever recorded).
 func (w *Workspace) IsExpired() bool {
-	return time.Since(w.CreatedAt) > time.Duration(w.TTL)*time.Second
+	return time.Since(w.lastActivity()) > time.Duration(w.TTL)*time.Second
 }
 
 // ExpiresAt returns the expiration time.
 func (w *Workspace) ExpiresAt() time.Time {
-	return w.CreatedAt.Add(time.Duration(w.TTL) * time.Second)
+	return w.lastActivity().Add(time.Duration(w.TTL) * time.Second)
 }
 
 // Manager manages workspace directories and their Redis metadata.
@@ -61,21 +73,24 @@ func (m *Manager) Create(ctx context.Context, sessionID, prompt string) (*Worksp
 		return nil, fmt.Errorf("creating workspace directory: %w", err)
 	}
 
+	now := time.Now().UTC()
 	ws := &Workspace{
-		TaskID:    sessionID,
-		Path:      wsPath,
-		Slug:      slug,
-		CreatedAt: time.Now().UTC(),
-		TTL:       int64(m.ttl.Seconds()),
+		TaskID:     sessionID,
+		Path:       wsPath,
+		Slug:       slug,
+		CreatedAt:  now,
+		LastAccess: now,
+		TTL:        int64(m.ttl.Seconds()),
 	}
 
 	fields := map[string]interface{}{
-		"task_id":    ws.TaskID,
-		"path":       ws.Path,
-		"slug":       ws.Slug,
-		"created_at": ws.CreatedAt.Format(time.RFC3339Nano),
-		"ttl":        ws.TTL,
-		"size_bytes": 0,
+		"task_id":     ws.TaskID,
+		"path":        ws.Path,
+		"slug":        ws.Slug,
+		"created_at":  ws.CreatedAt.Format(time.RFC3339Nano),
+		"last_access": ws.LastAccess.Format(time.RFC3339Nano),
+		"ttl":         ws.TTL,
+		"size_bytes":  0,
 	}
 
 	redisKey := m.redisKey(sessionID)
@@ -93,6 +108,24 @@ func (m *Manager) WorkspacePath(ctx context.Context, sessionID string) string {
 		return ws.Path
 	}
 	return ""
+}
+
+// Touch refreshes the workspace's last-access timestamp so actively used
+// workspaces (instruct, review, diff) are not expired by the TTL cleaner.
+// Best-effort: a no-op for unknown sessions, failures are only logged.
+func (m *Manager) Touch(ctx context.Context, sessionID string) {
+	redisKey := m.redisKey(sessionID)
+
+	// Only touch existing hashes — don't create orphan metadata entries.
+	exists, err := m.redis.Unwrap().Exists(ctx, redisKey).Result()
+	if err != nil || exists == 0 {
+		return
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if err := m.redis.Unwrap().HSet(ctx, redisKey, "last_access", now).Err(); err != nil {
+		slog.Warn("failed to touch workspace", "session_id", sessionID, "error", err)
+	}
 }
 
 // Get retrieves workspace metadata from Redis. Returns nil if not found.
@@ -236,6 +269,9 @@ func hashToWorkspace(fields map[string]string) *Workspace {
 	}
 	if v := fields["created_at"]; v != "" {
 		ws.CreatedAt, _ = time.Parse(time.RFC3339Nano, v)
+	}
+	if v := fields["last_access"]; v != "" {
+		ws.LastAccess, _ = time.Parse(time.RFC3339Nano, v)
 	}
 	if v := fields["ttl"]; v != "" {
 		ws.TTL, _ = strconv.ParseInt(v, 10, 64)

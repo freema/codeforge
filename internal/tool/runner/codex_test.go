@@ -7,11 +7,12 @@ import (
 
 func TestExtractCodexStreamData(t *testing.T) {
 	tests := []struct {
-		name          string
-		input         string
-		wantText      string
-		wantInTokens  int
-		wantOutTokens int
+		name             string
+		input            string
+		wantText         string
+		wantInTokens     int
+		wantCachedTokens int
+		wantOutTokens    int
 	}{
 		{
 			name:     "agent_message item.completed",
@@ -23,6 +24,13 @@ func TestExtractCodexStreamData(t *testing.T) {
 			input:         `{"type":"turn.completed","usage":{"input_tokens":24763,"output_tokens":122}}`,
 			wantInTokens:  24763,
 			wantOutTokens: 122,
+		},
+		{
+			name:             "turn.completed with cached input tokens",
+			input:            `{"type":"turn.completed","usage":{"input_tokens":24763,"cached_input_tokens":20000,"output_tokens":122}}`,
+			wantInTokens:     24763,
+			wantCachedTokens: 20000,
+			wantOutTokens:    122,
 		},
 		{
 			name:  "thread.started ignored",
@@ -58,13 +66,16 @@ func TestExtractCodexStreamData(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			text, inTokens, outTokens := extractCodexStreamData([]byte(tt.input))
+			text, inTokens, cachedTokens, outTokens := extractCodexStreamData([]byte(tt.input))
 
 			if text != tt.wantText {
 				t.Errorf("text = %q, want %q", text, tt.wantText)
 			}
 			if inTokens != tt.wantInTokens {
 				t.Errorf("inputTokens = %d, want %d", inTokens, tt.wantInTokens)
+			}
+			if cachedTokens != tt.wantCachedTokens {
+				t.Errorf("cachedInputTokens = %d, want %d", cachedTokens, tt.wantCachedTokens)
 			}
 			if outTokens != tt.wantOutTokens {
 				t.Errorf("outputTokens = %d, want %d", outTokens, tt.wantOutTokens)

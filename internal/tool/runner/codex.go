@@ -135,7 +135,7 @@ func (c *CodexRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, err
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB buffer
 
 	var resultText string
-	var inputTokens, outputTokens int
+	var inputTokens, cachedInputTokens, outputTokens int
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -151,23 +151,30 @@ func (c *CodexRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, err
 		}
 
 		// Extract result text and usage from stream events
-		text, iTokens, oTokens := extractCodexStreamData(line)
+		text, iTokens, cTokens, oTokens := extractCodexStreamData(line)
 		if text != "" {
 			resultText = text
 		}
 		inputTokens += iTokens
+		cachedInputTokens += cTokens
 		outputTokens += oTokens
+	}
+	if scanErr := scanner.Err(); scanErr != nil {
+		// e.g. a line exceeding the 1MB buffer — the stream (and result/usage
+		// extracted from it) may be truncated.
+		slog.Warn("codex CLI stream scan error, output may be truncated", "error", scanErr)
 	}
 
 	err = cmd.Wait()
 	duration := time.Since(startTime)
 
 	result := &RunResult{
-		Output:       resultText,
-		ExitCode:     -1,
-		Duration:     duration,
-		InputTokens:  inputTokens,
-		OutputTokens: outputTokens,
+		Output:               resultText,
+		ExitCode:             -1,
+		Duration:             duration,
+		InputTokens:          inputTokens,
+		OutputTokens:         outputTokens,
+		CacheReadInputTokens: cachedInputTokens,
 	}
 
 	if cmd.ProcessState != nil {
@@ -198,12 +205,12 @@ func (c *CodexRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, err
 // Codex emits events like:
 //
 //	{"type":"item.completed","item":{"type":"agent_message","text":"Done."}}
-//	{"type":"turn.completed","usage":{"input_tokens":24763,"output_tokens":122}}
+//	{"type":"turn.completed","usage":{"input_tokens":24763,"cached_input_tokens":20000,"output_tokens":122}}
 //
 // Returns:
 //   - text: from "item.completed" events with item.type == "agent_message"
-//   - inputTokens, outputTokens: from "turn.completed" usage
-func extractCodexStreamData(line []byte) (text string, inputTokens, outputTokens int) {
+//   - inputTokens, cachedInputTokens, outputTokens: from "turn.completed" usage
+func extractCodexStreamData(line []byte) (text string, inputTokens, cachedInputTokens, outputTokens int) {
 	var event struct {
 		Type string `json:"type"`
 		Item struct {
@@ -211,12 +218,13 @@ func extractCodexStreamData(line []byte) (text string, inputTokens, outputTokens
 			Text string `json:"text"`
 		} `json:"item"`
 		Usage struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
+			InputTokens       int `json:"input_tokens"`
+			CachedInputTokens int `json:"cached_input_tokens"`
+			OutputTokens      int `json:"output_tokens"`
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(line, &event); err != nil {
-		return "", 0, 0
+		return "", 0, 0, 0
 	}
 
 	switch event.Type {
@@ -226,8 +234,9 @@ func extractCodexStreamData(line []byte) (text string, inputTokens, outputTokens
 		}
 	case "turn.completed":
 		inputTokens = event.Usage.InputTokens
+		cachedInputTokens = event.Usage.CachedInputTokens
 		outputTokens = event.Usage.OutputTokens
 	}
 
-	return text, inputTokens, outputTokens
+	return text, inputTokens, cachedInputTokens, outputTokens
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/freema/codeforge/internal/config"
 	"github.com/freema/codeforge/internal/database"
 	"github.com/freema/codeforge/internal/keys"
+	"github.com/freema/codeforge/internal/preset"
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/server/handlers"
 	"github.com/freema/codeforge/internal/server/middleware"
@@ -73,7 +74,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 	}
 
 	// Handlers
-	sessionHandler := handlers.NewSessionHandler(sessionService, prService, canceller, cliRegistry, keyRegistry, cfg.Git.ProviderDomains, tenantService)
+	sessionHandler := handlers.NewSessionHandler(sessionService, prService, canceller, cliRegistry, keyRegistry, cfg.Git.ProviderDomains, tenantService, workspaceMgr)
 	cliHandler := handlers.NewCLIHandler(cliRegistry, cliConfigs)
 	streamHandler := handlers.NewStreamHandler(sessionService, redis)
 	keyHandler := handlers.NewKeyHandler(keyRegistry)
@@ -84,6 +85,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 	sentryHandler := handlers.NewSentryHandler(keyRegistry)
 	workflowHandler := handlers.NewWorkflowHandler(workflowRegistry, sessionService, keyRegistry)
 	workflowConfigHandler := handlers.NewWorkflowConfigHandler(workflowConfigStore, workflowRegistry, sessionService, keyRegistry)
+	presetHandler := handlers.NewPresetHandler(preset.NewService(preset.NewStore(sqliteDB.Unwrap())), sessionHandler)
 
 	// Protected API routes.
 	// Dual-auth when the subscription model is enabled: operator token OR tenant
@@ -125,6 +127,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 				r.Post("/{sessionID}/create-pr", sessionHandler.CreatePR)
 				r.Post("/{sessionID}/push", sessionHandler.PushToPR)
 				r.Get("/{sessionID}/pr-status", sessionHandler.GetPRStatus)
+				r.Get("/{sessionID}/diff", sessionHandler.Diff)
 			})
 
 			r.Get("/session-types", sessionHandler.ListSessionTypes)
@@ -196,6 +199,21 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 					r.Post("/{id}/run", workflowConfigHandler.Run)
 				})
 
+				r.Route("/presets", func(r chi.Router) {
+					r.Post("/", presetHandler.Create)
+					r.Get("/", presetHandler.List)
+					r.Get("/{presetID}", presetHandler.Get)
+					r.Put("/{presetID}", presetHandler.Update)
+					r.Delete("/{presetID}", presetHandler.Delete)
+					// Running a preset creates a session — same rate limit
+					// as POST /sessions.
+					if rateLimitMw != nil {
+						r.With(rateLimitMw).Post("/{presetID}/run", presetHandler.Run)
+					} else {
+						r.Post("/{presetID}/run", presetHandler.Run)
+					}
+				})
+
 				if scheduleHandler != nil {
 					r.Route("/schedules", func(r chi.Router) {
 						r.Post("/", scheduleHandler.Create)
@@ -204,6 +222,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 						r.Patch("/{scheduleID}", scheduleHandler.Update)
 						r.Delete("/{scheduleID}", scheduleHandler.Delete)
 						r.Post("/{scheduleID}/run", scheduleHandler.Run)
+						r.Get("/{scheduleID}/runs", scheduleHandler.Runs)
 					})
 				}
 			})

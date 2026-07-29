@@ -57,6 +57,9 @@ func (c *ClaudeRunner) buildArgs(opts RunOptions) []string {
 		"--permission-mode", "bypassPermissions",
 	}
 	args = append(args, c.extraArgs...)
+	if opts.ResumeSessionID != "" {
+		args = append(args, "--resume", opts.ResumeSessionID)
+	}
 	if opts.MCPConfigPath != "" {
 		args = append(args, "--mcp-config", opts.MCPConfigPath)
 	}
@@ -180,6 +183,10 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 	var resultText string        // from the "result" event (authoritative if present)
 	var lastAssistantText string // from the latest "assistant" text event (fallback)
 	var inputTokens, outputTokens int
+	var cacheReadTokens, cacheCreationTokens int
+	var costUSD float64
+	var numTurns int
+	var cliSessionID string
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -195,15 +202,31 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 		}
 
 		// Extract result text and usage from stream events
-		rText, aText, iTokens, oTokens := extractStreamData(line)
-		if rText != "" {
-			resultText = rText
+		data := extractStreamData(line)
+		if data.ResultText != "" {
+			resultText = data.ResultText
 		}
-		if aText != "" {
-			lastAssistantText = aText
+		if data.AssistantText != "" {
+			lastAssistantText = data.AssistantText
 		}
-		inputTokens += iTokens
-		outputTokens += oTokens
+		inputTokens += data.InputTokens
+		outputTokens += data.OutputTokens
+		cacheReadTokens += data.CacheReadInputTokens
+		cacheCreationTokens += data.CacheCreationInputTokens
+		if data.CostUSD > 0 {
+			costUSD = data.CostUSD // total_cost_usd is a run total, not a delta
+		}
+		if data.NumTurns > 0 {
+			numTurns = data.NumTurns
+		}
+		if data.SessionID != "" {
+			cliSessionID = data.SessionID // later events win (resume forks to a new session id)
+		}
+	}
+	if scanErr := scanner.Err(); scanErr != nil {
+		// e.g. a line exceeding the 1MB buffer — the stream (and result/usage
+		// extracted from it) may be truncated.
+		slog.Warn(c.label+" CLI stream scan error, output may be truncated", "error", scanErr)
 	}
 
 	err = cmd.Wait()
@@ -217,11 +240,16 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 	}
 
 	result := &RunResult{
-		Output:       output,
-		ExitCode:     -1,
-		Duration:     duration,
-		InputTokens:  inputTokens,
-		OutputTokens: outputTokens,
+		Output:                   output,
+		ExitCode:                 -1,
+		Duration:                 duration,
+		InputTokens:              inputTokens,
+		OutputTokens:             outputTokens,
+		CacheReadInputTokens:     cacheReadTokens,
+		CacheCreationInputTokens: cacheCreationTokens,
+		CostUSD:                  costUSD,
+		NumTurns:                 numTurns,
+		CLISessionID:             cliSessionID,
 	}
 
 	if cmd.ProcessState != nil {
@@ -247,37 +275,66 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 	return result, nil
 }
 
+// claudeStreamData holds everything extracted from one Claude Code stream-json line.
+type claudeStreamData struct {
+	ResultText               string // from the final "result" event (authoritative when present)
+	AssistantText            string // from "assistant" text events (fallback when result is empty)
+	InputTokens              int    // from the "result" event usage
+	OutputTokens             int
+	CacheReadInputTokens     int
+	CacheCreationInputTokens int
+	CostUSD                  float64 // total_cost_usd from the "result" event (run total)
+	NumTurns                 int     // num_turns from the "result" event
+	SessionID                string  // session_id from the "system" init or "result" event
+}
+
 // extractStreamData parses a Claude Code stream-json line for result text,
-// assistant text, and usage info.
-//
-// Returns:
-//   - resultText: from the final "result" event (authoritative when present)
-//   - assistantText: from "assistant" text events (fallback when result is empty)
-//   - inputTokens, outputTokens: from the "result" event usage
-func extractStreamData(line []byte) (resultText, assistantText string, inputTokens, outputTokens int) {
+// assistant text, usage, cost, turn count, and the CLI session id.
+func extractStreamData(line []byte) claudeStreamData {
+	var data claudeStreamData
+
 	var event map[string]json.RawMessage
 	if err := json.Unmarshal(line, &event); err != nil {
-		return "", "", 0, 0
+		return data
 	}
 
 	var eventType string
 	if err := json.Unmarshal(event["type"], &eventType); err != nil {
-		return "", "", 0, 0
+		return data
 	}
 
 	switch eventType {
 	case "result":
 		var result struct {
-			Result string `json:"result"`
-			Usage  struct {
-				InputTokens  int `json:"input_tokens"`
-				OutputTokens int `json:"output_tokens"`
+			Result       string  `json:"result"`
+			SessionID    string  `json:"session_id"`
+			TotalCostUSD float64 `json:"total_cost_usd"`
+			NumTurns     int     `json:"num_turns"`
+			Usage        struct {
+				InputTokens              int `json:"input_tokens"`
+				OutputTokens             int `json:"output_tokens"`
+				CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+				CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 			} `json:"usage"`
 		}
 		if err := json.Unmarshal(line, &result); err == nil {
-			resultText = result.Result
-			inputTokens = result.Usage.InputTokens
-			outputTokens = result.Usage.OutputTokens
+			data.ResultText = result.Result
+			data.SessionID = result.SessionID
+			data.InputTokens = result.Usage.InputTokens
+			data.OutputTokens = result.Usage.OutputTokens
+			data.CacheReadInputTokens = result.Usage.CacheReadInputTokens
+			data.CacheCreationInputTokens = result.Usage.CacheCreationInputTokens
+			data.CostUSD = result.TotalCostUSD
+			data.NumTurns = result.NumTurns
+		}
+
+	case "system":
+		// The "system" init event announces the CLI session id at run start.
+		var sys struct {
+			SessionID string `json:"session_id"`
+		}
+		if err := json.Unmarshal(line, &sys); err == nil {
+			data.SessionID = sys.SessionID
 		}
 
 	case "assistant":
@@ -299,9 +356,9 @@ func extractStreamData(line []byte) (resultText, assistantText string, inputToke
 					sb.WriteString(c.Text)
 				}
 			}
-			assistantText = sb.String()
+			data.AssistantText = sb.String()
 		}
 	}
 
-	return resultText, assistantText, inputTokens, outputTokens
+	return data
 }

@@ -92,4 +92,22 @@ var (
 			Help: "Total number of review output parse failures",
 		},
 	)
+
+	// TokensTotal counts AI tokens consumed per CLI and direction (input|output).
+	TokensTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "codeforge_tokens_total",
+			Help: "Total number of AI tokens consumed",
+		},
+		[]string{"cli", "direction"},
+	)
+
+	// CostUSDTotal accumulates the estimated AI cost in USD per CLI.
+	CostUSDTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "codeforge_cost_usd_total",
+			Help: "Total estimated AI cost in USD",
+		},
+		[]string{"cli"},
+	)
 )
