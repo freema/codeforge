@@ -125,6 +125,15 @@ type CodeReviewConfig struct {
 	DefaultKeyName  string               `koanf:"default_key_name"` // fallback key for webhook-triggered reviews
 	WebhookSecrets  WebhookSecretsConfig `koanf:"webhook_secrets"`
 	WebhookDedupTTL int                  `koanf:"webhook_dedup_ttl"` // dedup TTL in seconds (default: 3600)
+
+	// AllowUntrustedAuthors lets webhook-triggered reviews run for contributors
+	// outside the repository (fork PRs, and commands from non-members).
+	//
+	// Reviewing a PR means checking out its branch and running an AI CLI over it
+	// with approvals disabled, so an untrusted author effectively chooses code
+	// that executes on this server. Off by default; only enable where the
+	// workspace is genuinely isolated per session.
+	AllowUntrustedAuthors bool `koanf:"allow_untrusted_authors"`
 }
 
 type WebhookSecretsConfig struct {

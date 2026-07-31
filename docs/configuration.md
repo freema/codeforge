@@ -144,11 +144,36 @@ Chat notifications for terminal session events. Disabled unless at least one web
 | `CODEFORGE_CODE_REVIEW__WEBHOOK_DEDUP_TTL` | `3600` | Webhook dedup TTL in seconds (prevents duplicate reviews for same commit) |
 | `CODEFORGE_CODE_REVIEW__WEBHOOK_SECRETS__GITHUB` | *(empty)* | HMAC-SHA256 secret for GitHub webhook verification |
 | `CODEFORGE_CODE_REVIEW__WEBHOOK_SECRETS__GITLAB` | *(empty)* | Secret token for GitLab webhook verification |
+| `CODEFORGE_CODE_REVIEW__ALLOW_UNTRUSTED_AUTHORS` | `false` | Review fork PRs/MRs and accept commands from authors without write access |
 
 > The review CLI and model can also be overridden at runtime from the UI
 > (Settings → AI providers → Code review) or via `PUT /api/v1/settings/review`.
 > The runtime override takes precedence over `code_review.default_cli`; an
 > empty override falls back to this config.
+
+#### Who can trigger a webhook review
+
+A valid webhook signature proves the event came from GitHub or GitLab. It says
+nothing about who opened the pull request or wrote the comment. Reviewing a PR
+means checking out its branch and running an AI CLI over it with approvals
+disabled, so the author effectively chooses code that runs on the server.
+
+By default CodeForge therefore requires write access from the author:
+
+- **Fork PRs** are reviewed only when `author_association` is `OWNER`,
+  `MEMBER`, or `COLLABORATOR`. `CONTRIBUTOR` is not enough — it only means an
+  earlier PR was merged.
+- **Comment commands** (`/review`, `/fix`, `/fix-cr`) are dispatched under the
+  same rule. `/fix` forwards the rest of the comment as the prompt for a session
+  that writes code, so on a public repository this is the most sensitive entry
+  point in the system.
+- **GitLab** payloads carry no equivalent of `author_association`, so fork MRs
+  (source project ≠ target project) are skipped outright and commands are
+  refused on them.
+
+Setting `allow_untrusted_authors: true` disables all of the above. Only do that
+where each session is genuinely isolated — see
+[Deployment](deployment.md#isolation-and-untrusted-code).
 
 ### Tracing
 
