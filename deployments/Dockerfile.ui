@@ -1,5 +1,5 @@
 # ---- Dev stage: Vite dev server with hot reload ----
-FROM node:22-alpine AS dev
+FROM node:25-alpine AS dev
 
 WORKDIR /app
 
@@ -11,7 +11,7 @@ COPY web/ .
 CMD ["npx", "vite", "--host"]
 
 # ---- Production stage: build + Express server ----
-FROM node:22-alpine AS prod
+FROM node:25-alpine AS prod
 
 WORKDIR /app
 
