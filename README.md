@@ -60,6 +60,25 @@ A ready-to-use compose file is at [`deployments/docker-compose.production.yaml`]
 task dev
 ```
 
+## Security model
+
+Running a session means executing a repository's code, and letting the AI decide what to run, with approvals disabled. Repository content is attacker-controlled input, so it is worth being precise about what is and is not contained.
+
+**What it is today:** the AI CLI runs in the same container as the server, dropped to a non-root user. That is a privilege boundary, not isolation. There is no per-session container, VM, or network policy.
+
+**What the server does contain:**
+
+- The CLI subprocess gets an allowlisted environment, not the server's. The encryption key protecting the credential registry, the operator token, webhook secrets and the Redis URL never enter a session.
+- Git credentials are supplied through short-lived `GIT_ASKPASS` scripts that are removed before the CLI starts; tokens never reach the URL or `.git/config`.
+- Fork PRs and comment commands (`/review`, `/fix`) require an author with write access. Off by default for everyone else — a valid webhook signature proves the event came from GitHub, not that its author is trusted.
+- Opening a PR always requires an explicit action. This is a hard-coded invariant, not a configuration flag.
+
+**What it does not do yet:** isolate sessions from each other, from the database on the shared filesystem, or from the network. Per-session sandboxing is the next step.
+
+Because CodeForge is self-hosted, the remaining responsibility sits with whoever deploys it. Point it at repositories where you trust everyone with PR access, and treat the host as part of that trust domain. Repository-level controls — such as requiring approval before workflows run on fork PRs — are a useful additional layer, though note they gate CI workflows rather than webhook deliveries.
+
+Details in [Deployment](docs/deployment.md#isolation-and-untrusted-code) and [Configuration](docs/configuration.md#who-can-trigger-a-webhook-review). Found something? Open a security advisory rather than a public issue.
+
 ## Documentation
 
 | Document | Description |
