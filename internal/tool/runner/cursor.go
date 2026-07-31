@@ -52,7 +52,9 @@ func (c *CursorRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 	cmd.Dir = opts.WorkDir
 
-	baseEnv := os.Environ()
+	// Allowlisted environment — the CLI runs untrusted checked-out code and must
+	// not inherit the server's secrets (see sanitizedEnv).
+	baseEnv := sanitizedEnv()
 	if os.Getuid() == 0 {
 		if u, err := user.Lookup("codeforge"); err == nil {
 			uid, _ := strconv.ParseUint(u.Uid, 10, 32)

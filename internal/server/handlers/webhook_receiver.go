@@ -75,9 +75,15 @@ type githubPREvent struct {
 		Number  int    `json:"number"`
 		Draft   bool   `json:"draft"`
 		HTMLURL string `json:"html_url"`
-		Head    struct {
-			Ref string `json:"ref"`
-			SHA string `json:"sha"`
+		// AuthorAssociation is the author's relationship to the repository
+		// (OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, NONE, ...).
+		AuthorAssociation string `json:"author_association"`
+		Head              struct {
+			Ref  string `json:"ref"`
+			SHA  string `json:"sha"`
+			Repo *struct {
+				FullName string `json:"full_name"`
+			} `json:"repo"`
 		} `json:"head"`
 		Base struct {
 			Ref string `json:"ref"`
@@ -90,6 +96,44 @@ type githubPREvent struct {
 	} `json:"repository"`
 }
 
+// isFork reports whether the PR's head branch lives outside the target
+// repository, i.e. whether its content could come from someone without push
+// access. The head repo's own "fork" flag is deliberately not consulted: it is
+// also true for in-repo branches when the target repository is itself a fork
+// of something else. What matters is only whether head and base are the same
+// project. A deleted or inaccessible head repo (nil) is treated as a fork:
+// unknown provenance is never trusted.
+func (e *githubPREvent) isFork() bool {
+	head := e.PullRequest.Head.Repo
+	if head == nil {
+		return true
+	}
+	return !strings.EqualFold(head.FullName, e.Repository.FullName)
+}
+
+// isGitLabFork reports whether a merge request's source branch lives in a
+// different project than its target, which is GitLab's equivalent of a fork PR.
+// Older GitLab versions omit these IDs; a zero value is inconclusive and is
+// treated as same-project so that self-hosted instances keep working.
+func isGitLabFork(sourceProjectID, targetProjectID int) bool {
+	if sourceProjectID == 0 || targetProjectID == 0 {
+		return false
+	}
+	return sourceProjectID != targetProjectID
+}
+
+// trustedGitHubAssociation reports whether an author_association value belongs
+// to someone with write access to the repository. Everything else — including
+// CONTRIBUTOR, which merely means "has had a PR merged before" — is untrusted.
+func trustedGitHubAssociation(assoc string) bool {
+	switch strings.ToUpper(assoc) {
+	case "OWNER", "MEMBER", "COLLABORATOR":
+		return true
+	default:
+		return false
+	}
+}
+
 // --- GitHub comment types ---
 
 type githubCommentEvent struct {
@@ -99,6 +143,10 @@ type githubCommentEvent struct {
 		User struct {
 			Login string `json:"login"`
 		} `json:"user"`
+		// AuthorAssociation gates command dispatch — /fix passes the comment
+		// body straight through as a prompt, so anyone who can comment would
+		// otherwise be able to drive a code-writing session.
+		AuthorAssociation string `json:"author_association"`
 	} `json:"comment"`
 	Issue struct {
 		Number      int `json:"number"`
@@ -123,10 +171,15 @@ type gitlabNoteEvent struct {
 		System       bool   `json:"system"`
 	} `json:"object_attributes"`
 	MergeRequest *struct {
-		IID          int    `json:"iid"`
-		SourceBranch string `json:"source_branch"`
-		TargetBranch string `json:"target_branch"`
+		IID             int    `json:"iid"`
+		SourceBranch    string `json:"source_branch"`
+		TargetBranch    string `json:"target_branch"`
+		SourceProjectID int    `json:"source_project_id"`
+		TargetProjectID int    `json:"target_project_id"`
 	} `json:"merge_request"`
+	User struct {
+		Username string `json:"username"`
+	} `json:"user"`
 	Project struct {
 		PathWithNamespace string `json:"path_with_namespace"`
 		HTTPURLToRepo     string `json:"http_url_to_repo"`
@@ -138,15 +191,17 @@ type gitlabNoteEvent struct {
 type gitlabMREvent struct {
 	ObjectKind       string `json:"object_kind"`
 	ObjectAttributes struct {
-		IID            int    `json:"iid"`
-		Action         string `json:"action"`
-		SourceBranch   string `json:"source_branch"`
-		TargetBranch   string `json:"target_branch"`
-		WorkInProgress bool   `json:"work_in_progress"`
-		Draft          bool   `json:"draft"`
-		URL            string `json:"url"`
-		Title          string `json:"title"`
-		LastCommit     struct {
+		IID             int    `json:"iid"`
+		Action          string `json:"action"`
+		SourceBranch    string `json:"source_branch"`
+		TargetBranch    string `json:"target_branch"`
+		SourceProjectID int    `json:"source_project_id"`
+		TargetProjectID int    `json:"target_project_id"`
+		WorkInProgress  bool   `json:"work_in_progress"`
+		Draft           bool   `json:"draft"`
+		URL             string `json:"url"`
+		Title           string `json:"title"`
+		LastCommit      struct {
 			ID string `json:"id"`
 		} `json:"last_commit"`
 	} `json:"object_attributes"`
@@ -210,6 +265,27 @@ func (h *WebhookReceiverHandler) handleGitHubPR(w http.ResponseWriter, r *http.R
 
 	if event.PullRequest.Draft && !h.cfg.ReviewDrafts {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "skipped", "reason": "draft PR"})
+		return
+	}
+
+	// A valid HMAC signature proves GitHub sent this event. It says nothing
+	// about who opened the pull request.
+	//
+	// Reviewing a fork PR means fetching pull/{n}/head — code chosen by the
+	// author — into a workspace and running the AI CLI over it with approvals
+	// disabled. Anyone able to open a PR would otherwise be able to execute
+	// code here. Fork PRs are therefore reviewed only for authors with write
+	// access, unless the operator has explicitly accepted that risk.
+	if event.isFork() && !trustedGitHubAssociation(event.PullRequest.AuthorAssociation) && !h.cfg.AllowUntrustedAuthors {
+		log.Warn("github webhook: skipping fork PR from untrusted author",
+			"pr", event.PullRequest.Number,
+			"repo", event.Repository.FullName,
+			"author_association", event.PullRequest.AuthorAssociation,
+		)
+		writeJSON(w, http.StatusOK, map[string]string{
+			"status": "skipped",
+			"reason": "fork PR from an author without write access (set code_review.allow_untrusted_authors to override)",
+		})
 		return
 	}
 
@@ -309,6 +385,26 @@ func (h *WebhookReceiverHandler) handleGitHubComment(w http.ResponseWriter, r *h
 		return
 	}
 
+	// Comment commands are the most powerful entry point in the system: /fix
+	// forwards the rest of the comment verbatim as the prompt for a session
+	// that writes code and pushes it. On a public repository, comments are
+	// open to everyone, so the author's write access — not the fact that the
+	// event is authentically from GitHub — is what makes dispatch safe.
+	if !trustedGitHubAssociation(event.Comment.AuthorAssociation) && !h.cfg.AllowUntrustedAuthors {
+		log.Warn("github webhook: ignoring forge command from untrusted author",
+			"command", cmd,
+			"pr", event.Issue.Number,
+			"repo", event.Repository.FullName,
+			"user", event.Comment.User.Login,
+			"author_association", event.Comment.AuthorAssociation,
+		)
+		writeJSON(w, http.StatusOK, map[string]string{
+			"status": "ignored",
+			"reason": "commenter has no write access (set code_review.allow_untrusted_authors to override)",
+		})
+		return
+	}
+
 	repoURL := event.Repository.CloneURL
 	if repoURL == "" {
 		repoURL = event.Repository.HTMLURL
@@ -321,6 +417,7 @@ func (h *WebhookReceiverHandler) handleGitHubComment(w http.ResponseWriter, r *h
 		"pr", prNumber,
 		"repo", event.Repository.FullName,
 		"user", event.Comment.User.Login,
+		"author_association", event.Comment.AuthorAssociation,
 	)
 
 	keyName := h.cfg.DefaultKeyName
@@ -468,6 +565,27 @@ func (h *WebhookReceiverHandler) handleGitLabMR(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// A merge request whose source branch lives in a different project is a
+	// fork MR: its diff is authored by someone outside the target project, and
+	// reviewing it executes their code on this server.
+	//
+	// GitLab webhook payloads carry no equivalent of GitHub's
+	// author_association, so membership cannot be checked without an extra API
+	// call. Fork MRs are therefore skipped outright unless the operator opts in.
+	if isGitLabFork(event.ObjectAttributes.SourceProjectID, event.ObjectAttributes.TargetProjectID) && !h.cfg.AllowUntrustedAuthors {
+		log.Warn("gitlab webhook: skipping fork MR",
+			"mr", event.ObjectAttributes.IID,
+			"repo", event.Project.PathWithNamespace,
+			"source_project_id", event.ObjectAttributes.SourceProjectID,
+			"target_project_id", event.ObjectAttributes.TargetProjectID,
+		)
+		writeJSON(w, http.StatusOK, map[string]string{
+			"status": "skipped",
+			"reason": "fork MR (set code_review.allow_untrusted_authors to override)",
+		})
+		return
+	}
+
 	keyName := h.cfg.DefaultKeyName
 	if keyName == "" {
 		writeError(w, http.StatusBadRequest, "code_review.default_key_name not configured")
@@ -554,6 +672,24 @@ func (h *WebhookReceiverHandler) handleGitLabNote(w http.ResponseWriter, r *http
 	cmd, arg := parseForgeCommand(event.ObjectAttributes.Note)
 	if cmd == "" {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored", "reason": "no forge command found"})
+		return
+	}
+
+	// Same reasoning as the GitHub comment path: /fix turns the note body into
+	// the prompt of a code-writing session. GitLab does not report the
+	// commenter's access level here, so the only provenance signal available
+	// is whether the MR itself comes from a fork.
+	if isGitLabFork(event.MergeRequest.SourceProjectID, event.MergeRequest.TargetProjectID) && !h.cfg.AllowUntrustedAuthors {
+		log.Warn("gitlab webhook: ignoring forge command on fork MR",
+			"command", cmd,
+			"mr", event.MergeRequest.IID,
+			"repo", event.Project.PathWithNamespace,
+			"user", event.User.Username,
+		)
+		writeJSON(w, http.StatusOK, map[string]string{
+			"status": "ignored",
+			"reason": "forge commands are disabled on fork MRs (set code_review.allow_untrusted_authors to override)",
+		})
 		return
 	}
 

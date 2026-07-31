@@ -178,6 +178,32 @@ spec:
 - **Non-root**: The Docker image runs as the `codeforge` user (non-root)
 - **Webhook secrets**: Use a strong HMAC secret for callback verification
 
+### Isolation and untrusted code
+
+Be clear-eyed about the current isolation model: **the AI CLI runs in the same
+container as the server**, dropped to a non-root user, over a checked-out
+branch. Running a session over a repository means executing whatever that
+repository's code and build scripts do, plus whatever the AI decides to run —
+with approvals disabled. There is no per-session container, VM, or network
+policy yet.
+
+What CodeForge does to contain this today:
+
+- The CLI subprocess gets an **allowlisted environment**, not the server's. The
+  encryption key, operator token, webhook secrets, and Redis URL never cross
+  into the session (`internal/tool/runner/env.go`).
+- Git credentials are used via short-lived `GIT_ASKPASS` scripts that are
+  removed before the CLI starts; tokens are never in the URL or `.git/config`.
+- Webhook-triggered work from authors without write access is **off by
+  default** (`code_review.allow_untrusted_authors`) — see
+  [Configuration](configuration.md#who-can-trigger-a-webhook-review).
+
+What it does not do (yet): isolate sessions from each other, from the SQLite
+database on the shared filesystem, or from the network. Until per-session
+isolation lands, run CodeForge only against repositories where everyone with
+push or PR access is trusted, on a host you treat as part of that trust
+domain.
+
 ## Monitoring
 
 ### Prometheus

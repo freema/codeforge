@@ -108,9 +108,11 @@ func (c *ClaudeRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, er
 	cmd := exec.CommandContext(ctx, binary, cmdArgs...)
 	cmd.Dir = opts.WorkDir
 
-	// Build environment. If running as root and a "codeforge" user exists,
-	// drop privileges and replace HOME/SHELL so Claude Code accepts bypassPermissions.
-	baseEnv := os.Environ()
+	// Build environment from an allowlist — the CLI runs untrusted checked-out
+	// code, so it must not inherit the server's secrets (see sanitizedEnv).
+	// If running as root and a "codeforge" user exists, drop privileges and
+	// replace HOME/SHELL so Claude Code accepts bypassPermissions.
+	baseEnv := sanitizedEnv()
 	if os.Getuid() == 0 {
 		if u, err := user.Lookup("codeforge"); err == nil {
 			uid, _ := strconv.ParseUint(u.Uid, 10, 32)

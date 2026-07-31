@@ -66,9 +66,10 @@ func (c *CodexRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, err
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 	cmd.Dir = opts.WorkDir
 
-	// Build environment. If running as root and a "codeforge" user exists,
-	// drop privileges via gosu.
-	baseEnv := os.Environ()
+	// Build environment from an allowlist — the CLI runs untrusted checked-out
+	// code, so it must not inherit the server's secrets (see sanitizedEnv).
+	// If running as root and a "codeforge" user exists, drop privileges via gosu.
+	baseEnv := sanitizedEnv()
 	if os.Getuid() == 0 {
 		if u, err := user.Lookup("codeforge"); err == nil {
 			uid, _ := strconv.ParseUint(u.Uid, 10, 32)
