@@ -9,7 +9,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${VERSION}" -o codeforge ./cmd/codeforge
 
 # Stage 2: Runtime
-FROM alpine:3.20
+FROM alpine:3.24
 ARG CLAUDE_CODE_VERSION=2.1.215
 ARG CODEX_VERSION=0.104.0
 # bash: the claude CLI Bash tool refuses to run without a POSIX shell beyond busybox
