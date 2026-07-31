@@ -29,7 +29,7 @@ jobs:
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
       - name: Build and push server image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deployments/Dockerfile
@@ -44,7 +44,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push action image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deployments/Dockerfile.action
@@ -57,7 +57,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push UI image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deployments/Dockerfile.ui

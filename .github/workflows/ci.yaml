@@ -233,7 +233,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build server image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deployments/Dockerfile
@@ -248,7 +248,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build action image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deployments/Dockerfile.action
@@ -259,7 +259,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build UI image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deployments/Dockerfile.ui
