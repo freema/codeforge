@@ -18,9 +18,19 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ["react", "react-dom", "react-router"],
-          query: ["@tanstack/react-query"],
+        // Vite 8 bundles with rolldown, which drops the object form of
+        // `manualChunks` in favour of `advancedChunks.groups`.
+        advancedChunks: {
+          groups: [
+            {
+              name: "vendor",
+              test: /[\\/]node_modules[\\/](react|react-dom|react-router|scheduler)[\\/]/,
+            },
+            {
+              name: "query",
+              test: /[\\/]node_modules[\\/]@tanstack[\\/]react-query[\\/]/,
+            },
+          ],
         },
       },
     },
