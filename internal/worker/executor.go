@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime/debug"
@@ -935,18 +934,20 @@ func (e *Executor) cloneStep(ctx context.Context, t *session.Session, workDir st
 func (e *Executor) pullBranch(ctx context.Context, t *session.Session, workDir string, log *slog.Logger) {
 	log.Info("pulling latest changes", "branch", t.Branch)
 
-	askPassEnv, cleanup, err := gitpkg.AskPassEnv(t.AccessToken)
+	// The workspace was written by the previous iteration's CLI run.
+	if err := gitpkg.SanitizeRepoConfig(ctx, workDir, t.RepoURL); err != nil {
+		log.Warn("refusing to pull into workspace (continuing with existing workspace)", "error", err)
+		return
+	}
+
+	askPassEnv, cleanup, err := gitpkg.AskPassEnv(t.AccessToken, t.RepoURL)
 	if err != nil {
 		log.Warn("failed to create askpass for pull", "error", err)
 		return
 	}
 	defer cleanup()
 
-	cmd := exec.CommandContext(ctx, "git", "pull", "origin", t.Branch)
-	cmd.Dir = workDir
-	if len(askPassEnv) > 0 {
-		cmd.Env = append(os.Environ(), askPassEnv...)
-	}
+	cmd := gitpkg.Command(ctx, workDir, askPassEnv, "pull", "--no-verify", "--no-recurse-submodules", "origin", t.Branch)
 
 	if err := cmd.Run(); err != nil {
 		log.Warn("git pull failed (continuing with existing workspace)", "error", err)
@@ -1280,22 +1281,19 @@ func (e *Executor) sendWebhookAsync(ctx context.Context, sessionID, callbackURL 
 // fetchAndCheckoutPR fetches a PR ref from origin and checks out a local branch.
 // This handles both same-repo and fork PRs via the pull/{number}/head ref.
 func (e *Executor) fetchAndCheckoutPR(ctx context.Context, t *session.Session, workDir, prRef, localBranch string, log *slog.Logger) error {
-	askPassEnv, cleanup, err := gitpkg.AskPassEnv(t.AccessToken)
+	if err := gitpkg.SanitizeRepoConfig(ctx, workDir, t.RepoURL); err != nil {
+		return fmt.Errorf("preparing workspace for PR fetch: %w", err)
+	}
+
+	askPassEnv, cleanup, err := gitpkg.AskPassEnv(t.AccessToken, t.RepoURL)
 	if err != nil {
 		return fmt.Errorf("creating askpass for PR fetch: %w", err)
 	}
 	defer cleanup()
 
-	env := os.Environ()
-	if len(askPassEnv) > 0 {
-		env = append(env, askPassEnv...)
-	}
-
 	// git fetch origin pull/N/head:pr-N
 	fetchRefSpec := fmt.Sprintf("%s:%s", prRef, localBranch)
-	fetchCmd := exec.CommandContext(ctx, "git", "fetch", "origin", fetchRefSpec)
-	fetchCmd.Dir = workDir
-	fetchCmd.Env = env
+	fetchCmd := gitpkg.Command(ctx, workDir, askPassEnv, "fetch", "--no-recurse-submodules", "origin", fetchRefSpec)
 	var stderr strings.Builder
 	fetchCmd.Stderr = &stderr
 
@@ -1304,8 +1302,7 @@ func (e *Executor) fetchAndCheckoutPR(ctx context.Context, t *session.Session, w
 	}
 
 	// git checkout pr-N
-	checkoutCmd := exec.CommandContext(ctx, "git", "checkout", localBranch)
-	checkoutCmd.Dir = workDir
+	checkoutCmd := gitpkg.Command(ctx, workDir, nil, "checkout", localBranch)
 	stderr.Reset()
 	checkoutCmd.Stderr = &stderr
 

@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"strings"
 )
 
 // BranchOptions configures branch creation and push.
 type BranchOptions struct {
 	WorkDir     string
+	RepoURL     string // the URL the workspace was cloned from; pushed to, whatever origin says
 	BranchName  string
 	BaseBranch  string // If set, the feature branch is created from origin/<BaseBranch> instead of the current HEAD.
 	CommitMsg   string
@@ -24,6 +24,9 @@ type BranchOptions struct {
 // Token is passed via GIT_ASKPASS (never in URL or .git/config).
 func CreateBranchAndPush(ctx context.Context, opts BranchOptions) error {
 	workDir := opts.WorkDir
+	if err := SanitizeRepoConfig(ctx, workDir, opts.RepoURL); err != nil {
+		return err
+	}
 
 	// Create and checkout branch from current HEAD.
 	// The branch is based on whatever was cloned — the MR/PR target branch
@@ -59,19 +62,19 @@ func CreateBranchAndPush(ctx context.Context, opts BranchOptions) error {
 		"GIT_COMMITTER_NAME=" + opts.AuthorName,
 		"GIT_COMMITTER_EMAIL=" + opts.AuthorEmail,
 	}
-	if err := gitCmd(ctx, workDir, commitEnv, "commit", "-m", opts.CommitMsg); err != nil {
+	if err := gitCmd(ctx, workDir, commitEnv, "commit", "--no-verify", "--no-gpg-sign", "-m", opts.CommitMsg); err != nil {
 		return fmt.Errorf("committing changes: %w", err)
 	}
 	slog.Info("changes committed", "branch", opts.BranchName)
 
 	// Push via GIT_ASKPASS
-	pushEnv, cleanup, err := AskPassEnv(opts.Token)
+	pushEnv, cleanup, err := AskPassEnv(opts.Token, opts.RepoURL)
 	if err != nil {
 		return fmt.Errorf("preparing push credentials: %w", err)
 	}
 	defer cleanup()
 
-	if err := gitCmd(ctx, workDir, pushEnv, "push", "-u", "origin", opts.BranchName); err != nil {
+	if err := gitCmd(ctx, workDir, pushEnv, "push", "--no-verify", "-u", "origin", opts.BranchName); err != nil {
 		return fmt.Errorf("pushing branch: %w", err)
 	}
 	slog.Info("branch pushed", "branch", opts.BranchName)
@@ -79,21 +82,21 @@ func CreateBranchAndPush(ctx context.Context, opts BranchOptions) error {
 	return nil
 }
 
-// AskPassEnv prepares GIT_ASKPASS environment for authenticated git operations.
+// AskPassEnv prepares GIT_ASKPASS environment for authenticated git operations
+// against repoURL; the script answers only for repoURL's host.
 // Returns extra env vars and a cleanup function.
-func AskPassEnv(token string) ([]string, func(), error) {
+func AskPassEnv(token, repoURL string) ([]string, func(), error) {
 	if token == "" {
 		return nil, func() {}, nil
 	}
 
-	askPassFile, err := createAskPassScript(token, "")
+	askPassFile, err := createAskPassScript(token, "", repoURL)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	env := []string{
 		"GIT_ASKPASS=" + askPassFile,
-		"GIT_TERMINAL_PROMPT=0",
 	}
 	cleanup := func() { os.Remove(askPassFile) }
 	return env, cleanup, nil
@@ -101,11 +104,7 @@ func AskPassEnv(token string) ([]string, func(), error) {
 
 // gitCmd runs a git command in the given directory with optional extra env vars.
 func gitCmd(ctx context.Context, workDir string, extraEnv []string, args ...string) error {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = workDir
-	if len(extraEnv) > 0 {
-		cmd.Env = append(os.Environ(), extraEnv...)
-	}
+	cmd := Command(ctx, workDir, extraEnv, args...)
 
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
@@ -118,8 +117,7 @@ func gitCmd(ctx context.Context, workDir string, extraEnv []string, args ...stri
 
 // gitOutput runs a git command and returns stdout.
 func gitOutput(ctx context.Context, workDir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = workDir
+	cmd := Command(ctx, workDir, nil, args...)
 
 	out, err := cmd.Output()
 	if err != nil {
@@ -129,6 +127,7 @@ func gitOutput(ctx context.Context, workDir string, args ...string) (string, err
 }
 
 // GenerateBranchName creates a branch name with prefix and slug, adding numeric suffix if needed.
+// The caller must have run SanitizeRepoConfig on workDir.
 func GenerateBranchName(ctx context.Context, workDir, prefix, slug string) string {
 	base := prefix + slug
 	name := base
@@ -147,6 +146,9 @@ func GenerateBranchName(ctx context.Context, workDir, prefix, slug string) strin
 // DefaultBranch detects the default branch of the cloned repository
 // by reading the symbolic-ref of origin/HEAD.
 func DefaultBranch(ctx context.Context, workDir string) (string, error) {
+	if err := SanitizeRepoConfig(ctx, workDir, ""); err != nil {
+		return "", err
+	}
 	// Try symbolic-ref first (set by clone)
 	out, err := gitOutput(ctx, workDir, "symbolic-ref", "refs/remotes/origin/HEAD")
 	if err == nil {
@@ -180,12 +182,16 @@ func branchExists(ctx context.Context, workDir, name string) bool {
 
 // GetUnstagedDiff returns the diff of all uncommitted changes in the workspace.
 func GetUnstagedDiff(ctx context.Context, workDir string) (string, error) {
-	return gitOutput(ctx, workDir, "diff", "HEAD")
+	if err := SanitizeRepoConfig(ctx, workDir, ""); err != nil {
+		return "", err
+	}
+	return gitOutput(ctx, workDir, "diff", "--no-ext-diff", "--no-textconv", "HEAD")
 }
 
 // PushExistingOptions configures pushing follow-up changes to an existing branch.
 type PushExistingOptions struct {
 	WorkDir     string
+	RepoURL     string // the URL the workspace was cloned from; pushed to, whatever origin says
 	BranchName  string
 	CommitMsg   string
 	AuthorName  string
@@ -197,6 +203,9 @@ type PushExistingOptions struct {
 // Returns an error if there are no new changes to push.
 func CommitAndPushToExisting(ctx context.Context, opts PushExistingOptions) error {
 	workDir := opts.WorkDir
+	if err := SanitizeRepoConfig(ctx, workDir, opts.RepoURL); err != nil {
+		return err
+	}
 
 	// Stage all changes
 	if err := gitCmd(ctx, workDir, nil, "add", "-A"); err != nil {
@@ -219,19 +228,19 @@ func CommitAndPushToExisting(ctx context.Context, opts PushExistingOptions) erro
 		"GIT_COMMITTER_NAME=" + opts.AuthorName,
 		"GIT_COMMITTER_EMAIL=" + opts.AuthorEmail,
 	}
-	if err := gitCmd(ctx, workDir, commitEnv, "commit", "-m", opts.CommitMsg); err != nil {
+	if err := gitCmd(ctx, workDir, commitEnv, "commit", "--no-verify", "--no-gpg-sign", "-m", opts.CommitMsg); err != nil {
 		return fmt.Errorf("committing changes: %w", err)
 	}
 	slog.Info("follow-up changes committed", "branch", opts.BranchName)
 
 	// Push via GIT_ASKPASS
-	pushEnv, cleanup, err := AskPassEnv(opts.Token)
+	pushEnv, cleanup, err := AskPassEnv(opts.Token, opts.RepoURL)
 	if err != nil {
 		return fmt.Errorf("preparing push credentials: %w", err)
 	}
 	defer cleanup()
 
-	if err := gitCmd(ctx, workDir, pushEnv, "push", "origin", opts.BranchName); err != nil {
+	if err := gitCmd(ctx, workDir, pushEnv, "push", "--no-verify", "origin", opts.BranchName); err != nil {
 		return fmt.Errorf("pushing to branch: %w", err)
 	}
 	slog.Info("follow-up changes pushed", "branch", opts.BranchName)

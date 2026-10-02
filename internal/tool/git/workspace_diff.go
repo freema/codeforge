@@ -44,6 +44,10 @@ type WorkspaceDiff struct {
 // (e.g. during create-pr) is unaffected. The unified diff is capped at 1 MB,
 // cut at a line boundary with Truncated set.
 func Diff(ctx context.Context, workDir string) (*WorkspaceDiff, error) {
+	if err := SanitizeRepoConfig(ctx, workDir, ""); err != nil {
+		return nil, err
+	}
+
 	// Intent-to-add so untracked files show up in `git diff HEAD`.
 	if _, err := runGit(ctx, workDir, "add", "-A", "-N", "."); err != nil {
 		return nil, err
@@ -52,12 +56,12 @@ func Diff(ctx context.Context, workDir string) (*WorkspaceDiff, error) {
 	// --no-renames keeps the unified diff, numstat, and porcelain status
 	// consistent: a moved file is reported as one deletion + one addition
 	// everywhere instead of a rename entry in some outputs only.
-	unified, err := runGit(ctx, workDir, "diff", "--no-renames", "HEAD")
+	unified, err := runGit(ctx, workDir, "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "HEAD")
 	if err != nil {
 		return nil, err
 	}
 
-	numstat, err := runGit(ctx, workDir, "diff", "--no-renames", "--numstat", "HEAD")
+	numstat, err := runGit(ctx, workDir, "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--numstat", "HEAD")
 	if err != nil {
 		return nil, err
 	}
@@ -107,12 +111,11 @@ func Diff(ctx context.Context, workDir string) (*WorkspaceDiff, error) {
 	return result, nil
 }
 
-// runGit executes git with explicit args against the given directory
-// (git -C <dir> ...) and returns stdout. On failure, stderr from the git
-// process is folded into the returned error.
+// runGit executes git with explicit args in the given directory and returns
+// stdout. On failure, stderr from the git process is folded into the returned
+// error.
 func runGit(ctx context.Context, workDir string, args ...string) ([]byte, error) {
-	full := append([]string{"-C", workDir}, args...)
-	cmd := exec.CommandContext(ctx, "git", full...)
+	cmd := Command(ctx, workDir, nil, args...)
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError

@@ -180,6 +180,7 @@ func (s *PRService) CreatePR(ctx context.Context, sessionID string, req CreatePR
 	// Create branch, commit, push
 	err = gitpkg.CreateBranchAndPush(ctx, gitpkg.BranchOptions{
 		WorkDir:     workDir,
+		RepoURL:     t.RepoURL,
 		BranchName:  branchName,
 		BaseBranch:  baseBranch,
 		CommitMsg:   commitMsg,
@@ -287,6 +288,7 @@ func (s *PRService) PushToPR(ctx context.Context, sessionID string) (*PushToPRRe
 	// Stage, commit, and push to existing branch
 	if err := gitpkg.CommitAndPushToExisting(ctx, gitpkg.PushExistingOptions{
 		WorkDir:     workDir,
+		RepoURL:     t.RepoURL,
 		BranchName:  t.Branch,
 		CommitMsg:   commitMsg,
 		AuthorName:  s.cfg.CommitAuthor,
