@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -39,6 +40,12 @@ type tenantSessionCounter interface {
 	CountActiveByTenant(ctx context.Context, tenantID string) (int, error)
 }
 
+// sessionGetter loads a session by ID. Implemented by *session.Service; kept as
+// an interface so handler tests can fake it.
+type sessionGetter interface {
+	Get(ctx context.Context, sessionID string) (*session.Session, error)
+}
+
 // workspacePathResolver resolves a session's live workspace directory and
 // records workspace activity (Touch extends the TTL window on access).
 // Implemented by *workspace.Manager; kept as an interface so handler tests can fake it.
@@ -57,6 +64,7 @@ type SessionHandler struct {
 	domains        gitpkg.DomainsSource  // optional, nil = standard github.com/gitlab.com detection only
 	tenantService  *tenant.Service       // optional, nil = subscription disabled
 	sessionCounter tenantSessionCounter  // optional, nil = concurrency limit not enforced
+	sessions       sessionGetter         // nil = tenants cannot reference other sessions
 	workspaces     workspacePathResolver // optional, nil = diff endpoint reports workspace missing
 }
 
@@ -65,6 +73,7 @@ func NewSessionHandler(service *session.Service, prService *session.PRService, c
 	h := &SessionHandler{service: service, prService: prService, canceller: canceller, cliRegistry: cliRegistry, keyRegistry: keyRegistry, domains: domains, tenantService: tenantService, workspaces: workspaces}
 	if service != nil {
 		h.sessionCounter = service
+		h.sessions = service
 	}
 	return h
 }
@@ -204,25 +213,38 @@ func (h *SessionHandler) createSession(w http.ResponseWriter, r *http.Request, r
 // tenant_id); operator/no-tenant requests pass unconditionally. A mismatch returns
 // 404 (not 403) so a tenant cannot probe other tenants' session IDs. Routes without
 // a sessionID (List, Create) pass through and enforce their own scoping.
+//
+// The middleware reads {sessionID} with chi.URLParam, so it must be attached
+// where chi has already matched that param (r.With on the route, or r.Use inside
+// an r.Route("/{sessionID}", ...) subrouter). Attached with r.Use above the
+// pattern, the param is still empty and every request passes unchecked.
 func (h *SessionHandler) OwnershipMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tnt := middleware.TenantFromContext(r.Context())
-		sessionID := chi.URLParam(r, "sessionID")
-		if tnt == nil || sessionID == "" {
+	return SessionOwnership(h.service.Get)(next)
+}
+
+// SessionOwnership builds the ownership check behind OwnershipMiddleware around a
+// session lookup, so the check can be exercised without Redis.
+func SessionOwnership(lookup func(ctx context.Context, sessionID string) (*session.Session, error)) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tnt := middleware.TenantFromContext(r.Context())
+			sessionID := chi.URLParam(r, "sessionID")
+			if tnt == nil || sessionID == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			t, err := lookup(r.Context(), sessionID)
+			if err != nil {
+				writeAppError(w, err)
+				return
+			}
+			if t.TenantID != tnt.ID {
+				writeError(w, http.StatusNotFound, "session not found")
+				return
+			}
 			next.ServeHTTP(w, r)
-			return
-		}
-		t, err := h.service.Get(r.Context(), sessionID)
-		if err != nil {
-			writeAppError(w, err)
-			return
-		}
-		if t.TenantID != tnt.ID {
-			writeError(w, http.StatusNotFound, "session not found")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+		})
+	}
 }
 
 // applyTenant enforces a subscription tenant's tier limits and assigns a managed
@@ -231,6 +253,10 @@ func (h *SessionHandler) OwnershipMiddleware(next http.Handler) http.Handler {
 func (h *SessionHandler) applyTenant(ctx context.Context, req *session.CreateSessionRequest, tnt *tenant.Tenant) (int, string) {
 	if h.tenantService == nil {
 		return 0, ""
+	}
+
+	if status, msg := h.checkTenantSources(ctx, req, tnt); status != 0 {
+		return status, msg
 	}
 
 	cli := h.cliRegistry.DefaultCLI()
@@ -305,6 +331,31 @@ func (h *SessionHandler) applyTenant(ctx context.Context, req *session.CreateSes
 		req.Config.AIApiKey = key
 	}
 
+	return 0, ""
+}
+
+// checkTenantSources rejects request fields that would let a tenant session run
+// with access the tenant did not bring: one of the operator's registered keys
+// (provider_key), a repository reached through the server's filesystem
+// (file:// and other non-HTTP URLs), or another tenant's workspace. The
+// executor separately keeps tenant sessions off the operator's fallback
+// credentials (see session.Session.UsesOperatorCredentials).
+func (h *SessionHandler) checkTenantSources(ctx context.Context, req *session.CreateSessionRequest, tnt *tenant.Tenant) (int, string) {
+	if req.ProviderKey != "" {
+		return http.StatusForbidden, "provider_key is not available to subscription tenants; pass access_token instead"
+	}
+	if u, err := url.Parse(req.RepoURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return http.StatusBadRequest, "repo_url must be an http(s) URL"
+	}
+	if req.Config != nil && req.Config.WorkspaceSessionID != "" {
+		if h.sessions == nil {
+			return http.StatusNotFound, "workspace session not found"
+		}
+		ref, err := h.sessions.Get(ctx, req.Config.WorkspaceSessionID)
+		if err != nil || ref.TenantID != tnt.ID {
+			return http.StatusNotFound, "workspace session not found"
+		}
+	}
 	return 0, ""
 }
 

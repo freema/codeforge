@@ -110,24 +110,7 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 		r.Group(func(r chi.Router) {
 			r.Use(chimw.Timeout(60 * time.Second))
 
-			r.Route("/sessions", func(r chi.Router) {
-				r.Use(sessionHandler.OwnershipMiddleware) // tenant may touch only its own {sessionID} routes
-				r.Get("/", sessionHandler.List)
-				if rateLimitMw != nil {
-					r.With(rateLimitMw).Post("/", sessionHandler.Create)
-				} else {
-					r.Post("/", sessionHandler.Create)
-				}
-				r.Get("/{sessionID}", sessionHandler.Get)
-				r.Post("/{sessionID}/instruct", sessionHandler.Instruct)
-				r.Post("/{sessionID}/cancel", sessionHandler.Cancel)
-				r.Post("/{sessionID}/review", sessionHandler.Review)
-				r.Post("/{sessionID}/post-review", sessionHandler.PostReviewComments)
-				r.Post("/{sessionID}/create-pr", sessionHandler.CreatePR)
-				r.Post("/{sessionID}/push", sessionHandler.PushToPR)
-				r.Get("/{sessionID}/pr-status", sessionHandler.GetPRStatus)
-				r.Get("/{sessionID}/diff", sessionHandler.Diff)
-			})
+			mountSessionRoutes(r, sessionHandler, sessionHandler.OwnershipMiddleware, rateLimitMw)
 
 			r.Get("/session-types", sessionHandler.ListSessionTypes)
 

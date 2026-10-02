@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -56,6 +57,28 @@ func NewPRService(sessionService *Service, analyzer *runner.Analyzer, workspaceR
 	return svc
 }
 
+// errTenantNeedsAccessToken is returned when a tenant session without its own
+// access token reaches an operation that needs the provider API.
+var errTenantNeedsAccessToken = errors.New("the session has no access_token, and subscription sessions do not use the operator's provider credentials")
+
+// resolveAccessToken fills t.AccessToken from the key registry or the
+// GITHUB_TOKEN/GITLAB_TOKEN fallback when the session brought none. Tenant
+// sessions never fall back to the operator's credentials.
+func (s *PRService) resolveAccessToken(ctx context.Context, t *Session) error {
+	if t.AccessToken != "" || s.tokenResolver == nil {
+		return nil
+	}
+	if !t.UsesOperatorCredentials() {
+		return errTenantNeedsAccessToken
+	}
+	token, err := s.tokenResolver.ResolveToken(ctx, t.RepoURL, "", t.ProviderKey)
+	if err != nil {
+		return err
+	}
+	t.AccessToken = token
+	return nil
+}
+
 // CreatePRRequest is the request body for POST /sessions/:id/create-pr.
 type CreatePRRequest struct {
 	Title        string `json:"title,omitempty"`
@@ -103,12 +126,8 @@ func (s *PRService) CreatePR(ctx context.Context, sessionID string, req CreatePR
 	}
 
 	// Resolve access token (inline → registry → env) if not already set.
-	if s.tokenResolver != nil && t.AccessToken == "" {
-		token, err := s.tokenResolver.ResolveToken(ctx, t.RepoURL, t.AccessToken, t.ProviderKey)
-		if err != nil {
-			return nil, fmt.Errorf("resolving access token for PR: %w", err)
-		}
-		t.AccessToken = token
+	if err := s.resolveAccessToken(ctx, t); err != nil {
+		return nil, fmt.Errorf("resolving access token for PR: %w", err)
 	}
 
 	// Remember previous status so we can revert on non-fatal errors
@@ -180,6 +199,7 @@ func (s *PRService) CreatePR(ctx context.Context, sessionID string, req CreatePR
 	// Create branch, commit, push
 	err = gitpkg.CreateBranchAndPush(ctx, gitpkg.BranchOptions{
 		WorkDir:     workDir,
+		RepoURL:     t.RepoURL,
 		BranchName:  branchName,
 		BaseBranch:  baseBranch,
 		CommitMsg:   commitMsg,
@@ -266,12 +286,8 @@ func (s *PRService) PushToPR(ctx context.Context, sessionID string) (*PushToPRRe
 	}
 
 	// Resolve access token if not already set
-	if s.tokenResolver != nil && t.AccessToken == "" {
-		token, err := s.tokenResolver.ResolveToken(ctx, t.RepoURL, t.AccessToken, t.ProviderKey)
-		if err != nil {
-			return nil, fmt.Errorf("resolving access token for push: %w", err)
-		}
-		t.AccessToken = token
+	if err := s.resolveAccessToken(ctx, t); err != nil {
+		return nil, fmt.Errorf("resolving access token for push: %w", err)
 	}
 
 	// Generate commit message — try AI, fall back to generic
@@ -287,6 +303,7 @@ func (s *PRService) PushToPR(ctx context.Context, sessionID string) (*PushToPRRe
 	// Stage, commit, and push to existing branch
 	if err := gitpkg.CommitAndPushToExisting(ctx, gitpkg.PushExistingOptions{
 		WorkDir:     workDir,
+		RepoURL:     t.RepoURL,
 		BranchName:  t.Branch,
 		CommitMsg:   commitMsg,
 		AuthorName:  s.cfg.CommitAuthor,
@@ -336,12 +353,8 @@ func (s *PRService) GetPRStatus(ctx context.Context, sessionID string) (*gitpkg.
 	}
 
 	// Resolve token
-	if s.tokenResolver != nil && t.AccessToken == "" {
-		token, resolveErr := s.tokenResolver.ResolveToken(ctx, t.RepoURL, t.AccessToken, t.ProviderKey)
-		if resolveErr != nil {
-			return nil, fmt.Errorf("resolving token: %w", resolveErr)
-		}
-		t.AccessToken = token
+	if err := s.resolveAccessToken(ctx, t); err != nil {
+		return nil, fmt.Errorf("resolving token: %w", err)
 	}
 
 	status, err := gitpkg.GetPRStatus(ctx, repoInfo, t.AccessToken, t.PRNumber)

@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 	"github.com/freema/codeforge/internal/redisclient"
 	"github.com/freema/codeforge/internal/session"
 	"github.com/freema/codeforge/internal/settings"
+	gitpkg "github.com/freema/codeforge/internal/tool/git"
 )
 
 // defaultReviewCLI is the CLI used for webhook-triggered reviews when no
@@ -29,7 +31,41 @@ type WebhookReceiverHandler struct {
 	sessionService *session.Service
 	redis          *redisclient.Client
 	cfg            config.CodeReviewConfig
-	settings       *settings.Store // optional, nil = runtime overrides disabled
+	settings       *settings.Store    // optional, nil = runtime overrides disabled
+	gitlabMembers  GitLabMemberLookup // nil = GitLab note commands are refused
+}
+
+// GitLabMemberLookup returns a GitLab user's effective access level on a
+// project, or 0 when the user is not a member.
+type GitLabMemberLookup func(ctx context.Context, repoURL string, projectID, userID int) (int, error)
+
+// webhookTokenResolver is the part of keys.Resolver the member lookup needs.
+type webhookTokenResolver interface {
+	ResolveToken(ctx context.Context, repoURL, accessToken, providerKey string) (string, error)
+}
+
+// NewGitLabMemberLookup asks the GitLab instance hosting repoURL for the user's
+// access level, authenticating with the token resolved for keyName (the key
+// webhook-triggered sessions run with).
+func NewGitLabMemberLookup(tokens webhookTokenResolver, keyName string) GitLabMemberLookup {
+	return func(ctx context.Context, repoURL string, projectID, userID int) (int, error) {
+		repo, err := gitpkg.ParseRepoURL(repoURL, nil)
+		if err != nil {
+			return 0, err
+		}
+		token, err := tokens.ResolveToken(ctx, repoURL, "", keyName)
+		if err != nil {
+			return 0, err
+		}
+		return gitpkg.GitLabAccessLevel(ctx, repo.BaseURL(), token, projectID, userID)
+	}
+}
+
+// SetGitLabMemberLookup enables GitLab note commands. Without a lookup the
+// commenter's access cannot be verified and every command is refused (unless
+// code_review.allow_untrusted_authors is set).
+func (h *WebhookReceiverHandler) SetGitLabMemberLookup(fn GitLabMemberLookup) {
+	h.gitlabMembers = fn
 }
 
 // NewWebhookReceiverHandler creates a new webhook receiver handler.
@@ -169,6 +205,7 @@ type gitlabNoteEvent struct {
 		Note         string `json:"note"`
 		NoteableType string `json:"noteable_type"` //nolint:misspell // GitLab API uses "noteable_type"
 		System       bool   `json:"system"`
+		ProjectID    int    `json:"project_id"`
 	} `json:"object_attributes"`
 	MergeRequest *struct {
 		IID             int    `json:"iid"`
@@ -178,12 +215,30 @@ type gitlabNoteEvent struct {
 		TargetProjectID int    `json:"target_project_id"`
 	} `json:"merge_request"`
 	User struct {
+		ID       int    `json:"id"`
 		Username string `json:"username"`
 	} `json:"user"`
 	Project struct {
+		ID                int    `json:"id"`
 		PathWithNamespace string `json:"path_with_namespace"`
 		HTTPURLToRepo     string `json:"http_url_to_repo"`
 	} `json:"project"`
+}
+
+// gitlabNoteAuthorAccess looks up the note author's access level on the project the
+// note was posted in.
+func (h *WebhookReceiverHandler) gitlabNoteAuthorAccess(ctx context.Context, e *gitlabNoteEvent) (int, error) {
+	if h.gitlabMembers == nil {
+		return 0, errors.New("member lookup not configured")
+	}
+	projectID := e.Project.ID
+	if projectID == 0 {
+		projectID = e.ObjectAttributes.ProjectID
+	}
+	if projectID == 0 || e.User.ID == 0 {
+		return 0, errors.New("note event carries no project or user id")
+	}
+	return h.gitlabMembers(ctx, e.Project.HTTPURLToRepo, projectID, e.User.ID)
 }
 
 // --- GitLab webhook types ---
@@ -676,9 +731,8 @@ func (h *WebhookReceiverHandler) handleGitLabNote(w http.ResponseWriter, r *http
 	}
 
 	// Same reasoning as the GitHub comment path: /fix turns the note body into
-	// the prompt of a code-writing session. GitLab does not report the
-	// commenter's access level here, so the only provenance signal available
-	// is whether the MR itself comes from a fork.
+	// the prompt of a code-writing session. Commands on fork MRs are refused
+	// outright, and on any MR the author must be able to push to the project.
 	if isGitLabFork(event.MergeRequest.SourceProjectID, event.MergeRequest.TargetProjectID) && !h.cfg.AllowUntrustedAuthors {
 		log.Warn("gitlab webhook: ignoring forge command on fork MR",
 			"command", cmd,
@@ -691,6 +745,29 @@ func (h *WebhookReceiverHandler) handleGitLabNote(w http.ResponseWriter, r *http
 			"reason": "forge commands are disabled on fork MRs (set code_review.allow_untrusted_authors to override)",
 		})
 		return
+	}
+
+	// Note hooks do not carry the author's role, so it is looked up through the
+	// API: Developer (30) or above, the GitLab counterpart of GitHub's
+	// OWNER/MEMBER/COLLABORATOR. Anything that prevents confirming it — no
+	// lookup, missing IDs, an API error — drops the command.
+	if !h.cfg.AllowUntrustedAuthors {
+		level, err := h.gitlabNoteAuthorAccess(r.Context(), &event)
+		if err != nil || level < gitpkg.GitLabDeveloperAccess {
+			log.Warn("gitlab webhook: ignoring forge command from author without push access",
+				"command", cmd,
+				"mr", event.MergeRequest.IID,
+				"repo", event.Project.PathWithNamespace,
+				"user", event.User.Username,
+				"access_level", level,
+				"error", err,
+			)
+			writeJSON(w, http.StatusOK, map[string]string{
+				"status": "ignored",
+				"reason": "commenter has no developer access (set code_review.allow_untrusted_authors to override)",
+			})
+			return
+		}
 	}
 
 	repoURL := event.Project.HTTPURLToRepo

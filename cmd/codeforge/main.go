@@ -270,6 +270,7 @@ func run() error {
 	var webhookReceiverHandler *handlers.WebhookReceiverHandler
 	if cfg.CodeReview.WebhookSecrets.GitHub != "" || cfg.CodeReview.WebhookSecrets.GitLab != "" {
 		webhookReceiverHandler = handlers.NewWebhookReceiverHandler(sessionService, rdb, cfg.CodeReview, settings.NewStore(rdb))
+		webhookReceiverHandler.SetGitLabMemberLookup(handlers.NewGitLabMemberLookup(keyResolver, cfg.CodeReview.DefaultKeyName))
 	}
 
 	// Initialize tenant service and handler

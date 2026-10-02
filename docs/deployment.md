@@ -193,7 +193,14 @@ What CodeForge does to contain this today:
   encryption key, operator token, webhook secrets, and Redis URL never cross
   into the session (`internal/tool/runner/env.go`).
 - Git credentials are used via short-lived `GIT_ASKPASS` scripts that are
-  removed before the CLI starts; tokens are never in the URL or `.git/config`.
+  removed before the CLI starts; tokens are never in the URL or `.git/config`,
+  and the script answers only for the host the session was cloned from.
+- Git commands the server runs in a workspace rebuild `.git/config` from an
+  allowlist, pin the settings that run programs on the command line, get an
+  allowlisted environment, and ignore the global git config (`~/.gitconfig`),
+  which the CLI could otherwise write. Configure TLS trust for a self-hosted
+  instance with `GIT_SSL_CAINFO` / `SSL_CERT_FILE` or the root-owned
+  `/etc/gitconfig`, not `~/.gitconfig`.
 - Webhook-triggered work from authors without write access is **off by
   default** (`code_review.allow_untrusted_authors`) — see
   [Configuration](configuration.md#who-can-trigger-a-webhook-review).

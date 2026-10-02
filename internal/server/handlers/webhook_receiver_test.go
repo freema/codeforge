@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -482,6 +484,88 @@ func TestWebhookUntrustedAuthorGating(t *testing.T) {
 
 			if w.Code != http.StatusOK {
 				t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+			}
+			if got := w.Body.String(); !strings.Contains(got, tt.wantBodySubstr) {
+				t.Errorf("body = %q, want substring %q", got, tt.wantBodySubstr)
+			}
+		})
+	}
+}
+
+type staticTokenResolver struct{ token string }
+
+func (r staticTokenResolver) ResolveToken(context.Context, string, string, string) (string, error) {
+	if r.token == "" {
+		return "", errors.New("no token")
+	}
+	return r.token, nil
+}
+
+// TestGitLabNoteCommandRequiresDeveloperAccess checks that MR note commands are
+// dispatched only for authors with Developer access or above, as reported by
+// a local stand-in for the GitLab members API.
+func TestGitLabNoteCommandRequiresDeveloperAccess(t *testing.T) {
+	const secret = "gl-secret"
+
+	tests := []struct {
+		name           string
+		apiStatus      int
+		apiBody        string
+		noLookup       bool
+		noUserID       bool
+		allowUntrusted bool
+		wantStatus     int
+		wantBodySubstr string
+	}{
+		{name: "reporter is refused", apiStatus: http.StatusOK, apiBody: `{"access_level":20,"state":"active"}`, wantStatus: http.StatusOK, wantBodySubstr: "no developer access"},
+		{name: "guest is refused", apiStatus: http.StatusOK, apiBody: `{"access_level":10,"state":"active"}`, wantStatus: http.StatusOK, wantBodySubstr: "no developer access"},
+		{name: "non-member is refused", apiStatus: http.StatusNotFound, apiBody: `{"message":"404 Not found"}`, wantStatus: http.StatusOK, wantBodySubstr: "no developer access"},
+		{name: "API failure is refused", apiStatus: http.StatusInternalServerError, apiBody: `{}`, wantStatus: http.StatusOK, wantBodySubstr: "no developer access"},
+		{name: "missing lookup is refused", noLookup: true, wantStatus: http.StatusOK, wantBodySubstr: "no developer access"},
+		{name: "missing user id is refused", noUserID: true, apiStatus: http.StatusOK, apiBody: `{"access_level":40,"state":"active"}`, wantStatus: http.StatusOK, wantBodySubstr: "no developer access"},
+		// Past the gate the handler stops at the unset default key, which
+		// proves the command was let through without needing a session store.
+		{name: "developer passes", apiStatus: http.StatusOK, apiBody: `{"access_level":30,"state":"active"}`, wantStatus: http.StatusBadRequest, wantBodySubstr: "default_key_name"},
+		{name: "maintainer passes", apiStatus: http.StatusOK, apiBody: `{"access_level":40,"state":"active"}`, wantStatus: http.StatusBadRequest, wantBodySubstr: "default_key_name"},
+		{name: "allow_untrusted_authors skips the lookup", noLookup: true, allowUntrusted: true, wantStatus: http.StatusBadRequest, wantBodySubstr: "default_key_name"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gitlab := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/v4/projects/42/members/all/7" {
+					t.Errorf("member lookup path = %s", r.URL.Path)
+				}
+				w.WriteHeader(tt.apiStatus)
+				_, _ = w.Write([]byte(tt.apiBody))
+			}))
+			defer gitlab.Close()
+
+			userID := `"id":7,`
+			if tt.noUserID {
+				userID = ""
+			}
+			body := `{"object_kind":"note","object_attributes":{"note":"/fix do something","noteable_type":"MergeRequest","system":false,"project_id":42},` + //nolint:misspell // GitLab API uses "noteable_type"
+				`"merge_request":{"iid":5,"source_branch":"feat","target_branch":"main","source_project_id":42,"target_project_id":42},` +
+				`"user":{` + userID + `"username":"someone"},` +
+				`"project":{"id":42,"path_with_namespace":"group/repo","http_url_to_repo":"` + gitlab.URL + `/group/repo.git"}}`
+
+			h := &WebhookReceiverHandler{cfg: config.CodeReviewConfig{
+				WebhookSecrets:        config.WebhookSecretsConfig{GitLab: secret},
+				AllowUntrustedAuthors: tt.allowUntrusted,
+			}}
+			if !tt.noLookup {
+				h.SetGitLabMemberLookup(NewGitLabMemberLookup(staticTokenResolver{token: "tok"}, "my-key"))
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/gitlab", strings.NewReader(body))
+			req.Header.Set("X-Gitlab-Token", secret)
+			req.Header.Set("X-Gitlab-Event", "Note Hook")
+			w := httptest.NewRecorder()
+			h.GitLabWebhook(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d (body %q)", w.Code, tt.wantStatus, w.Body.String())
 			}
 			if got := w.Body.String(); !strings.Contains(got, tt.wantBodySubstr) {
 				t.Errorf("body = %q, want substring %q", got, tt.wantBodySubstr)

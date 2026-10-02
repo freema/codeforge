@@ -3,7 +3,6 @@ package git
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -20,9 +19,12 @@ type ChangesSummary struct {
 // CalculateChanges computes a summary of workspace changes after CLI execution.
 // It runs git status and git diff --shortstat (both staged and unstaged).
 func CalculateChanges(ctx context.Context, workDir string) (*ChangesSummary, error) {
+	if err := SanitizeRepoConfig(ctx, workDir, ""); err != nil {
+		return nil, err
+	}
+
 	// git status --porcelain for file counts
-	statusCmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
-	statusCmd.Dir = workDir
+	statusCmd := Command(ctx, workDir, nil, "status", "--porcelain")
 	statusOut, err := statusCmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("git status: %w", err)
@@ -67,13 +69,12 @@ func CalculateChanges(ctx context.Context, workDir string) (*ChangesSummary, err
 var shortStatRegex = regexp.MustCompile(`(\d+) insertions?\(\+\).*?(\d+) deletions?\(-\)|(\d+) insertions?\(\+\)|(\d+) deletions?\(-\)`)
 
 func shortStat(ctx context.Context, workDir string, cached bool) (insertions, deletions int) {
-	args := []string{"diff", "--shortstat"}
+	args := []string{"diff", "--no-ext-diff", "--no-textconv", "--shortstat"}
 	if cached {
-		args = []string{"diff", "--cached", "--shortstat"}
+		args = []string{"diff", "--no-ext-diff", "--no-textconv", "--cached", "--shortstat"}
 	}
 
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = workDir
+	cmd := Command(ctx, workDir, nil, args...)
 	out, err := cmd.Output()
 	if err != nil {
 		return 0, 0

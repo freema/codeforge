@@ -44,7 +44,14 @@ What the server does contain:
   (`internal/tool/runner/env.go`).
 - Git credentials are supplied through short-lived `GIT_ASKPASS` scripts that
   are removed before the CLI starts. Tokens never reach the URL or
-  `.git/config`.
+  `.git/config`, and the script answers only for the host the session was
+  cloned from.
+- Git commands the server runs in a workspace treat the workspace as untrusted:
+  `.git/config` is rebuilt from an allowlist first, settings that run programs
+  (fsmonitor, hooks, credential helpers, submodule recursion) are pinned on the
+  command line, the global git config is ignored, and the environment is
+  allowlisted. Fetches and pushes go to the URL the session was cloned from
+  (`internal/tool/git/safe.go`).
 - Webhook-triggered work from authors without write access is refused by
   default (`code_review.allow_untrusted_authors`).
 - Opening a pull request always requires an explicit action. This is a

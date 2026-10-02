@@ -75,6 +75,7 @@ type Session struct {
 
 	// Subscription tenant that owns this session (empty = operator/BYOK).
 	// Set server-side from the authenticated tenant, never from client input.
+	// See UsesOperatorCredentials.
 	TenantID string `json:"tenant_id,omitempty"`
 
 	// Observability
@@ -241,4 +242,13 @@ func UnmarshalUsageInfo(data string) *UsageInfo {
 		return nil
 	}
 	return &u
+}
+
+// UsesOperatorCredentials reports whether the server may fill in credentials
+// the session did not bring itself: registered provider keys, the
+// GITHUB_TOKEN/GITLAB_TOKEN fallback, tool config auto-filled from provider
+// keys, and the operator's registered MCP servers. Sessions of a subscription
+// tenant may not — they run with what the tenant supplied.
+func (s *Session) UsesOperatorCredentials() bool {
+	return s.TenantID == ""
 }

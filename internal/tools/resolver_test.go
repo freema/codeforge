@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/freema/codeforge/internal/apperror"
+	"github.com/freema/codeforge/internal/keys"
 )
 
 // mockRegistry is a test double for Registry.
@@ -166,5 +167,52 @@ func TestResolver_EmptyTools(t *testing.T) {
 	}
 	if instances != nil {
 		t.Errorf("expected nil for empty tools, got %v", instances)
+	}
+}
+
+// operatorKeyRegistry holds an operator GitHub key that auto-fill would use.
+type operatorKeyRegistry struct{}
+
+func (operatorKeyRegistry) Create(context.Context, keys.Key) error   { return nil }
+func (operatorKeyRegistry) List(context.Context) ([]keys.Key, error) { return nil, nil }
+func (operatorKeyRegistry) Delete(context.Context, string) error     { return nil }
+func (operatorKeyRegistry) Resolve(context.Context, string, string) (string, error) {
+	return "", apperror.NotFound("no key")
+}
+func (operatorKeyRegistry) Verify(context.Context, string) (*keys.VerifyResult, string, error) {
+	return nil, "", nil
+}
+func (operatorKeyRegistry) ResolveByName(_ context.Context, name string) (string, string, error) {
+	if name == "github-env" {
+		return "operator-token", "github", nil
+	}
+	return "", "", apperror.NotFound("no key")
+}
+func (operatorKeyRegistry) ResolveFullByName(context.Context, string) (string, string, string, error) {
+	return "", "", "", apperror.NotFound("no key")
+}
+
+func TestResolver_ResolveOwnConfigSkipsAutoFill(t *testing.T) {
+	ctx := context.Background()
+	resolver := NewResolver(newMockRegistry(), operatorKeyRegistry{})
+
+	filled, err := resolver.Resolve(ctx, "", []SessionTool{{Name: "github"}})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if filled[0].Config["token"] != "operator-token" {
+		t.Fatalf("Resolve did not auto-fill: %v", filled[0].Config)
+	}
+
+	if _, err := resolver.ResolveOwnConfig(ctx, "", []SessionTool{{Name: "github"}}); err == nil {
+		t.Error("ResolveOwnConfig accepted a tool with no token, so it must have auto-filled one")
+	}
+
+	own, err := resolver.ResolveOwnConfig(ctx, "", []SessionTool{{Name: "github", Config: map[string]string{"token": "tenant-token"}}})
+	if err != nil {
+		t.Fatalf("ResolveOwnConfig: %v", err)
+	}
+	if own[0].Config["token"] != "tenant-token" {
+		t.Errorf("token = %q, want tenant-token", own[0].Config["token"])
 	}
 }

@@ -122,3 +122,21 @@ func TestNewCodexRunner_PathResolution(t *testing.T) {
 		})
 	}
 }
+
+// TestCodexArgs_PromptCannotInjectOptions checks that the prompt is passed
+// after "--", so a prompt like "-c model_provider=..." stays a prompt instead
+// of becoming a Codex config override.
+func TestCodexArgs_PromptCannotInjectOptions(t *testing.T) {
+	for _, prompt := range []string{"-cmodel_provider=evil", "--sandbox=read-only", "resume"} {
+		args := codexArgs(RunOptions{Prompt: prompt, WorkDir: "/ws", Model: "gpt-5"})
+		n := len(args)
+		if n < 2 || args[n-2] != "--" || args[n-1] != prompt {
+			t.Errorf("prompt %q: args end with %q, want [\"--\" %q]", prompt, args[max(0, n-2):], prompt)
+		}
+	}
+
+	args := codexArgs(RunOptions{Prompt: "-x", AppendSystemPrompt: "system"})
+	if got := args[len(args)-1]; got != "system\n\n---\n\n-x" {
+		t.Errorf("prompt with system prefix = %q", got)
+	}
+}
