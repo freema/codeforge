@@ -34,8 +34,8 @@ func NewCodexRunner(binaryPath string) *CodexRunner {
 	return &CodexRunner{binaryPath: binaryPath}
 }
 
-// Run executes Codex CLI with JSON output, calling OnEvent for each line.
-func (c *CodexRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
+// codexArgs builds the `codex exec` arguments for a run.
+func codexArgs(opts RunOptions) []string {
 	// --full-auto = --sandbox workspace-write + auto-approve on-request.
 	// We use danger-full-access instead because Codex's Landlock sandbox
 	// does not work inside Docker (missing kernel support / capabilities).
@@ -61,7 +61,15 @@ func (c *CodexRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, err
 		prompt = opts.AppendSystemPrompt + "\n\n---\n\n" + prompt
 	}
 
-	args = append(args, prompt)
+	// "--" ends option parsing: a prompt starting with "-" (e.g. "-c key=value")
+	// would otherwise be read as a Codex config override.
+	args = append(args, "--", prompt)
+	return args
+}
+
+// Run executes Codex CLI with JSON output, calling OnEvent for each line.
+func (c *CodexRunner) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
+	args := codexArgs(opts)
 
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 	cmd.Dir = opts.WorkDir
