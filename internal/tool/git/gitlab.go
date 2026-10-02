@@ -142,3 +142,57 @@ func (c *GitLabMRCreator) GetMRStatus(ctx context.Context, repo *RepoInfo, token
 	}
 	return status, nil
 }
+
+// GitLabDeveloperAccess is GitLab's Developer role, the lowest access level
+// that can push to a project.
+const GitLabDeveloperAccess = 30
+
+// GitLabAccessLevel returns userID's effective access level on a GitLab
+// project, including membership inherited from groups, or 0 when the user is
+// not an active member. baseURL is the instance's "scheme://host[:port]".
+//
+// Redirects are refused so the token is never forwarded to another host.
+func GitLabAccessLevel(ctx context.Context, baseURL, token string, projectID, userID int) (int, error) {
+	endpoint := fmt.Sprintf("%s/api/v4/projects/%d/members/all/%d", baseURL, projectID, userID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return 0, fmt.Errorf("creating member request: %w", err)
+	}
+	req.Header.Set("PRIVATE-TOKEN", token)
+
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("gitlab API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return 0, fmt.Errorf("reading gitlab response: %w", err)
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusNotFound:
+		return 0, nil
+	default:
+		return 0, fmt.Errorf("gitlab API returned %d: %s", resp.StatusCode, truncateBytes(body, 500))
+	}
+
+	var member struct {
+		AccessLevel int    `json:"access_level"`
+		State       string `json:"state"`
+	}
+	if err := json.Unmarshal(body, &member); err != nil {
+		return 0, fmt.Errorf("parsing gitlab member response: %w", err)
+	}
+	if member.State != "" && member.State != "active" {
+		return 0, nil
+	}
+	return member.AccessLevel, nil
+}

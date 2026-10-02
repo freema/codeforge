@@ -169,7 +169,11 @@ By default CodeForge therefore requires write access from the author:
   point in the system.
 - **GitLab** payloads carry no equivalent of `author_association`, so fork MRs
   (source project ≠ target project) are skipped outright and commands are
-  refused on them.
+  refused on them. On other MRs a command runs only when its author has
+  Developer access (30) or higher on the project. CodeForge looks that up
+  through the GitLab members API with the `default_key_name` token, so the token
+  must be able to read project members; if the lookup fails, the command is
+  refused.
 
 Setting `allow_untrusted_authors: true` disables all of the above. Only do that
 where each session is genuinely isolated — see
