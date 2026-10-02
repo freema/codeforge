@@ -273,8 +273,10 @@ func (e *Executor) resolveTimeout(t *session.Session) int {
 }
 
 // resolveToken resolves the access token from the key registry if not already set.
+// Tenant sessions keep whatever token they brought (possibly none, for a
+// public repository) and never fall back to the operator's credentials.
 func (e *Executor) resolveToken(ctx context.Context, t *session.Session, log *slog.Logger) {
-	if e.keyResolver == nil || t.AccessToken != "" {
+	if e.keyResolver == nil || t.AccessToken != "" || !t.UsesOperatorCredentials() {
 		return
 	}
 	token, err := e.keyResolver.ResolveToken(ctx, t.RepoURL, t.AccessToken, t.ProviderKey)
@@ -364,7 +366,11 @@ func (e *Executor) setupMCP(ctx context.Context, t *session.Session, workDir str
 	// Resolve tool definitions → MCP servers
 	var toolMCPServers []mcp.Server
 	if e.toolResolver != nil && t.Config != nil && len(t.Config.Tools) > 0 {
-		instances, err := e.toolResolver.Resolve(ctx, t.RepoURL, t.Config.Tools)
+		resolve := e.toolResolver.Resolve
+		if !t.UsesOperatorCredentials() {
+			resolve = e.toolResolver.ResolveOwnConfig
+		}
+		instances, err := resolve(ctx, t.RepoURL, t.Config.Tools)
 		if err != nil {
 			// Fail-closed: session explicitly requested tools but resolve failed
 			return "", fmt.Errorf("tool resolution failed: %w", err)
@@ -401,7 +407,15 @@ func (e *Executor) setupMCP(ctx context.Context, t *session.Session, workDir str
 		cli = t.Config.CLI
 	}
 
-	if err := e.mcpInstaller.Setup(ctx, workDir, t.RepoURL, cli, taskMCPServers); err != nil {
+	var err error
+	if t.UsesOperatorCredentials() {
+		err = e.mcpInstaller.Setup(ctx, workDir, t.RepoURL, cli, taskMCPServers)
+	} else if len(taskMCPServers) > 0 {
+		// The operator's registered servers carry the operator's credentials;
+		// a tenant session gets only the servers it configured itself.
+		err = mcp.WriteMCPConfigForCLI(workDir, cli, taskMCPServers)
+	}
+	if err != nil {
 		if len(taskMCPServers) > 0 {
 			// Fail-closed: MCP servers were configured but install failed
 			return "", fmt.Errorf("MCP setup failed: %w", err)
@@ -1362,7 +1376,7 @@ func (e *Executor) handlePRReviewCompletion(ctx context.Context, t *session.Sess
 
 	// Resolve token from provider key
 	token := t.AccessToken
-	if token == "" && e.keyResolver != nil {
+	if token == "" && e.keyResolver != nil && t.UsesOperatorCredentials() {
 		resolved, resolveErr := e.keyResolver.ResolveToken(ctx, t.RepoURL, "", t.ProviderKey)
 		if resolveErr != nil {
 			log.Error("pr_review: failed to resolve token for comment posting", "error", resolveErr)
@@ -1649,7 +1663,7 @@ func (e *Executor) autoPostReview(ctx context.Context, t *session.Session, revie
 // autoPostReviewToPR posts review results to a specific PR number.
 func (e *Executor) autoPostReviewToPR(ctx context.Context, t *session.Session, prNumber int, reviewResult *review.ReviewResult, log *slog.Logger) {
 	token := t.AccessToken
-	if token == "" && e.keyResolver != nil {
+	if token == "" && e.keyResolver != nil && t.UsesOperatorCredentials() {
 		resolved, err := e.keyResolver.ResolveToken(ctx, t.RepoURL, "", t.ProviderKey)
 		if err != nil {
 			log.Error("auto-post: failed to resolve token", "error", err)

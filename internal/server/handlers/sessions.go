@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -39,6 +40,12 @@ type tenantSessionCounter interface {
 	CountActiveByTenant(ctx context.Context, tenantID string) (int, error)
 }
 
+// sessionGetter loads a session by ID. Implemented by *session.Service; kept as
+// an interface so handler tests can fake it.
+type sessionGetter interface {
+	Get(ctx context.Context, sessionID string) (*session.Session, error)
+}
+
 // workspacePathResolver resolves a session's live workspace directory and
 // records workspace activity (Touch extends the TTL window on access).
 // Implemented by *workspace.Manager; kept as an interface so handler tests can fake it.
@@ -57,6 +64,7 @@ type SessionHandler struct {
 	domains        gitpkg.DomainsSource  // optional, nil = standard github.com/gitlab.com detection only
 	tenantService  *tenant.Service       // optional, nil = subscription disabled
 	sessionCounter tenantSessionCounter  // optional, nil = concurrency limit not enforced
+	sessions       sessionGetter         // nil = tenants cannot reference other sessions
 	workspaces     workspacePathResolver // optional, nil = diff endpoint reports workspace missing
 }
 
@@ -65,6 +73,7 @@ func NewSessionHandler(service *session.Service, prService *session.PRService, c
 	h := &SessionHandler{service: service, prService: prService, canceller: canceller, cliRegistry: cliRegistry, keyRegistry: keyRegistry, domains: domains, tenantService: tenantService, workspaces: workspaces}
 	if service != nil {
 		h.sessionCounter = service
+		h.sessions = service
 	}
 	return h
 }
@@ -246,6 +255,10 @@ func (h *SessionHandler) applyTenant(ctx context.Context, req *session.CreateSes
 		return 0, ""
 	}
 
+	if status, msg := h.checkTenantSources(ctx, req, tnt); status != 0 {
+		return status, msg
+	}
+
 	cli := h.cliRegistry.DefaultCLI()
 	if req.Config != nil && req.Config.CLI != "" {
 		cli = req.Config.CLI
@@ -318,6 +331,31 @@ func (h *SessionHandler) applyTenant(ctx context.Context, req *session.CreateSes
 		req.Config.AIApiKey = key
 	}
 
+	return 0, ""
+}
+
+// checkTenantSources rejects request fields that would let a tenant session run
+// with access the tenant did not bring: one of the operator's registered keys
+// (provider_key), a repository reached through the server's filesystem
+// (file:// and other non-HTTP URLs), or another tenant's workspace. The
+// executor separately keeps tenant sessions off the operator's fallback
+// credentials (see session.Session.UsesOperatorCredentials).
+func (h *SessionHandler) checkTenantSources(ctx context.Context, req *session.CreateSessionRequest, tnt *tenant.Tenant) (int, string) {
+	if req.ProviderKey != "" {
+		return http.StatusForbidden, "provider_key is not available to subscription tenants; pass access_token instead"
+	}
+	if u, err := url.Parse(req.RepoURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return http.StatusBadRequest, "repo_url must be an http(s) URL"
+	}
+	if req.Config != nil && req.Config.WorkspaceSessionID != "" {
+		if h.sessions == nil {
+			return http.StatusNotFound, "workspace session not found"
+		}
+		ref, err := h.sessions.Get(ctx, req.Config.WorkspaceSessionID)
+		if err != nil || ref.TenantID != tnt.ID {
+			return http.StatusNotFound, "workspace session not found"
+		}
+	}
 	return 0, ""
 }
 

@@ -8,6 +8,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/freema/codeforge/internal/apperror"
 	"github.com/freema/codeforge/internal/crypto"
 	"github.com/freema/codeforge/internal/database"
 	"github.com/freema/codeforge/internal/session"
@@ -60,6 +61,10 @@ func testCLIRegistry() *runner.Registry {
 	return reg
 }
 
+// tenantRepo is a repository URL a tenant may use (applyTenant runs after the
+// request passed validation, so it always has one).
+const tenantRepo = "https://github.com/acme/repo.git"
+
 type fakeCounter struct{ active int }
 
 func (f fakeCounter) CountActiveByTenant(_ context.Context, _ string) (int, error) {
@@ -75,13 +80,13 @@ func TestApplyTenant_ConcurrencyLimit(t *testing.T) {
 	h := NewSessionHandler(nil, nil, nil, testCLIRegistry(), nil, nil, svc, nil)
 
 	h.sessionCounter = fakeCounter{active: tnt.MaxConcurrentSessions}
-	if status, _ := h.applyTenant(ctx, &session.CreateSessionRequest{}, tnt); status != 429 {
+	if status, _ := h.applyTenant(ctx, &session.CreateSessionRequest{RepoURL: tenantRepo}, tnt); status != 429 {
 		t.Fatalf("at concurrency limit: status = %d, want 429", status)
 	}
 
 	// Under the limit, a BYOK request passes (no pool needed).
 	h.sessionCounter = fakeCounter{active: tnt.MaxConcurrentSessions - 1}
-	req := &session.CreateSessionRequest{Config: &session.Config{AIApiKey: "byok"}}
+	req := &session.CreateSessionRequest{RepoURL: tenantRepo, Config: &session.Config{AIApiKey: "byok"}}
 	if status, msg := h.applyTenant(ctx, req, tnt); status != 0 {
 		t.Fatalf("under concurrency limit: status = %d (%s), want 0", status, msg)
 	}
@@ -111,7 +116,7 @@ func TestApplyTenant(t *testing.T) {
 	h := NewSessionHandler(nil, nil, nil, testCLIRegistry(), nil, nil, svc, nil)
 
 	t.Run("disallowed CLI -> 403", func(t *testing.T) {
-		req := &session.CreateSessionRequest{Config: &session.Config{CLI: "cursor"}}
+		req := &session.CreateSessionRequest{RepoURL: tenantRepo, Config: &session.Config{CLI: "cursor"}}
 		status, _ := h.applyTenant(ctx, req, tnt)
 		if status != 403 {
 			t.Fatalf("status = %d, want 403", status)
@@ -119,7 +124,7 @@ func TestApplyTenant(t *testing.T) {
 	})
 
 	t.Run("allowed CLI, no BYOK -> pool key assigned + tenant_id stamped + budget capped", func(t *testing.T) {
-		req := &session.CreateSessionRequest{}
+		req := &session.CreateSessionRequest{RepoURL: tenantRepo}
 		status, msg := h.applyTenant(ctx, req, tnt)
 		if status != 0 {
 			t.Fatalf("status = %d (%s), want 0", status, msg)
@@ -136,7 +141,7 @@ func TestApplyTenant(t *testing.T) {
 	})
 
 	t.Run("BYOK key preserved, pool not consulted", func(t *testing.T) {
-		req := &session.CreateSessionRequest{Config: &session.Config{AIApiKey: "my-own-key"}}
+		req := &session.CreateSessionRequest{RepoURL: tenantRepo, Config: &session.Config{AIApiKey: "my-own-key"}}
 		status, _ := h.applyTenant(ctx, req, tnt)
 		if status != 0 {
 			t.Fatalf("status = %d, want 0", status)
@@ -152,10 +157,65 @@ func TestApplyTenant(t *testing.T) {
 		for i := 0; i < lt.MaxSessionsPerDay; i++ {
 			_ = store.LogUsage(ctx, &tenant.UsageLog{TenantID: lt.ID, SessionID: string(rune('a' + i)), CLI: "claude-code"})
 		}
-		req := &session.CreateSessionRequest{}
+		req := &session.CreateSessionRequest{RepoURL: tenantRepo}
 		status, _ := h.applyTenant(ctx, req, lt)
 		if status != 429 {
 			t.Fatalf("status = %d, want 429 after hitting daily limit", status)
 		}
 	})
+}
+
+type fakeSessions map[string]*session.Session
+
+func (f fakeSessions) Get(_ context.Context, id string) (*session.Session, error) {
+	if t, ok := f[id]; ok {
+		return t, nil
+	}
+	return nil, apperror.NotFound("session %s not found", id)
+}
+
+// TestApplyTenant_RejectsForeignCredentials covers request fields that would
+// let a tenant session run with the operator's or another tenant's access.
+func TestApplyTenant_RejectsForeignCredentials(t *testing.T) {
+	ctx := context.Background()
+	svc, store, _ := newTenantService(t)
+	res, err := svc.CreateTenant(ctx, "acme", "acme", tenant.TierFree)
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	tnt, err := store.GetTenant(ctx, res.Tenant.ID)
+	if err != nil {
+		t.Fatalf("get tenant: %v", err)
+	}
+
+	h := NewSessionHandler(nil, nil, nil, testCLIRegistry(), nil, nil, svc, nil)
+	h.sessions = fakeSessions{
+		"own":      {ID: "own", TenantID: tnt.ID},
+		"other":    {ID: "other", TenantID: "another-tenant"},
+		"operator": {ID: "operator"},
+	}
+
+	tests := []struct {
+		name       string
+		req        session.CreateSessionRequest
+		wantStatus int
+	}{
+		{"operator provider key", session.CreateSessionRequest{RepoURL: tenantRepo, ProviderKey: "operator-github"}, 403},
+		{"file URL", session.CreateSessionRequest{RepoURL: "file:///data/workspaces/other/"}, 400},
+		{"ssh URL", session.CreateSessionRequest{RepoURL: "ssh://git@github.com/acme/repo.git"}, 400},
+		{"another tenant's workspace", session.CreateSessionRequest{RepoURL: tenantRepo, Config: &session.Config{WorkspaceSessionID: "other"}}, 404},
+		{"an operator session's workspace", session.CreateSessionRequest{RepoURL: tenantRepo, Config: &session.Config{WorkspaceSessionID: "operator"}}, 404},
+		{"unknown workspace", session.CreateSessionRequest{RepoURL: tenantRepo, Config: &session.Config{WorkspaceSessionID: "missing"}}, 404},
+		// BYOK keeps the pool out of these so only the checks above decide.
+		{"own workspace", session.CreateSessionRequest{RepoURL: tenantRepo, Config: &session.Config{WorkspaceSessionID: "own", AIApiKey: "byok"}}, 0},
+		{"own access token", session.CreateSessionRequest{RepoURL: tenantRepo, AccessToken: "ghp_tenant", Config: &session.Config{AIApiKey: "byok"}}, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := tt.req
+			if status, msg := h.applyTenant(ctx, &req, tnt); status != tt.wantStatus {
+				t.Fatalf("status = %d (%s), want %d", status, msg, tt.wantStatus)
+			}
+		})
+	}
 }

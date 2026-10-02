@@ -113,6 +113,21 @@ instances and custom ports (e.g. `http://gitlab.example.com:8080`) work.
 |----------|---------|-------------|
 | `CODEFORGE_SUBSCRIPTION__ENABLED` | `false` | Enable the tenant subscription model. When disabled, only the static operator Bearer token is accepted and the per-session API-key (BYOK) flow is unchanged. When enabled, tenant API tokens (`cfk_...`) are also accepted and resolve to managed keys from the key pool. |
 
+A tenant session runs with the credentials the tenant brings. The operator's
+credentials never fill in for it:
+
+- Git access uses only the request's `access_token`. There is no fallback to
+  registered keys or `GITHUB_TOKEN`/`GITLAB_TOKEN`, so without a token only
+  public repositories can be cloned, and creating or updating a PR needs one.
+- `provider_key` is rejected (`403`), and `repo_url` must be an `http(s)` URL.
+- `config.tools` get only the config the tenant supplies; nothing is
+  auto-filled from registered keys.
+- The operator's registered MCP servers are not added; only the session's own
+  `config.mcp_servers` are.
+- `config.workspace_session_id` must name one of the tenant's own sessions.
+- Session routes (`/sessions/{id}/...`) answer `404` for another tenant's
+  session.
+
 ### Notifications
 
 Chat notifications for terminal session events. Disabled unless at least one webhook URL is set.

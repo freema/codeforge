@@ -26,8 +26,20 @@ func NewResolver(registry Registry, keyReg ...keys.Registry) *Resolver {
 	return r
 }
 
-// Resolve converts a list of per-session tool requests into fully resolved ToolInstances.
+// Resolve converts a list of per-session tool requests into fully resolved
+// ToolInstances, filling missing config from the operator's provider keys.
 func (r *Resolver) Resolve(ctx context.Context, projectID string, sessionTools []SessionTool) ([]ToolInstance, error) {
+	return r.resolve(ctx, projectID, sessionTools, true)
+}
+
+// ResolveOwnConfig is Resolve without the provider-key auto-fill: each tool
+// gets only the config the session supplied. Used for subscription tenant
+// sessions, which must not receive the operator's keys.
+func (r *Resolver) ResolveOwnConfig(ctx context.Context, projectID string, sessionTools []SessionTool) ([]ToolInstance, error) {
+	return r.resolve(ctx, projectID, sessionTools, false)
+}
+
+func (r *Resolver) resolve(ctx context.Context, projectID string, sessionTools []SessionTool, autoFill bool) ([]ToolInstance, error) {
 	if len(sessionTools) == 0 {
 		return nil, nil
 	}
@@ -41,7 +53,10 @@ func (r *Resolver) Resolve(ctx context.Context, projectID string, sessionTools [
 		}
 
 		// Auto-fill missing config from Provider Keys
-		config := r.autoFillConfig(ctx, def, tt.Config)
+		config := tt.Config
+		if autoFill {
+			config = r.autoFillConfig(ctx, def, tt.Config)
+		}
 
 		if err := ValidateConfig(def, config); err != nil {
 			return nil, fmt.Errorf("tool %q: %w", tt.Name, err)
