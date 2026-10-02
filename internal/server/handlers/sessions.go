@@ -204,25 +204,38 @@ func (h *SessionHandler) createSession(w http.ResponseWriter, r *http.Request, r
 // tenant_id); operator/no-tenant requests pass unconditionally. A mismatch returns
 // 404 (not 403) so a tenant cannot probe other tenants' session IDs. Routes without
 // a sessionID (List, Create) pass through and enforce their own scoping.
+//
+// The middleware reads {sessionID} with chi.URLParam, so it must be attached
+// where chi has already matched that param (r.With on the route, or r.Use inside
+// an r.Route("/{sessionID}", ...) subrouter). Attached with r.Use above the
+// pattern, the param is still empty and every request passes unchecked.
 func (h *SessionHandler) OwnershipMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tnt := middleware.TenantFromContext(r.Context())
-		sessionID := chi.URLParam(r, "sessionID")
-		if tnt == nil || sessionID == "" {
+	return SessionOwnership(h.service.Get)(next)
+}
+
+// SessionOwnership builds the ownership check behind OwnershipMiddleware around a
+// session lookup, so the check can be exercised without Redis.
+func SessionOwnership(lookup func(ctx context.Context, sessionID string) (*session.Session, error)) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tnt := middleware.TenantFromContext(r.Context())
+			sessionID := chi.URLParam(r, "sessionID")
+			if tnt == nil || sessionID == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			t, err := lookup(r.Context(), sessionID)
+			if err != nil {
+				writeAppError(w, err)
+				return
+			}
+			if t.TenantID != tnt.ID {
+				writeError(w, http.StatusNotFound, "session not found")
+				return
+			}
 			next.ServeHTTP(w, r)
-			return
-		}
-		t, err := h.service.Get(r.Context(), sessionID)
-		if err != nil {
-			writeAppError(w, err)
-			return
-		}
-		if t.TenantID != tnt.ID {
-			writeError(w, http.StatusNotFound, "session not found")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+		})
+	}
 }
 
 // applyTenant enforces a subscription tenant's tier limits and assigns a managed
