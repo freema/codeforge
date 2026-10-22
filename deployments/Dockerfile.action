@@ -11,9 +11,10 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /codeforge-action ./cmd/codeforge-action
 
 # Runtime — minimal image with git + Node.js for CLI installation
-FROM alpine:3.21
+# node:22-alpine, not alpine + apk nodejs: Alpine's nodejs package lags behind Node.js security releases
+FROM node:22-alpine
 
-RUN apk add --no-cache git nodejs npm ca-certificates tzdata su-exec bash \
+RUN apk add --no-cache git ca-certificates tzdata su-exec bash \
     && adduser -D -s /bin/bash -h /home/codeforge codeforge
 
 COPY --from=builder /codeforge-action /usr/local/bin/codeforge-action

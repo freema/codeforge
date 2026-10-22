@@ -9,11 +9,12 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${VERSION}" -o codeforge ./cmd/codeforge
 
 # Stage 2: Runtime
-FROM alpine:3.20
+# node:22-alpine, not alpine + apk nodejs: Alpine's nodejs package lags behind Node.js security releases
+FROM node:22-alpine
 ARG CLAUDE_CODE_VERSION=2.1.215
 ARG CODEX_VERSION=0.104.0
 # bash: the claude CLI Bash tool refuses to run without a POSIX shell beyond busybox
-RUN apk add --no-cache git nodejs npm ca-certificates tzdata wget coreutils bash \
+RUN apk add --no-cache git ca-certificates tzdata wget coreutils bash \
     && npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
     && npm install -g @openai/codex@${CODEX_VERSION} \
     && adduser -D -h /home/codeforge codeforge \
