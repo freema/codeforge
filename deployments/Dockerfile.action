@@ -14,8 +14,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /codeforge-action ./cm
 # node:22-alpine, not alpine + apk nodejs: Alpine's nodejs package lags behind Node.js security releases
 FROM node:22-alpine
 
+# codeforge keeps UID/GID 1000 (the alpine image's), not node's
 RUN apk add --no-cache git ca-certificates tzdata su-exec bash \
-    && adduser -D -s /bin/bash -h /home/codeforge codeforge
+    && deluser --remove-home node \
+    && addgroup -g 1000 codeforge \
+    && adduser -D -u 1000 -G codeforge -s /bin/bash -h /home/codeforge codeforge
 
 COPY --from=builder /codeforge-action /usr/local/bin/codeforge-action
 COPY deployments/entrypoint-action.sh /entrypoint.sh

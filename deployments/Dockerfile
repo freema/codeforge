@@ -17,7 +17,10 @@ ARG CODEX_VERSION=0.104.0
 RUN apk add --no-cache git ca-certificates tzdata wget coreutils bash \
     && npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
     && npm install -g @openai/codex@${CODEX_VERSION} \
-    && adduser -D -h /home/codeforge codeforge \
+    # codeforge keeps UID/GID 1000 (the alpine image's): existing /data volumes are owned by it
+    && deluser --remove-home node \
+    && addgroup -g 1000 codeforge \
+    && adduser -D -u 1000 -G codeforge -h /home/codeforge codeforge \
     && mkdir -p /data/workspaces \
     && chown -R codeforge:codeforge /data
 # NOTE: cursor-agent (cli=cursor) is intentionally NOT bundled here — Cursor ships a
