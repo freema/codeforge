@@ -41,7 +41,6 @@ func New(cfg *config.Config, redis *redisclient.Client, sqliteDB *database.DB, s
 
 	// Global middleware (timeout applied per-route-group, not globally, for SSE support)
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
 	r.Use(middleware.RequestLogger)
 	r.Use(middleware.PrometheusMetrics)
 	r.Use(chimw.Recoverer)
