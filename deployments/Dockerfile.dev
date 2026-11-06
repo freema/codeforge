@@ -1,4 +1,4 @@
-FROM golang:1.25-alpine
+FROM golang:1.27-alpine
 
 RUN apk add --no-cache git nodejs npm ca-certificates tzdata curl coreutils gosu
 
@@ -6,7 +6,7 @@ RUN apk add --no-cache git nodejs npm ca-certificates tzdata curl coreutils gosu
 RUN go install github.com/air-verse/air@v1.61.7
 
 # Install golangci-lint v2 (matches .golangci.yml version: "2")
-RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v2.11.3
+RUN curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b /usr/local/bin v2.15.0
 
 # Install Claude Code CLI (optional for dev — not needed for unit tests)
 ARG CLAUDE_CODE_VERSION=2.1.215
