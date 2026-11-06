@@ -126,7 +126,7 @@ tasks/                  Planning documents (not code)
 
 ## Conventions
 
-- **Go 1.24+**, standard library preferred where possible
+- **Go 1.27+**, standard library preferred where possible
 - **Structured logging** via `log/slog` (JSON in production, text in dev)
 - **Error handling**: return errors, don't panic; use typed errors from `internal/apperror`
 - **Testing**: table-driven tests, `_test.go` next to source files

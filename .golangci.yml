@@ -43,6 +43,11 @@ linters:
     goconst:
       min-len: 3
       min-occurrences: 6
+      # goconst >= 1.10 (golangci-lint >= 2.12) also counts strings in composite
+      # literals (JSON response maps, struct fields); keep the previous scope.
+      exclude-types:
+        - Call
+        - CompositeLit
 
     gosec:
       excludes:

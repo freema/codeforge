@@ -6,7 +6,7 @@ on:
   pull_request:
 
 env:
-  GO_VERSION: '1.25'
+  GO_VERSION: '1.27'
 
 jobs:
   lint:
@@ -18,7 +18,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
       - uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.11.3
+          version: v2.15.0
 
   test:
     runs-on: ubuntu-latest
